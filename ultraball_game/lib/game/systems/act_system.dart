@@ -50,6 +50,7 @@ class ActSystem {
   }
 
   static void scoreUltra(GameState gs, String teamId) {
+    gs.dataCollector?.onUltra(teamId);
     final act = gs.actState;
     if (teamId == 'player') {
       act.playerScore += 7;
@@ -89,6 +90,7 @@ class ActSystem {
   }
 
   static void scoreMeta(GameState gs, String teamId) {
+    gs.dataCollector?.onMeta(teamId);
     if (teamId == 'player') {
       gs.actState.playerScore += 3;
       gs.showEvent('META! +3pts for ${gs.settings.homeTeamName}!');
@@ -98,7 +100,9 @@ class ActSystem {
     }
   }
 
-  static void scoreKilla(GameState gs, String teamId) {
+  static void scoreKilla(GameState gs, String teamId, [UltraballPlayer? scorer]) {
+    gs.dataCollector?.onKilla(teamId);
+    scorer?.gainUltraMana(1.0);
     if (teamId == 'player') {
       gs.actState.playerScore += 1;
       gs.actState.playerKills += 1;
@@ -110,10 +114,26 @@ class ActSystem {
 
   static void endAct(GameState gs) {
     final act = gs.actState;
+    gs.dataCollector?.onActEnd(act.currentAct);
     if (act.actEnded) return;
 
     act.actEnded = true;
     act.isActive = false;
+
+    // Award 5 ultra mana to field players on the act-winning team
+    final prevPlayerScore = act.actResults.isNotEmpty ? act.actResults.last.playerScore : 0;
+    final prevOppScore    = act.actResults.isNotEmpty ? act.actResults.last.opponentScore : 0;
+    final actPlayerPts = act.playerScore - prevPlayerScore;
+    final actOppPts    = act.opponentScore - prevOppScore;
+    if (actPlayerPts > actOppPts) {
+      for (final p in gs.fieldPlayers) {
+        if (p.team == Team.player && p.isAlive) p.gainUltraMana(5.0);
+      }
+    } else if (actOppPts > actPlayerPts) {
+      for (final p in gs.fieldPlayers) {
+        if (p.team == Team.opponent && p.isAlive) p.gainUltraMana(5.0);
+      }
+    }
 
     act.actResults.add(
       ActResult(act.currentAct, act.playerScore, act.opponentScore),
@@ -125,10 +145,7 @@ class ActSystem {
       return;
     }
 
-    // Show transition
-    gs.showingActTransition = true;
-    gs.actTransitionTimer = 3.0;
-    gs.actTransitionMessage = 'ACT ${act.currentAct} COMPLETE!\nACT ${act.currentAct + 1} BEGINS!';
+    gs.showingRosterScreen = true;
     gs.showEvent('ACT ${act.currentAct} COMPLETE!');
   }
 
@@ -147,8 +164,9 @@ class ActSystem {
       act.timerSeconds = gs.settings.fastMode ? 60.0 : 180.0;
     }
 
-    // Restock teams to 7 on field (bring in live roster players)
-    _restockTeam(gs, Team.player);
+    // Player team: roster was configured by roster screen; just fill any gaps
+    _fillPlayerTeamGaps(gs);
+    // AI team: auto-restock in deployment order
     _restockTeam(gs, Team.opponent);
 
     // Reset positions
@@ -179,20 +197,45 @@ class ActSystem {
     int needed = 7 - onField;
 
     if (needed > 0) {
-      final available = roster.where((p) => !p.isOnField && p.isAlive).toList();
+      final available = roster.where((p) => !p.isOnField && p.isAlive).toList()
+          ..sort((a, b) => a.deploySlot.compareTo(b.deploySlot));
       final toAdd = math.min(needed, available.length);
       for (int i = 0; i < toAdd; i++) {
         available[i].isOnField = true;
       }
+      gs.markRosterDirty();
     }
 
-    // Reset health of surviving field players
+    // Reset health of surviving field players (preserve ultra mana across acts)
     for (final p in roster.where((p) => p.isOnField && p.isAlive)) {
       p.health = p.maxHealth;
       p.blueMana = 100;
       p.redMana = 0;
       p.stunTimer = 0;
       p.state = PlayerState.idle;
+      p.resetBuffs();
+    }
+  }
+
+  static void _fillPlayerTeamGaps(GameState gs) {
+    final roster = gs.playerRoster;
+    final onField = roster.where((p) => p.isOnField && p.isAlive).length;
+    if (onField < 7) {
+      final available = roster.where((p) => !p.isOnField && p.isAlive).toList()
+          ..sort((a, b) => a.deploySlot.compareTo(b.deploySlot));
+      final toAdd = math.min(7 - onField, available.length);
+      for (int i = 0; i < toAdd; i++) {
+        available[i].isOnField = true;
+      }
+      gs.markRosterDirty();
+    }
+    for (final p in roster.where((p) => p.isOnField && p.isAlive)) {
+      p.health = p.maxHealth;
+      p.blueMana = 100;
+      p.redMana = 0;
+      p.stunTimer = 0;
+      p.state = PlayerState.idle;
+      p.resetBuffs();
     }
   }
 

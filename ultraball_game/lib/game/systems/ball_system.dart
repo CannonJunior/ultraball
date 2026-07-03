@@ -108,15 +108,15 @@ class BallSystem {
         final friendlyCatch = (wasPlayerTeam && catcherIsPlayer) ||
             (!wasPlayerTeam && !catcherIsPlayer);
 
+        // Clear isInFlight before any pickup/interception call so that
+        // tryPickup's guard (isInFlight check) doesn't bail out early.
+        ball.isInFlight = false;
+        ball.isChargedThrow = false;
+        ball.zHeight = 0;
+        ball.zVelocity = 0;
         if (friendlyCatch) {
-          ball.isChargedThrow = false;
-          ball.zHeight = 0;
-          ball.zVelocity = 0;
           tryPickup(gs, p);
         } else {
-          ball.isChargedThrow = false;
-          ball.zHeight = 0;
-          ball.zVelocity = 0;
           _handleInterception(gs, p);
         }
         caught = true;
@@ -204,8 +204,9 @@ class BallSystem {
     ball.x = holder.x;
     ball.y = holder.y;
 
-    // Accumulate charge
+    // Accumulate charge; holder earns 1 ultra mana per second
     ball.chargeTimer += dt;
+    holder.gainUltraMana(dt);
 
     // Check phase line crossing
     final prevX = holder.x - holder.velX * dt;
@@ -230,6 +231,7 @@ class BallSystem {
       // Check if it's a Meta (pass caught by player already in endzone)
       // We handle that in tryPickup
       ActSystem.scoreUltra(gs, 'player');
+      holder.gainUltraMana(7.0);
       CombatSystem.addIndicator(
         gs,
         holder.x,
@@ -242,6 +244,7 @@ class BallSystem {
     } else if (holder.team == Team.opponent && holder.x >= 120) {
       // Opponent scored Ultra
       ActSystem.scoreUltra(gs, 'opponent');
+      holder.gainUltraMana(7.0);
       CombatSystem.addIndicator(
         gs,
         holder.x,
@@ -268,6 +271,8 @@ class BallSystem {
   }
 
   static void handleExplosion(GameState gs) {
+    final holderTeam = gs.getPlayerById(gs.ball.holderId!)?.team == Team.player ? 'player' : 'opponent';
+    gs.dataCollector?.onExplosion(holderTeam);
     final ball = gs.ball;
     final holder = gs.getPlayerById(ball.holderId!);
 
@@ -283,6 +288,7 @@ class BallSystem {
 
     // Kill holder
     holder.die();
+    gs.markRosterDirty();
     gs.showEvent('BALL EXPLODED! ${holder.name} is DEAD!');
 
     // Award Killa to opposite team
@@ -323,6 +329,7 @@ class BallSystem {
       ball.holderId = player.id;
       ball.changePossession('player');
       ActSystem.scoreMeta(gs, 'player');
+      player.gainUltraMana(3.0);
       CombatSystem.addIndicator(
         gs,
         player.x,
@@ -337,6 +344,7 @@ class BallSystem {
       ball.holderId = player.id;
       ball.changePossession('opponent');
       ActSystem.scoreMeta(gs, 'opponent');
+      player.gainUltraMana(3.0);
       CombatSystem.addIndicator(
         gs,
         player.x,
@@ -403,6 +411,7 @@ class BallSystem {
       thrower.blueMana -= 30;
     }
 
+    gs.dataCollector?.onPass(thrower.team == Team.player ? 'player' : 'opponent');
     thrower.passCooldown = 0.5;
 
     final speed = isPowerPass ? powerBallSpeed : ballSpeed;

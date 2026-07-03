@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/creature.dart';
 import '../models/game_settings.dart';
+import '../models/player_class.dart';
 import '../game/game_widget.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -15,6 +16,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _awayController = TextEditingController(text: 'REAPERS');
   CreatureType _creatureType = CreatureType.kraken;
   bool _fastMode = false;
+  List<int> _homeRosterOrder = List.generate(15, (i) => i);
+
+  int _teamIdxFor(String name) {
+    final upper = name.toUpperCase();
+    final idx = TeamDefinition.teams.indexWhere((t) => t.name == upper);
+    return idx == -1 ? 0 : idx;
+  }
 
   @override
   void dispose() {
@@ -33,6 +41,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           : _awayController.text.toUpperCase(),
       creatureType: _creatureType,
       fastMode: _fastMode,
+      homeRosterOrder: List.from(_homeRosterOrder),
     );
 
     Navigator.of(context).pushReplacement(
@@ -367,6 +376,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           _SectionHeader(label: 'GAME RULES'),
           const SizedBox(height: 12),
+          _RosterEditor(
+            homeTeamIdx: _teamIdxFor(_homeController.text),
+            awayTeamIdx: _teamIdxFor(_awayController.text),
+            homeRosterOrder: _homeRosterOrder,
+            onHomeReorder: (newOrder) => setState(() => _homeRosterOrder = newOrder),
+          ),
+          const SizedBox(height: 12),
           _RuleSection(
             icon: '🏟',
             title: 'THE FIELD',
@@ -552,7 +568,9 @@ class _CreatureRadio extends StatelessWidget {
     final (emoji, name, desc) = switch (type) {
       CreatureType.kraken => ('🐙', 'KRAKEN', 'Slow & deadly'),
       CreatureType.dragon => ('🐉', 'DRAGON', 'Fast & fierce'),
-      CreatureType.hydra => ('🐍', 'HYDRA', 'Large & relentless'),
+      CreatureType.hydra  => ('🐍', 'HYDRA',  'Large & relentless'),
+      CreatureType.wraith => ('👻', 'WRAITH', 'Unpredictable & spectral'),
+      CreatureType.chaos  => ('💀', 'CHAOS',  'Erratic & lethal'),
     };
 
     return GestureDetector(
@@ -738,6 +756,575 @@ class _RuleSection extends StatelessWidget {
               .toList(),
         ),
       ),
+    );
+  }
+}
+
+// ─── Team Roster Editor ──────────────────────────────────────────────────────
+
+class _RosterEditor extends StatelessWidget {
+  final int homeTeamIdx;
+  final int awayTeamIdx;
+  final List<int> homeRosterOrder;
+  final ValueChanged<List<int>> onHomeReorder;
+
+  const _RosterEditor({
+    required this.homeTeamIdx,
+    required this.awayTeamIdx,
+    required this.homeRosterOrder,
+    required this.onHomeReorder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final homeNames    = TeamDefinition.teams[homeTeamIdx].playerNames;
+    final homeTeamName = TeamDefinition.teams[homeTeamIdx].name;
+    final awayNames    = TeamDefinition.teams[awayTeamIdx].playerNames;
+    final awayTeamName = TeamDefinition.teams[awayTeamIdx].name;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 0),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D0D1A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF222244), width: 1),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: false,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          leading: const Text('👥', style: TextStyle(fontSize: 20)),
+          title: const Text(
+            'TEAM ROSTERS',
+            style: TextStyle(
+              color: Color(0xFFCCDDFF),
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+              letterSpacing: 1.5,
+            ),
+          ),
+          subtitle: Text(
+            'Drag to set home team lineup order',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 9),
+          ),
+          iconColor: const Color(0xFFFFCC00),
+          collapsedIconColor: const Color(0x66FFFFFF),
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _EditableTeamRoster(
+                  teamName: homeTeamName,
+                  color: const Color(0xFF1E88E5),
+                  names: homeNames,
+                  order: homeRosterOrder,
+                  onReorder: onHomeReorder,
+                )),
+                const SizedBox(width: 12),
+                Expanded(child: _ReadonlyTeamRoster(
+                  teamName: awayTeamName,
+                  color: const Color(0xFFE53935),
+                  names: awayNames,
+                )),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EditableTeamRoster extends StatefulWidget {
+  final String teamName;
+  final Color color;
+  final List<String> names;
+  final List<int> order;
+  final ValueChanged<List<int>> onReorder;
+
+  const _EditableTeamRoster({
+    required this.teamName,
+    required this.color,
+    required this.names,
+    required this.order,
+    required this.onReorder,
+  });
+
+  @override
+  State<_EditableTeamRoster> createState() => _EditableTeamRosterState();
+}
+
+class _EditableTeamRosterState extends State<_EditableTeamRoster> {
+  final Set<int> _expanded = {};
+
+  static Color _classColor(int playerIdx) => switch (playerIdx % 5) {
+    0 => const Color(0xFF44FFCC),
+    1 => const Color(0xFFFF44AA),
+    2 => const Color(0xFFFF5544),
+    3 => const Color(0xFF4488FF),
+    _ => const Color(0xFFFFCC44),
+  };
+
+  static String _classBadge(int playerIdx) => switch (playerIdx % 5) {
+    0 => 'Runner',
+    1 => 'Blitzer',
+    2 => 'Enforcer',
+    3 => 'Warden',
+    _ => 'Handler',
+  };
+
+  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 5) {
+    0 => PlayerClass.runner,
+    1 => PlayerClass.blitzer,
+    2 => PlayerClass.enforcer,
+    3 => PlayerClass.warden,
+    _ => PlayerClass.handler,
+  };
+
+  Widget _buildInfoPanel(int playerIdx) {
+    final cls      = _playerClass(playerIdx);
+    final clsColor = _classColor(playerIdx);
+    final abilities = cls.abilityNames;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 2),
+      padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D0D1A),
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(4),
+          bottomRight: Radius.circular(4),
+        ),
+        border: Border(left: BorderSide(color: clsColor.withValues(alpha: 0.5), width: 2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                '${cls.baseSpeed} m/s  •  ${cls.maxHealth.toInt()} HP',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11),
+              ),
+              const Spacer(),
+              Text(
+                cls.description,
+                style: TextStyle(color: clsColor.withValues(alpha: 0.7), fontSize: 10),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(children: [
+            for (int col = 0; col < 5; col++)
+              _abilityCell(col + 1, abilities[col]),
+          ]),
+          const SizedBox(height: 4),
+          Row(children: [
+            for (int col = 0; col < 5; col++)
+              _abilityCell(col + 6, abilities[col + 5]),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  Widget _abilityCell(int slot, String name) {
+    final isUltra = slot == 10;
+    return Expanded(
+      child: Container(
+        margin: const EdgeInsets.only(right: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+        decoration: BoxDecoration(
+          color: isUltra
+              ? const Color(0xFFFFCC00).withValues(alpha: 0.08)
+              : const Color(0xFF0D0D1A),
+          borderRadius: BorderRadius.circular(2),
+          border: Border.all(
+            color: isUltra
+                ? const Color(0xFFFFCC00).withValues(alpha: 0.3)
+                : const Color(0xFF222244),
+          ),
+        ),
+        child: Row(
+          children: [
+            Text(
+              isUltra ? '⚡' : '$slot.',
+              style: TextStyle(
+                color: isUltra ? const Color(0xFFFFCC00) : Colors.white.withValues(alpha: 0.3),
+                fontSize: 10,
+              ),
+            ),
+            const SizedBox(width: 2),
+            Expanded(
+              child: Text(
+                name,
+                style: TextStyle(
+                  color: isUltra ? const Color(0xFFFFCC00) : Colors.white70,
+                  fontSize: 11,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(widget.teamName,
+          style: TextStyle(
+            color: widget.color, fontSize: 14,
+            fontWeight: FontWeight.bold, letterSpacing: 1.5,
+          )),
+        Text('HOME — drag to reorder',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 10)),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: 700.0 + _expanded.length * 120.0,
+          child: ReorderableListView.builder(
+            padding: const EdgeInsets.only(right: 16),
+            buildDefaultDragHandles: false,
+            onReorder: (oldIdx, newIdx) {
+              if (newIdx > oldIdx) newIdx--;
+              final newOrder = List<int>.from(widget.order);
+              newOrder.insert(newIdx, newOrder.removeAt(oldIdx));
+              widget.onReorder(newOrder);
+            },
+            itemCount: 15,
+            itemBuilder: (ctx, slot) {
+              final playerIdx = widget.order[slot];
+              final isField   = slot < 7;
+              final clsColor  = _classColor(playerIdx);
+              final clsBadge  = _classBadge(playerIdx);
+              final slotColor = isField ? const Color(0xFF44FF88) : Colors.white.withValues(alpha: 0.3);
+              final slotText  = isField ? 'FIELD ${slot + 1}' : 'RES ${slot - 6}';
+              final isExpanded = _expanded.contains(slot);
+
+              return Column(
+                key: ValueKey('h_$slot'),
+                children: [
+                  if (slot == 7)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Row(children: [
+                        Expanded(child: Container(height: 1, color: const Color(0xFF334466))),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Text('RESERVE',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.3),
+                              fontSize: 9, letterSpacing: 1,
+                            )),
+                        ),
+                        Expanded(child: Container(height: 1, color: const Color(0xFF334466))),
+                      ]),
+                    ),
+                  ReorderableDragStartListener(
+                    index: slot,
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 2),
+                      decoration: BoxDecoration(
+                        color: isField ? const Color(0xFF0A140A) : const Color(0xFF0A0A12),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: isField
+                            ? const Color(0xFF44FF88).withValues(alpha: 0.2)
+                            : const Color(0xFF1A1A2E)),
+                      ),
+                      child: Row(children: [
+                        const SizedBox(width: 4),
+                        SizedBox(
+                          width: 60,
+                          child: Text(slotText,
+                            style: TextStyle(
+                              color: slotColor, fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ))),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: clsColor.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(clsBadge,
+                            style: TextStyle(
+                              color: clsColor, fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            )),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(child: Text(widget.names[playerIdx],
+                          style: TextStyle(
+                            color: isField
+                                ? Colors.white.withValues(alpha: 0.9)
+                                : Colors.white.withValues(alpha: 0.45),
+                            fontSize: 13,
+                            fontWeight: isField ? FontWeight.w600 : FontWeight.normal,
+                          ))),
+                        GestureDetector(
+                          onTap: () => setState(() {
+                            if (isExpanded) { _expanded.remove(slot); }
+                            else { _expanded.add(slot); }
+                          }),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                            child: Icon(
+                              isExpanded ? Icons.expand_less : Icons.expand_more,
+                              size: 20,
+                              color: Colors.white.withValues(alpha: 0.4),
+                            ),
+                          ),
+                        ),
+                      ]),
+                    ),
+                  ),
+                  if (isExpanded) _buildInfoPanel(playerIdx),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReadonlyTeamRoster extends StatefulWidget {
+  final String teamName;
+  final Color color;
+  final List<String> names;
+
+  const _ReadonlyTeamRoster({
+    required this.teamName,
+    required this.color,
+    required this.names,
+  });
+
+  @override
+  State<_ReadonlyTeamRoster> createState() => _ReadonlyTeamRosterState();
+}
+
+class _ReadonlyTeamRosterState extends State<_ReadonlyTeamRoster> {
+  final Set<int> _expanded = {};
+
+  static Color _classColor(int playerIdx) => switch (playerIdx % 5) {
+    0 => const Color(0xFF44FFCC),
+    1 => const Color(0xFFFF44AA),
+    2 => const Color(0xFFFF5544),
+    3 => const Color(0xFF4488FF),
+    _ => const Color(0xFFFFCC44),
+  };
+
+  static String _classBadge(int playerIdx) => switch (playerIdx % 5) {
+    0 => 'Runner',
+    1 => 'Blitzer',
+    2 => 'Enforcer',
+    3 => 'Warden',
+    _ => 'Handler',
+  };
+
+  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 5) {
+    0 => PlayerClass.runner,
+    1 => PlayerClass.blitzer,
+    2 => PlayerClass.enforcer,
+    3 => PlayerClass.warden,
+    _ => PlayerClass.handler,
+  };
+
+  Widget _buildInfoPanel(int playerIdx) {
+    final cls       = _playerClass(playerIdx);
+    final clsColor  = _classColor(playerIdx);
+    final abilities = cls.abilityNames;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 2),
+      padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D0D1A),
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(4),
+          bottomRight: Radius.circular(4),
+        ),
+        border: Border(left: BorderSide(color: clsColor.withValues(alpha: 0.5), width: 2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                '${cls.baseSpeed} m/s  •  ${cls.maxHealth.toInt()} HP',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 9),
+              ),
+              const Spacer(),
+              Text(
+                cls.description,
+                style: TextStyle(color: clsColor.withValues(alpha: 0.7), fontSize: 8),
+              ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Row(children: [
+            for (int col = 0; col < 5; col++)
+              _abilityCell(col + 1, abilities[col]),
+          ]),
+          const SizedBox(height: 2),
+          Row(children: [
+            for (int col = 0; col < 5; col++)
+              _abilityCell(col + 6, abilities[col + 5]),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  Widget _abilityCell(int slot, String name) {
+    final isUltra = slot == 10;
+    return Expanded(
+      child: Container(
+        margin: const EdgeInsets.only(right: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+        decoration: BoxDecoration(
+          color: isUltra
+              ? const Color(0xFFFFCC00).withValues(alpha: 0.08)
+              : const Color(0xFF0D0D1A),
+          borderRadius: BorderRadius.circular(2),
+          border: Border.all(
+            color: isUltra
+                ? const Color(0xFFFFCC00).withValues(alpha: 0.3)
+                : const Color(0xFF222244),
+          ),
+        ),
+        child: Row(
+          children: [
+            Text(
+              isUltra ? '⚡' : '$slot.',
+              style: TextStyle(
+                color: isUltra ? const Color(0xFFFFCC00) : Colors.white.withValues(alpha: 0.3),
+                fontSize: 8,
+              ),
+            ),
+            const SizedBox(width: 1),
+            Expanded(
+              child: Text(
+                name,
+                style: TextStyle(
+                  color: isUltra ? const Color(0xFFFFCC00) : Colors.white70,
+                  fontSize: 8,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(widget.teamName,
+          style: TextStyle(
+            color: widget.color, fontSize: 14,
+            fontWeight: FontWeight.bold, letterSpacing: 1.5,
+          )),
+        Text('AWAY — AI controlled',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 10)),
+        const SizedBox(height: 6),
+        for (int slot = 0; slot < 15; slot++) ...[
+          if (slot == 7)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(children: [
+                Expanded(child: Container(height: 1, color: const Color(0xFF334466))),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Text('RESERVE',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.3),
+                      fontSize: 9, letterSpacing: 1,
+                    )),
+                ),
+                Expanded(child: Container(height: 1, color: const Color(0xFF334466))),
+              ]),
+            ),
+          Builder(builder: (context) {
+            final isField   = slot < 7;
+            final clsColor  = _classColor(slot);
+            final clsBadge  = _classBadge(slot);
+            final slotColor = isField ? const Color(0xFF44FF88) : Colors.white.withValues(alpha: 0.3);
+            final slotText  = isField ? 'FIELD ${slot + 1}' : 'RES ${slot - 6}';
+            final isExpanded = _expanded.contains(slot);
+            return Column(
+              children: [
+                GestureDetector(
+                  onTap: () => setState(() {
+                    if (isExpanded) { _expanded.remove(slot); }
+                    else { _expanded.add(slot); }
+                  }),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 2),
+                    decoration: BoxDecoration(
+                      color: isField ? const Color(0xFF0A140A) : const Color(0xFF0A0A12),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: isField
+                          ? const Color(0xFF44FF88).withValues(alpha: 0.2)
+                          : const Color(0xFF1A1A2E)),
+                    ),
+                    child: Row(children: [
+                      const SizedBox(width: 4),
+                      SizedBox(
+                        width: 60,
+                        child: Text(slotText,
+                          style: TextStyle(
+                            color: slotColor, fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ))),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: clsColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                        child: Text(clsBadge,
+                          style: TextStyle(
+                            color: clsColor, fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          )),
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(child: Text(widget.names[slot],
+                        style: TextStyle(
+                          color: isField
+                              ? Colors.white.withValues(alpha: 0.9)
+                              : Colors.white.withValues(alpha: 0.45),
+                          fontSize: 13,
+                          fontWeight: isField ? FontWeight.w600 : FontWeight.normal,
+                        ))),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                        child: Icon(
+                          isExpanded ? Icons.expand_less : Icons.expand_more,
+                          size: 20,
+                          color: Colors.white.withValues(alpha: 0.4),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ),
+                if (isExpanded) _buildInfoPanel(slot),
+              ],
+            );
+          }),
+        ],
+      ],
     );
   }
 }

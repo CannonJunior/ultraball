@@ -16,6 +16,9 @@ import '../ui/damage_indicator_overlay.dart';
 import '../ui/combo_display.dart';
 import '../ui/mana_bars.dart';
 import '../ui/throw_charge_bar.dart';
+import '../ui/roster_screen.dart';
+import '../ai/learning_ai.dart';
+import '../ai/game_data_collector.dart';
 
 class GameWidget extends StatefulWidget {
   final GameSettings settings;
@@ -26,9 +29,10 @@ class GameWidget extends StatefulWidget {
   State<GameWidget> createState() => _GameWidgetState();
 }
 
-class _GameWidgetState extends State<GameWidget> {
+class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
   late GameState _gs;
   Timer? _gameLoop;
+  bool _learnDone = false;
   DateTime _lastTick = DateTime.now();
   final FocusNode _focusNode = FocusNode();
 
@@ -36,12 +40,30 @@ class _GameWidgetState extends State<GameWidget> {
   double _scale = 1.0;
   double _offsetX = 0;
   double _offsetY = 0;
+  Size?  _lastLayoutSize;
+
+  // Long-lived painter — reused every frame so its cached Paints/TextPainters persist
+  late FieldPainter _fieldPainter;
+  final ValueNotifier<int> _canvasRepaint = ValueNotifier<int>(0);
 
   @override
   void initState() {
     super.initState();
     _gs = GameState(settings: widget.settings);
     _gs.initialize();
+    _fieldPainter = FieldPainter(gs: _gs, repaint: _canvasRepaint)
+      ..use3D = widget.settings.use3D;
+    // Wire up the adaptive AI policy and data collector for this game
+    _gs.activePolicy = LearningAi.instance.policyFor(
+      widget.settings.aiStrategy,
+      widget.settings.aiTactics,
+    );
+    _gs.dataCollector = GameDataCollector(
+      strategy: widget.settings.aiStrategy,
+      tactics:  widget.settings.aiTactics,
+    );
+    _focusNode.addListener(_onFocusChange);
+    WidgetsBinding.instance.addObserver(this);
     _startGameLoop();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
@@ -50,9 +72,27 @@ class _GameWidgetState extends State<GameWidget> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _focusNode.removeListener(_onFocusChange);
     _gameLoop?.cancel();
     _focusNode.dispose();
+    _canvasRepaint.dispose();
     super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (!_focusNode.hasFocus) {
+      _gs.pressedKeys.clear();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      _gs.pressedKeys.clear();
+    }
   }
 
   void _startGameLoop() {
@@ -71,7 +111,21 @@ class _GameWidgetState extends State<GameWidget> {
   }
 
   void _update(double dt) {
-    if (_gs.paused || _gs.actState.gameOver) return;
+    // Detect game over — finalise learning exactly once
+    if (_gs.actState.gameOver) {
+      if (!_learnDone) {
+        _learnDone = true;
+        final record = _gs.dataCollector?.finalise(_gs);
+        if (record != null) LearningAi.instance.onGameEnd(record);
+        // Force a rebuild to show the game-over overlay. This matters when
+        // forfeit was set outside _update() (e.g. via a key-press ability),
+        // because the setState() at the bottom of _update() is never reached.
+        if (mounted) setState(() {});
+      }
+      return;
+    }
+    if (_gs.paused) return;
+    if (_gs.showingRosterScreen) return;
     if (_gs.showingActTransition) {
       ActSystem.update(_gs, dt);
       if (mounted) setState(() {});
@@ -80,12 +134,17 @@ class _GameWidgetState extends State<GameWidget> {
 
     // Increment throw charge for the selected player
     final selPlayer = _gs.selectedPlayer;
-    if (selPlayer != null && selPlayer.isChargingThrow) {
-      if (_gs.ball.holderId == selPlayer.id) {
+    if (selPlayer != null) {
+      final hasball = _gs.ball.holderId == selPlayer.id;
+      final fHeld  = _gs.pressedKeys.contains(LogicalKeyboardKey.keyF);
+
+      if (hasball && fHeld) {
+        // Start or continue charging whenever F is held and ball is in hand
+        selPlayer.isChargingThrow = true;
         selPlayer.throwChargeTime = (selPlayer.throwChargeTime + dt)
             .clamp(0.0, UltraballPlayer.maxThrowChargeTime);
-      } else {
-        // Lost the ball while charging — cancel
+      } else if (!hasball) {
+        // Lost the ball — cancel charge
         selPlayer.isChargingThrow = false;
         selPlayer.throwChargeTime = 0.0;
       }
@@ -94,10 +153,9 @@ class _GameWidgetState extends State<GameWidget> {
     // Handle player input
     _handlePlayerMovement(dt);
 
-    // Update all players
-    for (final p in _gs.allPlayers) {
-      p.update(dt);
-    }
+    // Update all players — iterate rosters directly to avoid allPlayers allocation
+    for (final p in _gs.playerRoster)   { p.update(dt); }
+    for (final p in _gs.opponentRoster) { p.update(dt); }
 
     // Update AI
     AiSystem.update(_gs, dt);
@@ -110,13 +168,17 @@ class _GameWidgetState extends State<GameWidget> {
 
     // Update act timer
     ActSystem.update(_gs, dt);
+    _gs.dataCollector?.tick(dt);
 
-    // Update damage indicators
-    _gs.indicators.removeWhere((ind) => ind.isExpired);
-    for (final ind in _gs.indicators) {
+    // Update damage indicators in a single reverse pass (removes expired + ticks live)
+    for (int i = _gs.indicators.length - 1; i >= 0; i--) {
+      final ind = _gs.indicators[i];
       ind.update(dt);
+      if (ind.isExpired) _gs.indicators.removeAt(i);
     }
 
+    // Trigger canvas repaint (painter is long-lived; doesn't go through shouldRepaint)
+    _canvasRepaint.value++;
     if (mounted) setState(() {});
   }
 
@@ -236,32 +298,45 @@ class _GameWidgetState extends State<GameWidget> {
       return;
     }
 
-    // 1: Tackle (basic attack)
+    // 1–7: class ability slots
     if (key == LogicalKeyboardKey.digit1) {
-      if (player != null) {
-        CombatSystem.tryAttack(_gs, player, 'tackle');
-      }
+      if (player != null) CombatSystem.useClassAbility(_gs, player, 1);
       return;
     }
-
-    // 2: Power Slam
     if (key == LogicalKeyboardKey.digit2) {
-      if (player != null) {
-        CombatSystem.tryAttack(_gs, player, 'slam');
-      }
+      if (player != null) CombatSystem.useClassAbility(_gs, player, 2);
       return;
     }
-
-    // 3: Sprint
     if (key == LogicalKeyboardKey.digit3) {
-      if (player != null &&
-          player.sprintCooldown <= 0 &&
-          player.blueMana >= 20 &&
-          player.speedBoostTimer <= 0) {
-        player.blueMana -= 20;
-        player.speedBoostTimer = 3.0;
-        player.sprintCooldown = 6.0;
-      }
+      if (player != null) CombatSystem.useClassAbility(_gs, player, 3);
+      return;
+    }
+    if (key == LogicalKeyboardKey.digit4) {
+      if (player != null) CombatSystem.useClassAbility(_gs, player, 4);
+      return;
+    }
+    if (key == LogicalKeyboardKey.digit5) {
+      if (player != null) CombatSystem.useClassAbility(_gs, player, 5);
+      return;
+    }
+    if (key == LogicalKeyboardKey.digit6) {
+      if (player != null) CombatSystem.useClassAbility(_gs, player, 6);
+      return;
+    }
+    if (key == LogicalKeyboardKey.digit7) {
+      if (player != null) CombatSystem.useClassAbility(_gs, player, 7);
+      return;
+    }
+    if (key == LogicalKeyboardKey.digit8) {
+      if (player != null) CombatSystem.useClassAbility(_gs, player, 8);
+      return;
+    }
+    if (key == LogicalKeyboardKey.digit9) {
+      if (player != null) CombatSystem.useClassAbility(_gs, player, 9);
+      return;
+    }
+    if (key == LogicalKeyboardKey.digit0) {
+      if (player != null) CombatSystem.useClassAbility(_gs, player, 10);
       return;
     }
 
@@ -285,16 +360,44 @@ class _GameWidgetState extends State<GameWidget> {
     if (event is! KeyUpEvent) return;
     _gs.pressedKeys.remove(event.logicalKey);
 
-    // F release: fire the charged throw
+    // F release: fire the charged throw if ball is still in hand
     if (event.logicalKey == LogicalKeyboardKey.keyF) {
       final player = _gs.selectedPlayer;
-      if (player != null && player.isChargingThrow) {
+      if (player != null && _gs.ball.holderId == player.id) {
         BallSystem.tryChargedThrow(_gs, player);
       }
+      // Always clear charging state on key release
+      player?.isChargingThrow = false;
+      player?.throwChargeTime = 0.0;
     }
   }
 
+  void _applyRosterAndBeginNextAct(List<UltraballPlayer> orderedAlive) {
+    // Apply new deployment order from roster screen
+    for (int i = 0; i < orderedAlive.length; i++) {
+      orderedAlive[i].deploySlot = i;
+      orderedAlive[i].isOnField = i < 7;
+    }
+    // Dead players always off field
+    for (final p in _gs.playerRoster) {
+      if (!p.isAlive) p.isOnField = false;
+    }
+    _gs.markRosterDirty();
+    _gs.showingRosterScreen = false;
+    ActSystem.startNextAct(_gs);
+    setState(() {});
+  }
+
   void _computeLayout(Size size) {
+    if (size == _lastLayoutSize) {
+      // Size unchanged — update painter offsets in case they drifted, then return
+      _fieldPainter.scale   = _scale;
+      _fieldPainter.offsetX = _offsetX;
+      _fieldPainter.offsetY = _offsetY;
+      return;
+    }
+    _lastLayoutSize = size;
+
     // Field is 140m x 40m. Creature channels extend 5m above (y=-5)
     // and 5m below (y=45), giving a 50m total world height. Add 2m
     // padding on each side of that world extent.
@@ -302,10 +405,14 @@ class _GameWidgetState extends State<GameWidget> {
     const fieldH = 54.0;  // 50m world + 2m padding each side
     final scaleX = size.width / fieldW;
     final scaleY = size.height / fieldH;
-    _scale = math.min(scaleX, scaleY);
-    _offsetX = (size.width - 140 * _scale) / 2;
+    _scale   = math.min(scaleX, scaleY);
+    _offsetX = (size.width  - 140 * _scale) / 2;
     // Center the 50m world (y=-5..45); field y=0 is 5m down from world top.
-    _offsetY = (size.height - 50 * _scale) / 2 + 5 * _scale;
+    _offsetY = (size.height - 50  * _scale) / 2 + 5 * _scale;
+
+    _fieldPainter.scale   = _scale;
+    _fieldPainter.offsetX = _offsetX;
+    _fieldPainter.offsetY = _offsetY;
   }
 
   @override
@@ -334,14 +441,9 @@ class _GameWidgetState extends State<GameWidget> {
 
                   return Stack(
                     children: [
-                      // Main game canvas
+                      // Main game canvas — reuses the long-lived _fieldPainter
                       CustomPaint(
-                        painter: FieldPainter(
-                          gs: _gs,
-                          scale: _scale,
-                          offsetX: _offsetX,
-                          offsetY: _offsetY,
-                        ),
+                        painter: _fieldPainter,
                         size: Size(constraints.maxWidth, constraints.maxHeight),
                       ),
 
@@ -404,6 +506,11 @@ class _GameWidgetState extends State<GameWidget> {
                       // Act transition overlay
                       if (_gs.showingActTransition)
                         _ActTransitionOverlay(gs: _gs),
+                      if (_gs.showingRosterScreen)
+                        RosterScreen(
+                          gs: _gs,
+                          onConfirm: _applyRosterAndBeginNextAct,
+                        ),
                     ],
                   );
                 },
@@ -453,10 +560,11 @@ class _RosterPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final playerOnField = gs.playerRoster.where((p) => p.isOnField && p.isAlive).length;
-    final playerDead = gs.playerRoster.where((p) => !p.isAlive).length;
-    final oppOnField = gs.opponentRoster.where((p) => p.isOnField && p.isAlive).length;
-    final oppDead = gs.opponentRoster.where((p) => !p.isAlive).length;
+    // Use cached counts from GameState — O(1) instead of 4× O(n) .where().length
+    final playerOnField = gs.playerAliveOnField;
+    final playerDead    = gs.playerDeadCount;
+    final oppOnField    = gs.opponentAliveOnField;
+    final oppDead       = gs.opponentDeadCount;
 
     return Container(
       padding: const EdgeInsets.all(8),

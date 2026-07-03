@@ -50,7 +50,9 @@ class Ultraball {
   }
 
   void resetPhaseLines() {
-    phaseLineActive = [true, true, true, true, true];
+    for (int i = 0; i < phaseLineActive.length; i++) {
+      phaseLineActive[i] = true;
+    }
   }
 
   void changePossession(String? newTeamId) {

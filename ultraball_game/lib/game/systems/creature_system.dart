@@ -25,6 +25,9 @@ class CreatureSystem {
         // Creature kills this player
         final hadBall = gs.ball.holderId == p.id;
         p.die();
+        gs.markRosterDirty();
+        final victimTeamId = p.team == Team.player ? 'player' : 'opponent';
+        gs.dataCollector?.onCreatureKill(victimTeamId);
 
         CombatSystem.addIndicator(
           gs,
