@@ -3,6 +3,7 @@ import '../models/creature.dart';
 import '../models/game_settings.dart';
 import '../models/player_class.dart';
 import '../game/game_widget.dart';
+import '../ai/ai_strategy.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -12,35 +13,36 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final _homeController = TextEditingController(text: 'VIPERS');
-  final _awayController = TextEditingController(text: 'REAPERS');
-  CreatureType _creatureType = CreatureType.kraken;
+  int _homeTeamIdx = 0;
+  int _awayTeamIdx = 1;
+  bool _isNeutralSite = false;
+  CreatureType _neutralCreatureType = CreatureType.chaos;
   bool _fastMode = false;
+  ViewMode _viewMode = ViewMode.flat;
+  AiStrategy _homeStrategy = AiStrategy.numericalEdge;
+  AiTactics  _homeTactics  = AiTactics.heroBall;
+  AiStrategy _aiStrategy   = AiStrategy.tempoTrap;
+  AiTactics  _aiTactics    = AiTactics.focusFire;
   List<int> _homeRosterOrder = List.generate(15, (i) => i);
 
-  int _teamIdxFor(String name) {
-    final upper = name.toUpperCase();
-    final idx = TeamDefinition.teams.indexWhere((t) => t.name == upper);
-    return idx == -1 ? 0 : idx;
-  }
-
-  @override
-  void dispose() {
-    _homeController.dispose();
-    _awayController.dispose();
-    super.dispose();
-  }
-
   void _startMatch() {
+    final home = TeamDefinition.teams[_homeTeamIdx];
+    final away = TeamDefinition.teams[_awayTeamIdx];
+    final creatureType = _isNeutralSite
+        ? _neutralCreatureType
+        : home.creatureType;
     final settings = GameSettings(
-      homeTeamName: _homeController.text.isEmpty
-          ? 'VIPERS'
-          : _homeController.text.toUpperCase(),
-      awayTeamName: _awayController.text.isEmpty
-          ? 'REAPERS'
-          : _awayController.text.toUpperCase(),
-      creatureType: _creatureType,
+      homeTeamName: home.name,
+      awayTeamName: away.name,
+      homePlayerNames: home.playerNames,
+      awayPlayerNames: away.playerNames,
+      creatureType: creatureType,
       fastMode: _fastMode,
+      viewMode: _viewMode,
+      homeStrategy: _homeStrategy,
+      homeTactics:  _homeTactics,
+      aiStrategy:   _aiStrategy,
+      aiTactics:    _aiTactics,
       homeRosterOrder: List.from(_homeRosterOrder),
     );
 
@@ -83,7 +85,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           SizedBox(
-                            width: 360,
+                            width: 560,
                             child: _buildSettingsPanel(),
                           ),
                           const VerticalDivider(
@@ -157,58 +159,214 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _SectionHeader(label: 'MATCH CONFIGURATION'),
           const SizedBox(height: 16),
 
-          // Team names
+          // Teams side by side
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Home column ──────────────────────────────────
+              Expanded(
+                child: _SettingCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _FieldLabel('HOME TEAM (Player)'),
+                      const SizedBox(height: 6),
+                      _TeamDropdown(
+                        selected: _homeTeamIdx,
+                        excludeIdx: _awayTeamIdx,
+                        onChanged: (i) => setState(() {
+                          _homeTeamIdx = i;
+                          _homeRosterOrder = List.generate(15, (j) => j);
+                        }),
+                        accentColor: const Color(0xFF1E88E5),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              // ── Away column ──────────────────────────────────
+              Expanded(
+                child: _SettingCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _FieldLabel('AWAY TEAM (Opponent)'),
+                      const SizedBox(height: 6),
+                      _TeamDropdown(
+                        selected: _awayTeamIdx,
+                        excludeIdx: _homeTeamIdx,
+                        onChanged: (i) => setState(() => _awayTeamIdx = i),
+                        accentColor: const Color(0xFFE53935),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Creature (full width, with neutral site toggle)
           _SettingCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _FieldLabel('HOME TEAM (Player)'),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: _homeController,
-                  style: const TextStyle(
-                    color: Color(0xFF88CCFF),
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                  ),
-                  decoration: _inputDecoration('VIPERS', const Color(0xFF1E88E5)),
-                  textCapitalization: TextCapitalization.characters,
+                Row(
+                  children: [
+                    _FieldLabel('CREATURE'),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => setState(() => _isNeutralSite = !_isNeutralSite),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 16,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: _isNeutralSite
+                                    ? const Color(0xFFFFCC00)
+                                    : const Color(0xFF556688),
+                                width: 1.5,
+                              ),
+                              borderRadius: BorderRadius.circular(3),
+                              color: _isNeutralSite
+                                  ? const Color(0xFFFFCC00).withValues(alpha: 0.2)
+                                  : Colors.transparent,
+                            ),
+                            child: _isNeutralSite
+                                ? const Icon(Icons.check, size: 11, color: Color(0xFFFFCC00))
+                                : null,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'NEUTRAL SITE',
+                            style: TextStyle(
+                              color: _isNeutralSite
+                                  ? const Color(0xFFFFCC00)
+                                  : Colors.white.withValues(alpha: 0.5),
+                              fontSize: 10,
+                              letterSpacing: 1.5,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                _FieldLabel('AWAY TEAM (Opponent)'),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: _awayController,
-                  style: const TextStyle(
-                    color: Color(0xFFFF8888),
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
+                const SizedBox(height: 8),
+                if (!_isNeutralSite)
+                  _CreatureDisplay(
+                    type: TeamDefinition.teams[_homeTeamIdx].creatureType,
+                  )
+                else
+                  _NeutralCreatureDropdown(
+                    value: _neutralCreatureType,
+                    onChanged: (t) => setState(() => _neutralCreatureType = t),
                   ),
-                  decoration: _inputDecoration('REAPERS', const Color(0xFFE53935)),
-                  textCapitalization: TextCapitalization.characters,
-                ),
               ],
             ),
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
 
-          // Creature type
-          _SettingCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _FieldLabel('CREATURE TYPE'),
-                const SizedBox(height: 10),
-                ...CreatureType.values.map(
-                  (type) => _CreatureRadio(
-                    type: type,
-                    selected: _creatureType == type,
-                    onTap: () => setState(() => _creatureType = type),
+          // Strategies side by side
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Home strategy + tactics ───────────────────────
+              Expanded(
+                child: _SettingCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _FieldLabel('HOME STRATEGY'),
+                      const SizedBox(height: 4),
+                      Text(
+                        'How your AI teammates approach the game',
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 9),
+                      ),
+                      const SizedBox(height: 10),
+                      ...AiStrategy.values.map((s) => _ChoiceRadio(
+                        emoji: s.emoji,
+                        label: s.label,
+                        description: s.description,
+                        selected: _homeStrategy == s,
+                        onTap: () => setState(() => _homeStrategy = s),
+                      )),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Container(height: 1, color: const Color(0xFF1A1A33)),
+                      ),
+                      _FieldLabel('HOME TACTICS'),
+                      const SizedBox(height: 4),
+                      Text(
+                        'How your AI teammates behave moment-to-moment',
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 9),
+                      ),
+                      const SizedBox(height: 10),
+                      ...AiTactics.values.map((t) => _ChoiceRadio(
+                        emoji: t.emoji,
+                        label: t.label,
+                        description: t.description,
+                        selected: _homeTactics == t,
+                        onTap: () => setState(() => _homeTactics = t),
+                      )),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+
+              const SizedBox(width: 12),
+
+              // ── Opponent strategy + tactics ───────────────────
+              Expanded(
+                child: _SettingCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _FieldLabel('OPPONENT STRATEGY'),
+                      const SizedBox(height: 4),
+                      Text(
+                        'The computer team\'s theory of victory',
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 9),
+                      ),
+                      const SizedBox(height: 10),
+                      ...AiStrategy.values.map((s) => _ChoiceRadio(
+                        emoji: s.emoji,
+                        label: s.label,
+                        description: s.description,
+                        selected: _aiStrategy == s,
+                        onTap: () => setState(() => _aiStrategy = s),
+                      )),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Container(height: 1, color: const Color(0xFF1A1A33)),
+                      ),
+                      _FieldLabel('OPPONENT TACTICS'),
+                      const SizedBox(height: 4),
+                      Text(
+                        'The computer team\'s moment-to-moment behavior',
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 9),
+                      ),
+                      const SizedBox(height: 10),
+                      ...AiTactics.values.map((t) => _ChoiceRadio(
+                        emoji: t.emoji,
+                        label: t.label,
+                        description: t.description,
+                        selected: _aiTactics == t,
+                        onTap: () => setState(() => _aiTactics = t),
+                      )),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
 
           const SizedBox(height: 16),
@@ -237,6 +395,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         sublabel: '1min acts',
                         selected: _fastMode,
                         onTap: () => setState(() => _fastMode = true),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // View mode
+          _SettingCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _FieldLabel('VIEW MODE'),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _SpeedButton(
+                        label: '2D',
+                        sublabel: 'Top-down',
+                        selected: _viewMode == ViewMode.flat,
+                        onTap: () => setState(() => _viewMode = ViewMode.flat),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _SpeedButton(
+                        label: '3/4',
+                        sublabel: 'Isometric',
+                        selected: _viewMode == ViewMode.threeQuarter,
+                        onTap: () => setState(() => _viewMode = ViewMode.threeQuarter),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _SpeedButton(
+                        label: '3D',
+                        sublabel: 'Perspective',
+                        selected: _viewMode == ViewMode.full3D,
+                        onTap: () => setState(() => _viewMode = ViewMode.full3D),
                       ),
                     ),
                   ],
@@ -377,8 +578,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _SectionHeader(label: 'GAME RULES'),
           const SizedBox(height: 12),
           _RosterEditor(
-            homeTeamIdx: _teamIdxFor(_homeController.text),
-            awayTeamIdx: _teamIdxFor(_awayController.text),
+            homeTeamIdx: _homeTeamIdx,
+            awayTeamIdx: _awayTeamIdx,
             homeRosterOrder: _homeRosterOrder,
             onHomeReorder: (newOrder) => setState(() => _homeRosterOrder = newOrder),
           ),
@@ -460,31 +661,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'Highest score at end of Act 5 wins the match!',
             ],
           ),
+          const _ClassesSection(),
         ],
       ),
     );
   }
 
-  InputDecoration _inputDecoration(String hint, Color accentColor) {
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: TextStyle(
-        color: Colors.white.withValues(alpha: 0.2),
-        letterSpacing: 2,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderSide: BorderSide(color: accentColor.withValues(alpha: 0.4)),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderSide: BorderSide(color: accentColor, width: 2),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      filled: true,
-      fillColor: Colors.black.withValues(alpha: 0.4),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-    );
-  }
 }
 
 class _SectionHeader extends StatelessWidget {
@@ -552,82 +734,6 @@ class _SettingCard extends StatelessWidget {
   }
 }
 
-class _CreatureRadio extends StatelessWidget {
-  final CreatureType type;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _CreatureRadio({
-    required this.type,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final (emoji, name, desc) = switch (type) {
-      CreatureType.kraken => ('🐙', 'KRAKEN', 'Slow & deadly'),
-      CreatureType.dragon => ('🐉', 'DRAGON', 'Fast & fierce'),
-      CreatureType.hydra  => ('🐍', 'HYDRA',  'Large & relentless'),
-      CreatureType.wraith => ('👻', 'WRAITH', 'Unpredictable & spectral'),
-      CreatureType.chaos  => ('💀', 'CHAOS',  'Erratic & lethal'),
-    };
-
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected
-              ? const Color(0xFF1A1A2E)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(
-            color: selected
-                ? const Color(0xFFFFCC00)
-                : const Color(0xFF333355),
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Text(emoji, style: const TextStyle(fontSize: 20)),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: TextStyle(
-                    color: selected
-                        ? const Color(0xFFFFCC00)
-                        : Colors.white.withValues(alpha: 0.7),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                    letterSpacing: 1,
-                  ),
-                ),
-                Text(
-                  desc,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.4),
-                    fontSize: 10,
-                  ),
-                ),
-              ],
-            ),
-            const Spacer(),
-            if (selected)
-              const Icon(Icons.check_circle, color: Color(0xFFFFCC00), size: 18),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _SpeedButton extends StatelessWidget {
   final String label;
   final String sublabel;
@@ -675,6 +781,252 @@ class _SpeedButton extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.35),
                 fontSize: 9,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TeamDropdown extends StatelessWidget {
+  final int selected;
+  final int excludeIdx;
+  final ValueChanged<int> onChanged;
+  final Color accentColor;
+
+  const _TeamDropdown({
+    required this.selected,
+    required this.excludeIdx,
+    required this.onChanged,
+    required this.accentColor,
+  });
+
+  static (String, String) _creatureInfo(CreatureType t) => switch (t) {
+    CreatureType.kraken => ('🐙', 'Kraken'),
+    CreatureType.dragon => ('🐉', 'Dragon'),
+    CreatureType.hydra  => ('🐍', 'Hydra'),
+    CreatureType.wraith => ('👻', 'Wraith'),
+    CreatureType.chaos  => ('⚡', 'Chaos Monster'),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: accentColor.withValues(alpha: 0.5)),
+      ),
+      child: DropdownButton<int>(
+        value: selected,
+        isExpanded: true,
+        dropdownColor: const Color(0xFF0D0D1A),
+        underline: const SizedBox(),
+        onChanged: (v) { if (v != null) onChanged(v); },
+        items: List.generate(TeamDefinition.teams.length, (i) {
+          if (i == excludeIdx) return null;
+          final team = TeamDefinition.teams[i];
+          final (emoji, _) = _creatureInfo(team.creatureType);
+          return DropdownMenuItem(
+            value: i,
+            child: Row(
+              children: [
+                Text(emoji, style: const TextStyle(fontSize: 16)),
+                const SizedBox(width: 8),
+                Text(
+                  team.name,
+                  style: TextStyle(
+                    color: accentColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    letterSpacing: 2,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).whereType<DropdownMenuItem<int>>().toList(),
+      ),
+    );
+  }
+}
+
+class _CreatureDisplay extends StatelessWidget {
+  final CreatureType type;
+  const _CreatureDisplay({required this.type});
+
+  @override
+  Widget build(BuildContext context) {
+    final (emoji, name, desc) = switch (type) {
+      CreatureType.kraken => ('🐙', 'KRAKEN',        'Slow & deadly'),
+      CreatureType.dragon => ('🐉', 'DRAGON',        'Fast & fierce'),
+      CreatureType.hydra  => ('🐍', 'HYDRA',         'Large & relentless'),
+      CreatureType.wraith => ('👻', 'WRAITH',         'Blindingly fast & ethereal'),
+      CreatureType.chaos  => ('⚡', 'CHAOS MONSTER', 'Unpredictable & terrifying'),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A2E),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: const Color(0xFF333355)),
+      ),
+      child: Row(
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 20)),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(name, style: const TextStyle(
+                color: Color(0xFFCCDDFF),
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                letterSpacing: 1,
+              )),
+              Text(desc, style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.4),
+                fontSize: 10,
+              )),
+            ],
+          ),
+          const Spacer(),
+          Text('HOME TEAM', style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.25),
+            fontSize: 8,
+            letterSpacing: 1,
+          )),
+        ],
+      ),
+    );
+  }
+}
+
+class _NeutralCreatureDropdown extends StatelessWidget {
+  final CreatureType value;
+  final ValueChanged<CreatureType> onChanged;
+  const _NeutralCreatureDropdown({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: const Color(0xFFFFCC00).withValues(alpha: 0.5)),
+      ),
+      child: DropdownButton<CreatureType>(
+        value: value,
+        isExpanded: true,
+        dropdownColor: const Color(0xFF0D0D1A),
+        underline: const SizedBox(),
+        onChanged: (v) { if (v != null) onChanged(v); },
+        items: CreatureType.values.map((t) {
+          final (emoji, name, desc) = switch (t) {
+            CreatureType.kraken => ('🐙', 'KRAKEN',        'Slow & deadly'),
+            CreatureType.dragon => ('🐉', 'DRAGON',        'Fast & fierce'),
+            CreatureType.hydra  => ('🐍', 'HYDRA',         'Large & relentless'),
+            CreatureType.wraith => ('👻', 'WRAITH',         'Blindingly fast & ethereal'),
+            CreatureType.chaos  => ('⚡', 'CHAOS MONSTER', 'Unpredictable & terrifying'),
+          };
+          return DropdownMenuItem(
+            value: t,
+            child: Row(
+              children: [
+                Text(emoji, style: const TextStyle(fontSize: 16)),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(name, style: const TextStyle(
+                      color: Color(0xFFFFCC00),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      letterSpacing: 1,
+                    )),
+                    Text(desc, style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.4),
+                      fontSize: 9,
+                    )),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class _ChoiceRadio extends StatelessWidget {
+  final String emoji;
+  final String label;
+  final String description;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ChoiceRadio({
+    required this.emoji,
+    required this.label,
+    required this.description,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF1A1A2E) : Colors.transparent,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: selected ? const Color(0xFFFFCC00) : const Color(0xFF333355),
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 18)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: selected
+                          ? const Color(0xFFFFCC00)
+                          : Colors.white.withValues(alpha: 0.7),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.4),
+                      fontSize: 9.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            AnimatedOpacity(
+              duration: const Duration(milliseconds: 150),
+              opacity: selected ? 1.0 : 0.0,
+              child: const Icon(Icons.check_circle, color: Color(0xFFFFCC00), size: 16),
             ),
           ],
         ),
@@ -867,13 +1219,7 @@ class _EditableTeamRosterState extends State<_EditableTeamRoster> {
     _ => const Color(0xFFFFCC44),
   };
 
-  static String _classBadge(int playerIdx) => switch (playerIdx % 5) {
-    0 => 'Runner',
-    1 => 'Blitzer',
-    2 => 'Enforcer',
-    3 => 'Warden',
-    _ => 'Handler',
-  };
+  static String _classBadge(int playerIdx) => _playerClass(playerIdx).displayName;
 
   static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 5) {
     0 => PlayerClass.runner,
@@ -1120,13 +1466,7 @@ class _ReadonlyTeamRosterState extends State<_ReadonlyTeamRoster> {
     _ => const Color(0xFFFFCC44),
   };
 
-  static String _classBadge(int playerIdx) => switch (playerIdx % 5) {
-    0 => 'Runner',
-    1 => 'Blitzer',
-    2 => 'Enforcer',
-    3 => 'Warden',
-    _ => 'Handler',
-  };
+  static String _classBadge(int playerIdx) => _playerClass(playerIdx).displayName;
 
   static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 5) {
     0 => PlayerClass.runner,
@@ -1329,3 +1669,302 @@ class _ReadonlyTeamRosterState extends State<_ReadonlyTeamRoster> {
   }
 }
 
+
+// ─── Classes Section ─────────────────────────────────────────────────────────
+
+class _ClassesSection extends StatelessWidget {
+  const _ClassesSection();
+
+  static const _entries = [
+    (PlayerClass.runner,   Color(0xFF44FFCC)),
+    (PlayerClass.blitzer,  Color(0xFFFF44AA)),
+    (PlayerClass.enforcer, Color(0xFFFF5544)),
+    (PlayerClass.warden,   Color(0xFF4488FF)),
+    (PlayerClass.handler,  Color(0xFFFFCC44)),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D0D1A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF222244), width: 1),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: false,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          leading: const Text('🧬', style: TextStyle(fontSize: 20)),
+          title: const Text(
+            'CLASSES',
+            style: TextStyle(
+              color: Color(0xFFCCDDFF),
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+              letterSpacing: 1.5,
+            ),
+          ),
+          iconColor: const Color(0xFFFFCC00),
+          collapsedIconColor: Color.fromRGBO(255, 255, 255, 0.4),
+          children: _entries
+              .map((e) => _ClassCard(cls: e.$1, color: e.$2))
+              .toList(),
+        ),
+      ),
+    );
+  }
+}
+
+class _ClassCard extends StatelessWidget {
+  final PlayerClass cls;
+  final Color color;
+
+  const _ClassCard({required this.cls, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final abilities    = cls.abilityNames;
+    final cooldowns    = cls.slotMaxCooldowns;
+    final descriptions = cls.abilityDescriptions;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.4), width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  cls.displayName,
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    letterSpacing: 2,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    cls.description,
+                    style: TextStyle(
+                      color: color.withValues(alpha: 0.7),
+                      fontSize: 10,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+            child: Row(
+              children: [
+                _StatPill(label: 'SPD', value: '${cls.baseSpeed.toStringAsFixed(1)} m/s', color: color),
+                const SizedBox(width: 8),
+                _StatPill(label: 'HP', value: '${cls.maxHealth.toInt()}', color: color),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _AbilityRow(label: 'BASIC',    abilities: abilities.sublist(0, 3), cooldowns: cooldowns.sublist(0, 3), descriptions: descriptions.sublist(0, 3), color: color),
+                const SizedBox(height: 4),
+                _AbilityRow(label: 'TACTICAL', abilities: abilities.sublist(3, 6), cooldowns: cooldowns.sublist(3, 6), descriptions: descriptions.sublist(3, 6), color: color),
+                const SizedBox(height: 4),
+                _AbilityRow(label: 'ADVANCED', abilities: abilities.sublist(6, 9), cooldowns: cooldowns.sublist(6, 9), descriptions: descriptions.sublist(6, 9), color: color),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFCC00).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: const Color(0xFFFFCC00).withValues(alpha: 0.5), width: 1),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '⚡ ULTRA',
+                        style: TextStyle(color: Color(0xFFFFCC00), fontSize: 10, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 90,
+                        child: Text(
+                          abilities[9],
+                          style: const TextStyle(
+                            color: Color(0xFFFFCC00),
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          descriptions[9],
+                          style: TextStyle(
+                            color: const Color(0xFFFFCC00).withValues(alpha: 0.65),
+                            fontSize: 9.5,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatPill extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _StatPill({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(3),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$label  ',
+            style: TextStyle(color: color.withValues(alpha: 0.6), fontSize: 9, letterSpacing: 1),
+          ),
+          Text(
+            value,
+            style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AbilityRow extends StatelessWidget {
+  final String label;
+  final List<String> abilities;
+  final List<double> cooldowns;
+  final List<String> descriptions;
+  final Color color;
+
+  const _AbilityRow({
+    required this.label,
+    required this.abilities,
+    required this.cooldowns,
+    required this.descriptions,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 64,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 5),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: color.withValues(alpha: 0.5),
+                fontSize: 8.5,
+                letterSpacing: 1,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+        Expanded(
+          child: Column(
+            children: List.generate(abilities.length, (i) {
+              final cd = cooldowns[i];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(3),
+                  border: Border.all(color: color.withValues(alpha: 0.2), width: 1),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 80,
+                      child: Text(
+                        abilities[i],
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.9),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        descriptions[i],
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.55),
+                          fontSize: 9.5,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                    if (cd > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: Text(
+                          '${cd}s',
+                          style: TextStyle(
+                            color: color.withValues(alpha: 0.7),
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
+          ),
+        ),
+      ],
+    );
+  }
+}

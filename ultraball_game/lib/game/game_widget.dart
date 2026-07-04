@@ -12,7 +12,6 @@ import 'systems/creature_system.dart';
 import 'systems/act_system.dart';
 import 'systems/ai_system.dart';
 import '../ui/scoreboard.dart';
-import '../ui/damage_indicator_overlay.dart';
 import '../ui/combo_display.dart';
 import '../ui/mana_bars.dart';
 import '../ui/throw_charge_bar.dart';
@@ -52,7 +51,7 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     _gs = GameState(settings: widget.settings);
     _gs.initialize();
     _fieldPainter = FieldPainter(gs: _gs, repaint: _canvasRepaint)
-      ..use3D = widget.settings.use3D;
+      ..viewMode = widget.settings.viewMode;
     // Wire up the adaptive AI policy and data collector for this game
     _gs.activePolicy = LearningAi.instance.policyFor(
       widget.settings.aiStrategy,
@@ -360,13 +359,12 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     if (event is! KeyUpEvent) return;
     _gs.pressedKeys.remove(event.logicalKey);
 
-    // F release: fire the charged throw if ball is still in hand
+    // F release: fire the charged throw if the player was charging
     if (event.logicalKey == LogicalKeyboardKey.keyF) {
       final player = _gs.selectedPlayer;
-      if (player != null && _gs.ball.holderId == player.id) {
+      if (player != null && player.isChargingThrow) {
         BallSystem.tryChargedThrow(_gs, player);
       }
-      // Always clear charging state on key release
       player?.isChargingThrow = false;
       player?.throwChargeTime = 0.0;
     }
@@ -445,14 +443,6 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
                       CustomPaint(
                         painter: _fieldPainter,
                         size: Size(constraints.maxWidth, constraints.maxHeight),
-                      ),
-
-                      // Damage indicator overlay
-                      DamageIndicatorOverlay(
-                        gs: _gs,
-                        scale: _scale,
-                        offsetX: _offsetX,
-                        offsetY: _offsetY,
                       ),
 
                       // Event message (center top)

@@ -20,6 +20,7 @@ class Ultraball {
   // 3D arc for charged throws
   double zHeight = 0.0;
   double zVelocity = 0.0;
+  double flightAge = 0.0; // seconds since this flight began
 
   // Phase line state (5 lines, indexed 0–4 at x=30,50,70,90,110 in field coords)
   List<bool> phaseLineActive = [true, true, true, true, true];

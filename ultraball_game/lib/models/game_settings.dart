@@ -1,10 +1,12 @@
 import 'creature.dart';
 import '../ai/ai_strategy.dart';
 
+enum ViewMode { flat, threeQuarter, full3D }
+
 class TeamDefinition {
   final String name;
   final CreatureType creatureType;
-  final List<String> playerNames; // 15 names: 0-4 strikers, 5-9 bruisers, 10-14 guardians
+  final List<String> playerNames; // 15 names: slots 0,5,10=SPECTRE  1,6,11=CORSAIR  2,7,12=JUGGERNAUT  3,8,13=ARCHON  4,9,14=WARDEN
 
   const TeamDefinition(this.name, this.creatureType, this.playerNames);
 
@@ -39,7 +41,7 @@ class GameSettings {
   final List<String> awayPlayerNames;
   final CreatureType creatureType;
   final bool fastMode;
-  final bool use3D;
+  final ViewMode viewMode;
   final AiStrategy homeStrategy;
   final AiTactics  homeTactics;
   final AiStrategy aiStrategy;
@@ -60,7 +62,7 @@ class GameSettings {
     List<String>? awayPlayerNames,
     required this.creatureType,
     required this.fastMode,
-    this.use3D = false,
+    this.viewMode = ViewMode.flat,
     this.homeStrategy = AiStrategy.numericalEdge,
     this.homeTactics  = AiTactics.heroBall,
     this.aiStrategy   = AiStrategy.tempoTrap,

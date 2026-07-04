@@ -56,6 +56,7 @@ class BallSystem {
 
     // Charged throw: arc physics determine landing, no horizontal drag
     if (ball.isChargedThrow) {
+      ball.flightAge += dt;
       ball.zVelocity -= throwBallGravity * dt;
       ball.zHeight += ball.zVelocity * dt;
 
@@ -98,6 +99,8 @@ class BallSystem {
     bool caught = false;
     for (final p in gs.fieldPlayers) {
       if (!p.isAlive || p.isStunned) continue;
+      // Charged throw: block all catches for first 0.2s (prevents thrower self-catch on short arcs)
+      if (ball.isChargedThrow && ball.flightAge < 0.2) continue;
       // Airborne ball can't be caught until it's nearly grounded
       if (ball.isChargedThrow && ball.zHeight > 1.5) continue;
       final dx = p.x - ball.x;
@@ -376,8 +379,9 @@ class BallSystem {
 
     ball.velX = math.cos(thrower.facing) * throwHorizontalSpeed;
     ball.velY = math.sin(thrower.facing) * throwHorizontalSpeed;
-    ball.zHeight = 0.001; // ensure zHeight > 0 this frame
+    ball.zHeight = 0.001;
     ball.zVelocity = initVZ;
+    ball.flightAge = 0.0;
     ball.holderId = null;
     ball.isInFlight = true;
     ball.isChargedThrow = true;

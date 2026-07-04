@@ -39,7 +39,7 @@ class AiSystem {
 
     // Pre-sort opponents by distance to holder for defense ranking
     final holderForSort = gs.getPlayerById(ball.holderId ?? '');
-    List<String>? defenseRankIds;
+    Map<String, int>? defenseRankMap;
     if (ball.possessingTeamId != 'opponent' && holderForSort != null) {
       final sorted = opponents.toList()
         ..sort((a, b) {
@@ -47,7 +47,7 @@ class AiSystem {
           final bx = (b.x - holderForSort.x).abs() + (b.y - holderForSort.y).abs();
           return ax.compareTo(bx);
         });
-      defenseRankIds = [for (final p in sorted) p.id];
+      defenseRankMap = {for (int i = 0; i < sorted.length; i++) sorted[i].id: i};
     }
 
     // Count defenders threatening the opponent's ball holder (pressure)
@@ -111,7 +111,7 @@ class AiSystem {
 
       } else {
         // ── Player has ball — defend ──
-        final myRank = defenseRankIds?.indexOf(opp.id) ?? 0;
+        final myRank = defenseRankMap?[opp.id] ?? 0;
         _opponentDefenseBehavior(opp, gs, avoid, myRank, opponents, playerTeam,
             policy, tactics, strategy, focusTarget);
       }
@@ -165,15 +165,14 @@ class AiSystem {
 
       // Count defenders near the receiver and find closest
       int nearDefs = 0;
-      double closestDefDist = double.infinity;
+      double closestDefDistSq = double.infinity;
       for (final d in defenders) {
         if (!d.isAlive || d.isStunned) continue;
         final dx = d.x - tm.x;
         final dy = d.y - tm.y;
         final dSq = dx * dx + dy * dy;
         if (dSq < 25.0) nearDefs++;  // 5 m guard radius
-        final dist = math.sqrt(dSq);
-        if (dist < closestDefDist) closestDefDist = dist;
+        if (dSq < closestDefDistSq) closestDefDistSq = dSq;
       }
 
       // Allow one nearby defender when charge is dangerous
@@ -181,7 +180,7 @@ class AiSystem {
       if (nearDefs > maxDefs) continue;
 
       final advanceScore  = tm.x - opp.x;
-      final opennessScore = (closestDefDist / 10.0).clamp(0.0, 2.0);
+      final opennessScore = (math.sqrt(closestDefDistSq) / 10.0).clamp(0.0, 2.0);
       final score = advanceScore + opennessScore;
       if (score > bestScore) {
         bestScore = score;
@@ -320,7 +319,7 @@ class AiSystem {
       targetX = (targetX + holder.x) / 2.0;
     }
 
-    _moveToward(opp, targetX.clamp(20.0, 138.0), targetY.clamp(2.0, 38.0), avoid);
+    _moveToward(opp, targetX.clamp(22.0, 138.0), targetY.clamp(2.0, 38.0), avoid);
   }
 
   // ── Opponent defense ─────────────────────────────────────────────────────
@@ -425,7 +424,7 @@ class AiSystem {
 
     // Pre-sort friendlies by distance to opponent holder for defense ranking
     final oppHolder = gs.getPlayerById(ball.holderId ?? '');
-    List<String> friendlyDefenseRank = [];
+    Map<String, int> friendlyDefenseRankMap = {};
     if (ball.possessingTeamId == 'opponent' && oppHolder != null) {
       final sorted = players.toList()
         ..sort((a, b) {
@@ -433,7 +432,7 @@ class AiSystem {
           final bx = (b.x - oppHolder.x).abs() + (b.y - oppHolder.y).abs();
           return ax.compareTo(bx);
         });
-      friendlyDefenseRank = [for (final p in sorted) p.id];
+      friendlyDefenseRankMap = {for (int i = 0; i < sorted.length; i++) sorted[i].id: i};
     }
 
     // Hero Ball: pre-select weakest opponent to focus-fire for protection
@@ -478,7 +477,7 @@ class AiSystem {
       } else {
         // Opponent has ball — defend
         if (oppHolder != null) {
-          final myRank = friendlyDefenseRank.indexOf(p.id);
+          final myRank = friendlyDefenseRankMap[p.id] ?? 0;
           _friendlyDefenseBehavior(
               p, gs, avoid, myRank, oppHolder, players, opponents, tactics);
         }
@@ -530,22 +529,21 @@ class AiSystem {
       if (tm.x > p.x - (chargeDanger ? -5.0 : 3.0)) continue;
 
       int nearOpp = 0;
-      double closestOppDist = double.infinity;
+      double closestOppDistSq = double.infinity;
       for (final o in opponents) {
         if (!o.isAlive || o.isStunned) continue;
         final dx = o.x - tm.x;
         final dy = o.y - tm.y;
         final dSq = dx * dx + dy * dy;
         if (dSq < 25.0) nearOpp++;
-        final d = math.sqrt(dSq);
-        if (d < closestOppDist) closestOppDist = d;
+        if (dSq < closestOppDistSq) closestOppDistSq = dSq;
       }
       final maxNear = chargeDanger ? 1 : 0;
       if (nearOpp > maxNear) continue;
 
       // Higher score = more advanced + more open
       final advanceScore  = p.x - tm.x;
-      final opennessScore = (closestOppDist / 10.0).clamp(0.0, 2.0);
+      final opennessScore = (math.sqrt(closestOppDistSq) / 10.0).clamp(0.0, 2.0);
       final score = advanceScore + opennessScore;
       if (score > bestScore) {
         bestScore = score;
@@ -739,7 +737,11 @@ class AiSystem {
 
     // Predict where the target will be when ball arrives
     final flightTime = dist / BallSystem.ballSpeed;
-    final predX = (target.x + target.velX * flightTime).clamp(0.0, 140.0);
+    final rawPredX = (target.x + target.velX * flightTime).clamp(0.0, 140.0);
+    // Clamp so passes never land inside the thrower's own scoring endzone
+    final predX = thrower.team == Team.opponent
+        ? rawPredX.clamp(22.0, 140.0)
+        : rawPredX.clamp(0.0, 118.0);
     final predY = (target.y + target.velY * flightTime).clamp(0.0, 40.0);
 
     BallSystem.tryPass(gs, thrower, predX, predY, false);

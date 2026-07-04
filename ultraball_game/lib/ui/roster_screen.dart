@@ -444,13 +444,7 @@ class _RosterScreenState extends State<RosterScreen> {
     );
   }
 
-  String _classBadge(PlayerClass cls) => switch (cls) {
-    PlayerClass.runner   => 'Runner',
-    PlayerClass.enforcer => 'Enforcer',
-    PlayerClass.warden   => 'Warden',
-    PlayerClass.handler  => 'Handler',
-    PlayerClass.blitzer  => 'Blitzer',
-  };
+  String _classBadge(PlayerClass cls) => cls.displayName;
 
   Color _classBadgeColor(PlayerClass cls) => switch (cls) {
     PlayerClass.runner   => const Color(0xFF44FFCC),

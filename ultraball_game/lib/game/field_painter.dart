@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../models/player.dart';
 import '../models/ultraball.dart';
 import '../models/creature.dart';
+import '../models/damage_indicator.dart';
+import '../models/game_settings.dart';
 import 'game_state.dart';
 import 'camera_3d.dart';
 
@@ -17,8 +19,8 @@ class FieldPainter extends CustomPainter {
   double offsetX = 0;
   double offsetY = 0;
 
-  // 3D mode
-  bool use3D = false;
+  // View mode
+  ViewMode viewMode = ViewMode.flat;
   final Camera3D _camera3D = Camera3D();
   Size _last3DSize = Size.zero;
 
@@ -211,7 +213,8 @@ class FieldPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (use3D) { _paint3D(canvas, size); return; }
+    if (viewMode == ViewMode.threeQuarter) { _paint3D(canvas, size); return; }
+    if (viewMode == ViewMode.full3D) { _paintFull3D(canvas, size); return; }
 
     // 1. Background
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), _bgPaint);
@@ -254,6 +257,49 @@ class FieldPainter extends CustomPainter {
 
     // 12. Ball
     _drawBall(canvas);
+
+    // 13. Damage indicators
+    _drawDamageIndicators(canvas);
+  }
+
+  void _drawDamageIndicators(Canvas canvas) {
+    if (gs.indicators.isEmpty) return;
+    for (final ind in gs.indicators) {
+      final screenX = ind.worldX * scale + offsetX + ind.xJitter * scale;
+      final screenY = ind.worldY * scale + offsetY - ind.progress * 60;
+      final opacity = (1.0 - ind.progress * ind.progress).clamp(0.0, 1.0);
+
+      final (Color baseColor, double fontSize, bool hasShadow) = switch (ind.type) {
+        IndicatorType.damage => (const Color(0xFFFFFF44), 14.0, false),
+        IndicatorType.kill   => (const Color(0xFFFF2222), 18.0, true),
+        IndicatorType.heal   => (const Color(0xFF44FF88), 14.0, false),
+        IndicatorType.combo  => (const Color(0xFFFFAA00), 22.0, true),
+        IndicatorType.event  => (const Color(0xFFFFFFFF), 15.0, true),
+      };
+
+      final tp = TextPainter(
+        text: TextSpan(
+          text: ind.text,
+          style: TextStyle(
+            color: baseColor.withValues(alpha: opacity),
+            fontSize: fontSize,
+            fontWeight: FontWeight.bold,
+            shadows: hasShadow
+                ? [
+                    Shadow(
+                      color: Colors.black.withValues(alpha: opacity * 0.8),
+                      blurRadius: 4,
+                      offset: const Offset(1, 1),
+                    ),
+                  ]
+                : null,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      tp.paint(canvas, Offset(screenX - tp.width / 2, screenY - fontSize / 2));
+    }
   }
 
   // ---- Drawing helpers ----
@@ -748,6 +794,12 @@ class FieldPainter extends CustomPainter {
   // 3D rendering
   // ====================================================================
 
+  // Full 3D mode — rendering to be implemented.
+  // Currently falls through to the 3/4 view as a placeholder.
+  void _paintFull3D(Canvas canvas, Size size) {
+    _paint3D(canvas, size);
+  }
+
   void _paint3D(Canvas canvas, Size size) {
     if (_last3DSize != size) {
       _camera3D.update(size);
@@ -772,6 +824,90 @@ class FieldPainter extends CustomPainter {
     _draw3DFieldOutline(canvas);
     _draw3DPhaseLines(canvas);
     _draw3DEntities(canvas);
+    _draw3DThrowArcPreview(canvas);
+    _drawDamageIndicators(canvas);
+  }
+
+  void _draw3DThrowArcPreview(Canvas canvas) {
+    final player = gs.selectedPlayer;
+    if (player == null || !player.isChargingThrow) return;
+    if (gs.ball.holderId != player.id) return;
+
+    const hSpeed  = 20.0;
+    const gravity = 20.0;
+    const zScale  = 1.2; // matches _draw3DPlayer / _draw3DBall lift
+    final dist       = player.throwDistance;
+    final flightTime = dist / hSpeed;
+    final initVZ     = 0.5 * gravity * flightTime;
+    const steps      = 24;
+
+    _sp
+      ..color     = const Color(0xFFFFDD00).withValues(alpha: 0.75)
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round;
+
+    final shadowPaint = Paint()
+      ..style      = PaintingStyle.stroke
+      ..color      = const Color(0xFFFFDD00).withValues(alpha: 0.22)
+      ..strokeWidth = 1.5
+      ..strokeCap  = StrokeCap.round;
+
+    final dotPaint = Paint()
+      ..color = const Color(0xFFFFDD00).withValues(alpha: 0.9)
+      ..style = PaintingStyle.fill;
+
+    Offset? prevArc;
+    Offset? prevGround;
+
+    for (int i = 1; i <= steps; i++) {
+      final t     = (i / steps) * flightTime;
+      final tPrev = ((i - 1) / steps) * flightTime;
+
+      final wx = player.x + math.cos(player.facing) * hSpeed * t;
+      final wy = player.y + math.sin(player.facing) * hSpeed * t;
+      final wz = (initVZ * t - 0.5 * gravity * t * t).clamp(0.0, double.infinity);
+
+      final wxPrev = player.x + math.cos(player.facing) * hSpeed * tPrev;
+      final wyPrev = player.y + math.sin(player.facing) * hSpeed * tPrev;
+      final wzPrev = (initVZ * tPrev - 0.5 * gravity * tPrev * tPrev).clamp(0.0, double.infinity);
+
+      final arcPos     = _camera3D.project(wx, wy, wz * zScale);
+      final groundPos  = _camera3D.project(wx, wy, 0);
+      final arcPosPrev = prevArc    ?? _camera3D.project(wxPrev, wyPrev, wzPrev * zScale);
+      final gndPosPrev = prevGround ?? _camera3D.project(wxPrev, wyPrev, 0);
+
+      if (arcPos != null && arcPosPrev != null && i % 2 == 0) {
+        canvas.drawLine(arcPosPrev, arcPos, _sp);
+      }
+      if (groundPos != null && gndPosPrev != null && i % 2 == 0) {
+        canvas.drawLine(gndPosPrev, groundPos, shadowPaint);
+      }
+      if (arcPos != null && i % 6 == 0) {
+        canvas.drawCircle(arcPos, 3.0, dotPaint);
+      }
+
+      prevArc    = arcPos;
+      prevGround = groundPos;
+    }
+
+    // Landing X marker
+    final landWx = player.x + math.cos(player.facing) * dist;
+    final landWy = player.y + math.sin(player.facing) * dist;
+    final landPos = _camera3D.project(landWx, landWy, 0);
+    if (landPos != null) {
+      _sp
+        ..color     = const Color(0xFFFFDD00).withValues(alpha: 0.9)
+        ..strokeWidth = 2.0
+        ..strokeCap = StrokeCap.round;
+      const xs = 6.0;
+      canvas.drawLine(Offset(landPos.dx - xs, landPos.dy - xs),
+                      Offset(landPos.dx + xs, landPos.dy + xs), _sp);
+      canvas.drawLine(Offset(landPos.dx + xs, landPos.dy - xs),
+                      Offset(landPos.dx - xs, landPos.dy + xs), _sp);
+
+      final distTp = _getDistTp(dist);
+      distTp.paint(canvas, Offset(landPos.dx - distTp.width / 2, landPos.dy + xs + 2));
+    }
   }
 
   void _draw3DQuad(Canvas canvas, double x0, double y0, double x1, double y1, Paint paint) {
@@ -1061,5 +1197,5 @@ class FieldPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(FieldPainter old) => true;
+  bool shouldRepaint(FieldPainter old) => false;
 }

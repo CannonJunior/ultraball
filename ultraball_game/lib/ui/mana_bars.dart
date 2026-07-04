@@ -264,7 +264,7 @@ class ManaBars extends StatelessWidget {
             ],
           ),
 
-          if (gs.ball.holderId == player.id) ...[
+          if (gs.ball.isHeld) ...[
             const SizedBox(height: 4),
             _ChargeBar(chargePercent: gs.ball.chargePercent),
           ],
