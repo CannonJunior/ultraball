@@ -36,6 +36,7 @@ class Creature {
   ChaosAction get telegraphAction => _nextAction;
   final List<double> chaosRings = []; // each value 0..1 = expansion progress
   double _ringSpawnTimer = 0.0;
+  double reversedTimer = 0.0;
 
   static const double _chaosMinY = -2.0;
   static const double _chaosMaxY = 42.0;
@@ -73,9 +74,21 @@ class Creature {
     }
   }
 
+  void reverseDirection(double duration) {
+    reversedTimer = duration;
+    // Chaos: flip direction on cast; _updateChaos re-flips when timer expires
+    if (type == CreatureType.chaos) _chaosDir = -_chaosDir;
+  }
+
   void _updateNormal(double dt) {
-    pathProgress += (speed / _perimeter) * dt;
-    if (pathProgress >= 1.0) pathProgress -= 1.0;
+    if (reversedTimer > 0) {
+      reversedTimer -= dt;
+      pathProgress -= (speed / _perimeter) * dt;
+      if (pathProgress < 0.0) pathProgress += 1.0;
+    } else {
+      pathProgress += (speed / _perimeter) * dt;
+      if (pathProgress >= 1.0) pathProgress -= 1.0;
+    }
     final p = pathProgress * _perimeter;
     if (p < _topLen) {
       x = _mr - p;
@@ -93,6 +106,11 @@ class Creature {
   }
 
   void _updateChaos(double dt) {
+    if (reversedTimer > 0) {
+      reversedTimer -= dt;
+      // Timer just expired: flip _chaosDir back to cancel the reversal
+      if (reversedTimer <= 0) _chaosDir = -_chaosDir;
+    }
     // Advance and cull ring animations
     for (int i = chaosRings.length - 1; i >= 0; i--) {
       chaosRings[i] += dt * 0.65;

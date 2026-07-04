@@ -1,12 +1,15 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:vector_math/vector_math.dart' show Vector3;
 import '../models/player.dart';
 import '../models/ultraball.dart';
 import '../models/creature.dart';
 import '../models/damage_indicator.dart';
 import '../models/game_settings.dart';
+import '../models/terrain_grid.dart';
 import 'game_state.dart';
 import 'camera_3d.dart';
+import '../game3d/ultraball_render_system.dart';
 
 /// Long-lived CustomPainter — stored on _GameWidgetState and reused every
 /// frame.  All Paint, Path, and TextPainter instances live here; nothing is
@@ -23,6 +26,9 @@ class FieldPainter extends CustomPainter {
   ViewMode viewMode = ViewMode.flat;
   final Camera3D _camera3D = Camera3D();
   Size _last3DSize = Size.zero;
+
+  // Set by GameWidget after renderer init (full3D mode only)
+  UltraballRenderSystem? renderSystem;
 
   FieldPainter({required this.gs, required Listenable repaint})
       : super(repaint: repaint);
@@ -70,11 +76,32 @@ class FieldPainter extends CustomPainter {
   final Paint _fp = Paint()..style = PaintingStyle.fill;
   // _gp: glow/blur operations — always resets maskFilter after use
   final Paint _gp = Paint()..style = PaintingStyle.fill;
+  // Throw-arc preview — allocated once, mutated before each use
+  final Paint _arcShadowPaint = Paint()
+    ..style      = PaintingStyle.stroke
+    ..color      = const Color(0x38FFDD00)   // 0.22 alpha
+    ..strokeWidth = 1.5
+    ..strokeCap  = StrokeCap.round;
+  final Paint _arcDotPaint = Paint()
+    ..style = PaintingStyle.fill
+    ..color = const Color(0xE6FFDD00);       // 0.90 alpha
 
   // ====================================================================
   // Reusable Path — reset before each use via ..reset()
   // ====================================================================
   final Path _path = Path();
+
+  // ====================================================================
+  // Depth-sort buffer — reused every frame instead of allocating new list
+  // ====================================================================
+  final List<(double, void Function())> _depthItems = [];
+
+  // ====================================================================
+  // Damage indicator TextPainter cache — keyed by indicator instance,
+  // layout runs once on first encounter; saveLayer provides per-frame opacity
+  // ====================================================================
+  final Expando<TextPainter> _indicatorTp = Expando();
+  final Paint _indicatorLayerPaint = Paint();
 
   // ====================================================================
   // Phase line dash-path cache (per screen layout)
@@ -241,25 +268,175 @@ class FieldPainter extends CustomPainter {
     _drawCreatureConnectingStrips(canvas);
 
     // 7. Phase lines
-    _drawPhaseLines(canvas);
+    if (gs.prefs.showPhaseLines) _drawPhaseLines(canvas);
 
     // 8. Field markings
     _drawFieldMarkings(canvas);
 
+    // 8b. Terrain overlays (hills, pits, hazards)
+    _drawTerrainOverlay(canvas);
+
     // 9. Creature
     _drawCreature(canvas);
+
+    // 9b. Trickster traps
+    _drawTricksterTraps(canvas);
 
     // 10. Players
     _drawPlayers(canvas);
 
+    // 10b. Status effects (hex, confusion rings)
+    _drawStatusEffects(canvas);
+
     // 11. Throw arc preview
     _drawThrowArcPreview(canvas);
+
+    // 11b. Terrain aim reticle
+    _drawTerrainAimReticle(canvas);
 
     // 12. Ball
     _drawBall(canvas);
 
     // 13. Damage indicators
-    _drawDamageIndicators(canvas);
+    if (gs.prefs.showDamageIndicators) _drawDamageIndicators(canvas);
+  }
+
+  void _drawTerrainOverlay(Canvas canvas) {
+    gs.terrain.forEach((col, row, cell) {
+      if (cell.surface == SurfaceType.normal && !cell.isPit && cell.height == 0.0) return;
+
+      final wx = col * kCellW;
+      final wy = row * kCellH;
+      final rect = Rect.fromLTWH(sx(wx), sy(wy), sm(kCellW), sm(kCellH));
+
+      Color? fillColor;
+      if (cell.isPit) {
+        fillColor = const Color(0xCC000000);
+      } else if (cell.surface == SurfaceType.lava) {
+        fillColor = const Color(0xBBFF4400);
+      } else if (cell.surface == SurfaceType.ice) {
+        fillColor = const Color(0x6688DDFF);
+      } else if (cell.surface == SurfaceType.mud) {
+        fillColor = const Color(0x99664422);
+      } else if (cell.height > 0.5) {
+        // Hill: shade by height
+        final t = (cell.height / 4.0).clamp(0.0, 1.0);
+        final alpha = (t * 180).toInt();
+        fillColor = Color.fromARGB(alpha, 100, 200, 80);
+      } else if (cell.height < -0.5) {
+        final t = (-cell.height / 3.0).clamp(0.0, 1.0);
+        final alpha = (t * 180).toInt();
+        fillColor = Color.fromARGB(alpha, 0, 0, 0);
+      }
+
+      if (fillColor != null) {
+        _fp.color = fillColor;
+        canvas.drawRect(rect, _fp);
+      }
+    });
+  }
+
+  void _drawTricksterTraps(Canvas canvas) {
+    for (final trap in gs.tricksterTraps) {
+      if (trap.triggered) continue;
+      final tx = sx(trap.worldX), ty = sy(trap.worldY);
+      final r = sm(trap.radius);
+      final pulse = (trap.timer * 3.0) % 1.0; // pulsing effect
+      final alpha = 0.3 + pulse * 0.3;
+      _fp.color = Color.fromRGBO(180, 0, 255, alpha);
+      canvas.drawCircle(Offset(tx, ty), r, _fp);
+      _sp.color = const Color(0xAADD44FF);
+      _sp.strokeWidth = 1.5;
+      canvas.drawCircle(Offset(tx, ty), r, _sp);
+    }
+  }
+
+  void _drawStatusEffects(Canvas canvas) {
+    for (final p in gs.fieldPlayers) {
+      if (!p.isAlive) continue;
+      if (p.confusedTimer > 0) {
+        final pulse = (p.confusedTimer * 4.0) % 1.0;
+        _sp.color = Color.fromRGBO(200, 100, 255, 0.4 + pulse * 0.4);
+        _sp.strokeWidth = 2.0;
+        canvas.drawCircle(Offset(sx(p.x), sy(p.y)), sm(1.2 + pulse * 0.3), _sp);
+      }
+      if (p.hexedTimer > 0) {
+        _sp.color = const Color(0x88FF6600);
+        _sp.strokeWidth = 1.5;
+        canvas.drawCircle(Offset(sx(p.x), sy(p.y)), sm(0.9), _sp);
+      }
+    }
+  }
+
+  void _drawTerrainAimReticle(Canvas canvas) {
+    if (!gs.isAimingTerrain) return;
+    final player = gs.selectedPlayer;
+    if (player == null) return;
+
+    final tx = (player.x + math.cos(player.facing) * GameState.terrainAimRange)
+        .clamp(0.0, 140.0);
+    final ty = (player.y + math.sin(player.facing) * GameState.terrainAimRange)
+        .clamp(0.0, 40.0);
+
+    // Draw reticle circle
+    final isPit = gs.terrainAimEventType?.name == 'openPit';
+    final reticleColor = isPit ? const Color(0xAAFF0000) : const Color(0xAA44FF88);
+    final radius = sm(isPit ? 4.0 : 5.0);
+
+    _sp.color = reticleColor;
+    _sp.strokeWidth = 2.0;
+    canvas.drawCircle(Offset(sx(tx), sy(ty)), radius, _sp);
+
+    // Cross-hair lines
+    canvas.drawLine(
+      Offset(sx(tx) - radius, sy(ty)), Offset(sx(tx) + radius, sy(ty)), _sp);
+    canvas.drawLine(
+      Offset(sx(tx), sy(ty) - radius), Offset(sx(tx), sy(ty) + radius), _sp);
+
+    // Range line from player to target
+    _sp.color = reticleColor.withValues(alpha: 0.4);
+    _sp.strokeWidth = 1.0;
+    canvas.drawLine(Offset(sx(player.x), sy(player.y)), Offset(sx(tx), sy(ty)), _sp);
+  }
+
+  // Returns the font size for a given indicator type — used for vertical centering.
+  static double _indicatorFontSize(IndicatorType type) => switch (type) {
+    IndicatorType.damage => 14.0,
+    IndicatorType.kill   => 18.0,
+    IndicatorType.heal   => 14.0,
+    IndicatorType.combo  => 22.0,
+    IndicatorType.event  => 15.0,
+  };
+
+  // Builds and caches a full-opacity TextPainter for the indicator.
+  // Layout runs once; opacity is applied later via canvas.saveLayer.
+  TextPainter _getOrBuildIndicatorTp(DamageIndicator ind) {
+    final existing = _indicatorTp[ind];
+    if (existing != null) return existing;
+
+    final (Color baseColor, double fontSize, bool hasShadow) = switch (ind.type) {
+      IndicatorType.damage => (const Color(0xFFFFFF44), 14.0, false),
+      IndicatorType.kill   => (const Color(0xFFFF2222), 18.0, true),
+      IndicatorType.heal   => (const Color(0xFF44FF88), 14.0, false),
+      IndicatorType.combo  => (const Color(0xFFFFAA00), 22.0, true),
+      IndicatorType.event  => (const Color(0xFFFFFFFF), 15.0, true),
+    };
+    final tp = TextPainter(
+      text: TextSpan(
+        text: ind.text,
+        style: TextStyle(
+          color: baseColor,
+          fontSize: fontSize,
+          fontWeight: FontWeight.bold,
+          shadows: hasShadow
+              ? const [Shadow(color: Color(0x99000000), blurRadius: 4, offset: Offset(1, 1))]
+              : null,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    _indicatorTp[ind] = tp;
+    return tp;
   }
 
   void _drawDamageIndicators(Canvas canvas) {
@@ -269,36 +446,20 @@ class FieldPainter extends CustomPainter {
       final screenY = ind.worldY * scale + offsetY - ind.progress * 60;
       final opacity = (1.0 - ind.progress * ind.progress).clamp(0.0, 1.0);
 
-      final (Color baseColor, double fontSize, bool hasShadow) = switch (ind.type) {
-        IndicatorType.damage => (const Color(0xFFFFFF44), 14.0, false),
-        IndicatorType.kill   => (const Color(0xFFFF2222), 18.0, true),
-        IndicatorType.heal   => (const Color(0xFF44FF88), 14.0, false),
-        IndicatorType.combo  => (const Color(0xFFFFAA00), 22.0, true),
-        IndicatorType.event  => (const Color(0xFFFFFFFF), 15.0, true),
-      };
+      final tp = _getOrBuildIndicatorTp(ind);
+      final fontSize = _indicatorFontSize(ind.type);
 
-      final tp = TextPainter(
-        text: TextSpan(
-          text: ind.text,
-          style: TextStyle(
-            color: baseColor.withValues(alpha: opacity),
-            fontSize: fontSize,
-            fontWeight: FontWeight.bold,
-            shadows: hasShadow
-                ? [
-                    Shadow(
-                      color: Colors.black.withValues(alpha: opacity * 0.8),
-                      blurRadius: 4,
-                      offset: const Offset(1, 1),
-                    ),
-                  ]
-                : null,
-          ),
+      _indicatorLayerPaint.color = Color.fromRGBO(255, 255, 255, opacity);
+      canvas.saveLayer(
+        Rect.fromCenter(
+          center: Offset(screenX, screenY),
+          width: tp.width + 20,
+          height: tp.height + 20,
         ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-
+        _indicatorLayerPaint,
+      );
       tp.paint(canvas, Offset(screenX - tp.width / 2, screenY - fontSize / 2));
+      canvas.restore();
     }
   }
 
@@ -547,11 +708,13 @@ class FieldPainter extends CustomPainter {
     }
 
     // Player number
-    final numTp = _getPlayerNumTp(p.rosterIndex);
-    numTp.paint(canvas, Offset(pos.dx - numTp.width / 2, pos.dy - numTp.height / 2));
+    if (gs.prefs.showPlayerNumbers) {
+      final numTp = _getPlayerNumTp(p.rosterIndex);
+      numTp.paint(canvas, Offset(pos.dx - numTp.width / 2, pos.dy - numTp.height / 2));
+    }
 
     // Health bar
-    _drawHealthBar(canvas, p, pos, r);
+    if (gs.prefs.showHpBars) _drawHealthBar(canvas, p, pos, r);
   }
 
   void _drawFacingIndicator(Canvas canvas, UltraballPlayer p, Offset center, double r) {
@@ -630,22 +793,10 @@ class FieldPainter extends CustomPainter {
     final initVZ     = 0.5 * gravity * flightTime;
     const steps      = 24;
 
-    // Arc paint (reuse _sp; shadow needs its own local because both are
-    // needed in the same loop iteration)
     _sp
-      ..color     = const Color(0xFFFFDD00).withValues(alpha: 0.75)
+      ..color     = const Color(0xBFFFDD00)   // 0.75 alpha
       ..strokeWidth = 2.0
       ..strokeCap = StrokeCap.round;
-
-    final shadowPaint = Paint()
-      ..style      = PaintingStyle.stroke
-      ..color      = const Color(0xFFFFDD00).withValues(alpha: 0.22)
-      ..strokeWidth = 1.5
-      ..strokeCap  = StrokeCap.round;
-
-    final dotPaint = Paint()
-      ..color = const Color(0xFFFFDD00).withValues(alpha: 0.9)
-      ..style = PaintingStyle.fill;
 
     Offset? prevArc;
     Offset? prevGround;
@@ -671,11 +822,11 @@ class FieldPainter extends CustomPainter {
 
       if (i % 2 == 0) {
         canvas.drawLine(arcPosPrev, arcPos, _sp);
-        canvas.drawLine(groundPosPrev, groundPos, shadowPaint);
+        canvas.drawLine(groundPosPrev, groundPos, _arcShadowPaint);
       }
 
       if (i % 6 == 0) {
-        canvas.drawCircle(arcPos, 3.0, dotPaint);
+        canvas.drawCircle(arcPos, 3.0, _arcDotPaint);
       }
 
       prevArc    = arcPos;
@@ -794,10 +945,48 @@ class FieldPainter extends CustomPainter {
   // 3D rendering
   // ====================================================================
 
-  // Full 3D mode — rendering to be implemented.
-  // Currently falls through to the 3/4 view as a placeholder.
+  // Full 3D mode: delegates to WebGL render system, then overlays 2D indicators.
+  // Falls through to 3/4 view while the renderer is warming up (first frame).
   void _paintFull3D(Canvas canvas, Size size) {
-    _paint3D(canvas, size);
+    final rs = renderSystem;
+    if (rs == null || !rs.ready) {
+      _paint3D(canvas, size);
+      return;
+    }
+    // WebGL draw calls go to the body-appended canvas (not this Flutter canvas).
+    rs.render(gs, size);
+    // 2D damage indicators float up from their world positions.
+    if (gs.prefs.showDamageIndicators) _drawDamageIndicators3D(canvas, size, rs);
+  }
+
+  void _drawDamageIndicators3D(
+      Canvas canvas, Size size, UltraballRenderSystem rs) {
+    if (gs.indicators.isEmpty) return;
+    for (final ind in gs.indicators) {
+      // Rise 3 world units over indicator lifetime
+      final worldY    = ind.progress * 3.0;
+      final projected = rs.project(
+        Vector3(ind.worldX + ind.xJitter, worldY, ind.worldY),
+        size,
+      );
+      if (projected == null) continue;
+
+      final opacity  = (1.0 - ind.progress * ind.progress).clamp(0.0, 1.0);
+      final tp       = _getOrBuildIndicatorTp(ind);
+      final fontSize = _indicatorFontSize(ind.type);
+
+      _indicatorLayerPaint.color = Color.fromRGBO(255, 255, 255, opacity);
+      canvas.saveLayer(
+        Rect.fromCenter(
+          center: Offset(projected.dx, projected.dy),
+          width: tp.width + 20,
+          height: tp.height + 20,
+        ),
+        _indicatorLayerPaint,
+      );
+      tp.paint(canvas, Offset(projected.dx - tp.width / 2, projected.dy - fontSize / 2));
+      canvas.restore();
+    }
   }
 
   void _paint3D(Canvas canvas, Size size) {
@@ -822,10 +1011,10 @@ class FieldPainter extends CustomPainter {
     _draw3DQuad(canvas, 30, 40, 110, 45, _channelPaint);
 
     _draw3DFieldOutline(canvas);
-    _draw3DPhaseLines(canvas);
+    if (gs.prefs.showPhaseLines) _draw3DPhaseLines(canvas);
     _draw3DEntities(canvas);
     _draw3DThrowArcPreview(canvas);
-    _drawDamageIndicators(canvas);
+    if (gs.prefs.showDamageIndicators) _drawDamageIndicators(canvas);
   }
 
   void _draw3DThrowArcPreview(Canvas canvas) {
@@ -842,19 +1031,9 @@ class FieldPainter extends CustomPainter {
     const steps      = 24;
 
     _sp
-      ..color     = const Color(0xFFFFDD00).withValues(alpha: 0.75)
+      ..color     = const Color(0xBFFFDD00)   // 0.75 alpha
       ..strokeWidth = 2.0
       ..strokeCap = StrokeCap.round;
-
-    final shadowPaint = Paint()
-      ..style      = PaintingStyle.stroke
-      ..color      = const Color(0xFFFFDD00).withValues(alpha: 0.22)
-      ..strokeWidth = 1.5
-      ..strokeCap  = StrokeCap.round;
-
-    final dotPaint = Paint()
-      ..color = const Color(0xFFFFDD00).withValues(alpha: 0.9)
-      ..style = PaintingStyle.fill;
 
     Offset? prevArc;
     Offset? prevGround;
@@ -880,10 +1059,10 @@ class FieldPainter extends CustomPainter {
         canvas.drawLine(arcPosPrev, arcPos, _sp);
       }
       if (groundPos != null && gndPosPrev != null && i % 2 == 0) {
-        canvas.drawLine(gndPosPrev, groundPos, shadowPaint);
+        canvas.drawLine(gndPosPrev, groundPos, _arcShadowPaint);
       }
       if (arcPos != null && i % 6 == 0) {
-        canvas.drawCircle(arcPos, 3.0, dotPaint);
+        canvas.drawCircle(arcPos, 3.0, _arcDotPaint);
       }
 
       prevArc    = arcPos;
@@ -987,7 +1166,7 @@ class FieldPainter extends CustomPainter {
   }
 
   void _draw3DEntities(Canvas canvas) {
-    final List<(double, void Function())> items = [];
+    final items = _depthItems..clear();
 
     // Creature
     final cr = gs.creature;
@@ -1006,19 +1185,20 @@ class FieldPainter extends CustomPainter {
       items.add((cw, () => _draw3DPlayer(canvas, pl, pos, cw)));
     }
 
-    // Ball
+    // Sort farthest first (largest cw = furthest from camera)
+    items.sort((a, b) => b.$1.compareTo(a.$1));
+    for (final (_, draw) in items) { draw(); }
+
+    // Ball drawn last — always on top of every player body so the charge arc
+    // and glow are never occluded by the holder's sprite.
     {
       final ball = gs.ball;
       final dep = _camera3D.projectWithDepth(ball.x, ball.y, ball.zHeight * 1.2);
       if (dep != null) {
         final pos = dep.$1; final cw = dep.$2;
-        items.add((cw, () => _draw3DBall(canvas, pos, cw)));
+        _draw3DBall(canvas, pos, cw);
       }
     }
-
-    // Sort farthest first (largest cw = furthest from camera)
-    items.sort((a, b) => b.$1.compareTo(a.$1));
-    for (final (_, draw) in items) { draw(); }
   }
 
   void _draw3DCreature(Canvas canvas, Creature creature, Offset pos, double cw) {
@@ -1079,32 +1259,7 @@ class FieldPainter extends CustomPainter {
       }
     }
 
-    if (p.id == gs.currentTargetId) {
-      _sp
-        ..color = const Color(0xFFFF2222).withValues(alpha: 0.9)
-        ..strokeWidth = 2.0;
-      canvas.drawCircle(pos, r + 5, _sp);
-      _sp
-        ..color = const Color(0xFFFF4444).withValues(alpha: 0.4)
-        ..strokeWidth = 1.0;
-      canvas.drawCircle(pos, r + 8, _sp);
-    }
-
-    if (p.isSelected) {
-      _sp
-        ..color = Colors.white.withValues(alpha: 0.9)
-        ..strokeWidth = 2.0;
-      canvas.drawCircle(pos, r + 4, _sp);
-    }
-
-    if (gs.ball.holderId == p.id) {
-      _gp
-        ..color = const Color(0xFFFFDD00).withValues(alpha: 0.4)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-      canvas.drawCircle(pos, r + 6, _gp);
-      _gp.maskFilter = null;
-    }
-
+    // Player body
     final teamColor = p.team == Team.player
         ? const Color(0xFF1E88E5)
         : const Color(0xFFE53935);
@@ -1113,26 +1268,101 @@ class FieldPainter extends CustomPainter {
     _fp.color = teamColor.withValues(alpha: 0.6);
     canvas.drawCircle(pos, r * 0.7, _fp);
 
+    _draw3DFacingIndicator(canvas, p);
+
     if (p.isStunned) {
       _sp
         ..color = Colors.yellow.withValues(alpha: 0.6)
-        ..strokeWidth = 1.5;
-      canvas.drawCircle(pos, r + 2, _sp);
+        ..strokeWidth = math.max(1.5, r * 0.12);
+      canvas.drawCircle(pos, r + r * 0.18, _sp);
     }
 
-    final numTp = _getPlayerNumTp(p.rosterIndex);
-    numTp.paint(canvas, Offset(pos.dx - numTp.width / 2, pos.dy - numTp.height / 2));
-
-    final barW = r * 2.5;
-    const barH = 4.0;
-    final barX = pos.dx - barW / 2;
-    final barY = pos.dy - r - barH - 3;
-    canvas.drawRect(Rect.fromLTWH(barX, barY, barW, barH), _hpBgPaint);
-    final frac = (p.health / p.maxHealth).clamp(0.0, 1.0);
-    if (frac > 0) {
-      final hpPaint = frac > 0.5 ? _hpGoodPaint : frac > 0.25 ? _hpMedPaint : _hpBadPaint;
-      canvas.drawRect(Rect.fromLTWH(barX, barY, barW * frac, barH), hpPaint);
+    if (gs.prefs.showPlayerNumbers) {
+      final numTp = _getPlayerNumTp(p.rosterIndex);
+      numTp.paint(canvas, Offset(pos.dx - numTp.width / 2, pos.dy - numTp.height / 2));
     }
+
+    if (gs.prefs.showHpBars) {
+      final barW = r * 2.5;
+      const barH = 4.0;
+      final barX = pos.dx - barW / 2;
+      final barY = pos.dy - r - barH - 3;
+      canvas.drawRect(Rect.fromLTWH(barX, barY, barW, barH), _hpBgPaint);
+      final frac = (p.health / p.maxHealth).clamp(0.0, 1.0);
+      if (frac > 0) {
+        final hpPaint = frac > 0.5 ? _hpGoodPaint : frac > 0.25 ? _hpMedPaint : _hpBadPaint;
+        canvas.drawRect(Rect.fromLTWH(barX, barY, barW * frac, barH), hpPaint);
+      }
+    }
+
+    // Indicators drawn after body so they appear on top
+    if (p.id == gs.currentTargetId) {
+      final sw = math.max(2.0, r * 0.15);
+      _sp
+        ..color = const Color(0xFFFF2222).withValues(alpha: 0.9)
+        ..strokeWidth = sw;
+      canvas.drawCircle(pos, r * 1.35, _sp);
+      _sp
+        ..color = const Color(0xFFFF4444).withValues(alpha: 0.4)
+        ..strokeWidth = sw * 0.6;
+      canvas.drawCircle(pos, r * 1.6, _sp);
+    }
+
+    if (p.isSelected) {
+      final sw = math.max(2.0, r * 0.18);
+      _sp
+        ..color = Colors.white.withValues(alpha: 0.95)
+        ..strokeWidth = sw;
+      canvas.drawCircle(pos, r * 1.4, _sp);
+      _sp
+        ..color = Colors.white.withValues(alpha: 0.35)
+        ..strokeWidth = sw * 0.5;
+      canvas.drawCircle(pos, r * 1.7, _sp);
+    }
+
+    if (gs.ball.holderId == p.id) {
+      // Outer glow
+      _gp
+        ..color = const Color(0xFFFFDD00).withValues(alpha: 0.45)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+      canvas.drawCircle(pos, r * 1.8, _gp);
+      _gp.maskFilter = null;
+      // Solid possession ring
+      _sp
+        ..color = const Color(0xFFFFDD00).withValues(alpha: 0.95)
+        ..strokeWidth = math.max(2.0, r * 0.2);
+      canvas.drawCircle(pos, r * 1.55, _sp);
+      // Small dot above player head to indicate ball possession
+      _fp.color = const Color(0xFFFFDD00);
+      canvas.drawCircle(Offset(pos.dx, pos.dy - r * 2.0), math.max(3.0, r * 0.35), _fp);
+    }
+  }
+
+  void _draw3DFacingIndicator(Canvas canvas, UltraballPlayer p) {
+    final f = p.facing;
+    final z = p.zHeight * 1.2;
+    const tipDist  = 2.2;   // world units ahead of center
+    const baseR    = 0.7;   // world units from center to base corners
+    const halfAngle = 0.55; // half-width of triangle base in radians
+
+    final tip  = _camera3D.project(
+        p.x + math.cos(f) * tipDist,
+        p.y + math.sin(f) * tipDist, z);
+    final left = _camera3D.project(
+        p.x + math.cos(f + math.pi - halfAngle) * baseR,
+        p.y + math.sin(f + math.pi - halfAngle) * baseR, z);
+    final right = _camera3D.project(
+        p.x + math.cos(f + math.pi + halfAngle) * baseR,
+        p.y + math.sin(f + math.pi + halfAngle) * baseR, z);
+
+    if (tip == null || left == null || right == null) return;
+    _path
+      ..reset()
+      ..moveTo(tip.dx,   tip.dy)
+      ..lineTo(left.dx,  left.dy)
+      ..lineTo(right.dx, right.dy)
+      ..close();
+    canvas.drawPath(_path, _facingPaint);
   }
 
   void _draw3DBall(Canvas canvas, Offset pos, double cw) {
@@ -1168,12 +1398,21 @@ class FieldPainter extends CustomPainter {
     canvas.drawCircle(pos, r * 0.45, _fp);
 
     if (ball.isHeld && charge > 0) {
+      final arcR = r + math.max(3.0, r * 0.45);
+      final arcSW = math.max(2.0, r * 0.3);
+      // Background track
       _sp
-        ..color = ballColor.withValues(alpha: 0.9)
-        ..strokeWidth = 2.0
+        ..color = Colors.white.withValues(alpha: 0.15)
+        ..strokeWidth = arcSW
+        ..strokeCap = StrokeCap.round;
+      canvas.drawCircle(pos, arcR, _sp);
+      // Charge fill
+      _sp
+        ..color = ballColor.withValues(alpha: 0.95)
+        ..strokeWidth = arcSW
         ..strokeCap = StrokeCap.round;
       canvas.drawArc(
-        Rect.fromCircle(center: pos, radius: r + 3),
+        Rect.fromCircle(center: pos, radius: arcR),
         -math.pi / 2,
         charge * 2 * math.pi,
         false,

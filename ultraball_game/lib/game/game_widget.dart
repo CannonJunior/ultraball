@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/player.dart';
@@ -11,13 +12,17 @@ import 'systems/ball_system.dart';
 import 'systems/creature_system.dart';
 import 'systems/act_system.dart';
 import 'systems/ai_system.dart';
+import 'systems/terrain_system.dart';
+import '../models/terrain_event.dart';
 import '../ui/scoreboard.dart';
 import '../ui/combo_display.dart';
 import '../ui/mana_bars.dart';
 import '../ui/throw_charge_bar.dart';
 import '../ui/roster_screen.dart';
+import '../ui/in_game_settings_panel.dart';
 import '../ai/learning_ai.dart';
 import '../ai/game_data_collector.dart';
+import '../game3d/ultraball_render_system.dart';
 
 class GameWidget extends StatefulWidget {
   final GameSettings settings;
@@ -41,9 +46,18 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
   double _offsetY = 0;
   Size?  _lastLayoutSize;
 
+  // 3D WebGL render system (full3D view mode only)
+  UltraballRenderSystem? _renderSystem;
+  html.CanvasElement?    _webglCanvas;
+
   // Long-lived painter — reused every frame so its cached Paints/TextPainters persist
   late FieldPainter _fieldPainter;
   final ValueNotifier<int> _canvasRepaint = ValueNotifier<int>(0);
+
+  bool _showSettingsPanel = false;
+
+  // Typed reference retained for finalise() which is not on GameDataSink
+  GameDataCollector? _dataCollector;
 
   @override
   void initState() {
@@ -57,16 +71,44 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       widget.settings.aiStrategy,
       widget.settings.aiTactics,
     );
-    _gs.dataCollector = GameDataCollector(
+    _dataCollector = GameDataCollector(
       strategy: widget.settings.aiStrategy,
       tactics:  widget.settings.aiTactics,
     );
+    _gs.dataCollector = _dataCollector;
     _focusNode.addListener(_onFocusChange);
     WidgetsBinding.instance.addObserver(this);
     _startGameLoop();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
     });
+
+    // Full-3D mode: create WebGL canvas behind Flutter UI, then init renderer
+    if (widget.settings.viewMode == ViewMode.full3D) {
+      _webglCanvas = html.CanvasElement()
+        ..style.position    = 'fixed'
+        ..style.top         = '0'
+        ..style.left        = '0'
+        ..style.width       = '100%'
+        ..style.height      = '100%'
+        ..style.display     = 'block'
+        ..style.zIndex      = '-1'
+        ..style.pointerEvents = 'none';
+      html.document.body?.append(_webglCanvas!);
+
+      _renderSystem = UltraballRenderSystem();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final w = html.window.innerWidth  ?? 1280;
+        final h = html.window.innerHeight ?? 720;
+        _webglCanvas!.width  = w;
+        _webglCanvas!.height = h;
+        final initialSize = Size(w.toDouble(), h.toDouble());
+        _renderSystem!.init(_webglCanvas!, widget.settings.creatureType, initialSize);
+        _renderSystem!.initPlayers(_gs, useCubeModels: widget.settings.useCubeModels);
+        _fieldPainter.renderSystem = _renderSystem;
+      });
+    }
   }
 
   @override
@@ -76,12 +118,16 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     _gameLoop?.cancel();
     _focusNode.dispose();
     _canvasRepaint.dispose();
+    _renderSystem?.dispose();
+    _webglCanvas?.remove();
     super.dispose();
   }
 
   void _onFocusChange() {
     if (!_focusNode.hasFocus) {
       _gs.pressedKeys.clear();
+      _gs.isAimingTerrain = false;
+      _gs.terrainAimEventType = null;
     }
   }
 
@@ -114,7 +160,7 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     if (_gs.actState.gameOver) {
       if (!_learnDone) {
         _learnDone = true;
-        final record = _gs.dataCollector?.finalise(_gs);
+        final record = _dataCollector?.finalise(_gs);
         if (record != null) LearningAi.instance.onGameEnd(record);
         // Force a rebuild to show the game-over overlay. This matters when
         // forfeit was set outside _update() (e.g. via a key-press ability),
@@ -162,8 +208,14 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     // Update ball
     BallSystem.update(_gs, dt);
 
+    // Process Trickster traps
+    CombatSystem.processTraps(_gs, dt);
+
     // Update creature
     CreatureSystem.update(_gs, dt);
+
+    // Update terrain (height lerps, hazard timers, pit deaths)
+    TerrainSystem.update(_gs, dt);
 
     // Update act timer
     ActSystem.update(_gs, dt);
@@ -176,9 +228,15 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       if (ind.isExpired) _gs.indicators.removeAt(i);
     }
 
-    // Trigger canvas repaint (painter is long-lived; doesn't go through shouldRepaint)
-    _canvasRepaint.value++;
-    if (mounted) setState(() {});
+    // Advance 3D animations and camera (must happen before render in _paintFull3D)
+    if (_renderSystem != null && _renderSystem!.ready) {
+      _renderSystem!.update(_gs, dt);
+    }
+
+    // Trigger canvas repaint (painter is long-lived; doesn't go through shouldRepaint).
+    // ValueListenableBuilder widgets in build() subscribe to this and rebuild their
+    // own subtrees, so a full setState() is no longer needed every frame.
+    if (mounted) _canvasRepaint.value++;
   }
 
   // ==================== WOW-STYLE MOVEMENT ====================
@@ -197,14 +255,22 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
 
     final keys = _gs.pressedKeys;
 
-    // A/D: rotate facing angle (turning, not moving)
+    // The 3/4 view camera (Y=-30, looking toward +Y) puts game +Y at the top of
+    // the screen, inverting perceived left/right vs the flat view — flip to compensate.
+    // The full3D renderer's yaw formula already bakes in this inversion, so no flip
+    // is needed there (it would double-invert).
+    final flip = widget.settings.viewMode == ViewMode.threeQuarter ? -1.0 : 1.0;
+
+    // A/D: rotate facing angle (turning, not moving).
+    // Under confusion the turn direction is reversed so left/right are swapped.
+    final confusionFlip = player.confusedTimer > 0 ? -1.0 : 1.0;
     if (keys.contains(LogicalKeyboardKey.keyA) ||
         keys.contains(LogicalKeyboardKey.arrowLeft)) {
-      player.facing -= _turnSpeed * dt;
+      player.facing -= _turnSpeed * dt * flip * confusionFlip;
     }
     if (keys.contains(LogicalKeyboardKey.keyD) ||
         keys.contains(LogicalKeyboardKey.arrowRight)) {
-      player.facing += _turnSpeed * dt;
+      player.facing += _turnSpeed * dt * flip * confusionFlip;
     }
     // Keep facing in [-π, π] so _tabScore's while loop stays O(1)
     player.facing = math.atan2(math.sin(player.facing), math.cos(player.facing));
@@ -230,14 +296,12 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       vy -= fwdY;
     }
     if (keys.contains(LogicalKeyboardKey.keyQ)) {
-      // Q = strafe left = negative right direction
-      vx -= rightX;
-      vy -= rightY;
+      vx -= rightX * flip;
+      vy -= rightY * flip;
     }
     if (keys.contains(LogicalKeyboardKey.keyE)) {
-      // E = strafe right = positive right direction
-      vx += rightX;
-      vy += rightY;
+      vx += rightX * flip;
+      vy += rightY * flip;
     }
 
     // Normalize diagonal movement to maintain consistent speed
@@ -247,6 +311,11 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       vy = (vy / len) * player.speed;
     }
 
+    // Confusion: reverse movement direction
+    if (player.confusedTimer > 0) {
+      vx = -vx;
+      vy = -vy;
+    }
     player.velX = vx;
     player.velY = vy;
   }
@@ -270,8 +339,14 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     _gs.pressedKeys.add(key);
 
     if (key == LogicalKeyboardKey.escape) {
-      // Escape: clear target first, then pause if no target
-      if (_gs.currentTargetId != null) {
+      // Escape: close settings panel first, then clear target, then pause
+      if (_showSettingsPanel) {
+        setState(() {
+          _showSettingsPanel = false;
+          _gs.paused = false;
+        });
+        _focusNode.requestFocus();
+      } else if (_gs.currentTargetId != null) {
         setState(() => _gs.clearTarget());
       } else {
         setState(() => _gs.paused = !_gs.paused);
@@ -290,6 +365,9 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       final isShift = _gs.pressedKeys.contains(LogicalKeyboardKey.shiftLeft) ||
           _gs.pressedKeys.contains(LogicalKeyboardKey.shiftRight);
       if (isShift) {
+        // Cancel any in-progress Geomancer terrain aim before switching players
+        _gs.isAimingTerrain = false;
+        _gs.terrainAimEventType = null;
         _gs.selectNextPlayer();
       } else {
         _gs.tabToNextEnemyTarget();
@@ -303,7 +381,17 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       return;
     }
     if (key == LogicalKeyboardKey.digit2) {
-      if (player != null) CombatSystem.useClassAbility(_gs, player, 2);
+      if (player != null) {
+        if (player.playerClass == PlayerClass.geomancer) {
+          // Hold-to-aim: start aiming terrain placement
+          if (player.slamCooldown <= 0 && player.redMana >= 25) {
+            _gs.isAimingTerrain = true;
+            _gs.terrainAimEventType = TerrainEventType.riseMountain;
+          }
+        } else {
+          CombatSystem.useClassAbility(_gs, player, 2);
+        }
+      }
       return;
     }
     if (key == LogicalKeyboardKey.digit3) {
@@ -311,7 +399,17 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       return;
     }
     if (key == LogicalKeyboardKey.digit4) {
-      if (player != null) CombatSystem.useClassAbility(_gs, player, 4);
+      if (player != null) {
+        if (player.playerClass == PlayerClass.geomancer) {
+          // Hold-to-aim: start aiming terrain placement
+          if (player.ability4Cooldown <= 0 && player.redMana >= 35) {
+            _gs.isAimingTerrain = true;
+            _gs.terrainAimEventType = TerrainEventType.openPit;
+          }
+        } else {
+          CombatSystem.useClassAbility(_gs, player, 4);
+        }
+      }
       return;
     }
     if (key == LogicalKeyboardKey.digit5) {
@@ -336,6 +434,12 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     }
     if (key == LogicalKeyboardKey.digit0) {
       if (player != null) CombatSystem.useClassAbility(_gs, player, 10);
+      return;
+    }
+
+    // V: toggle 3D camera mode (broadcast ↔ third-person follow)
+    if (key == LogicalKeyboardKey.keyV) {
+      _renderSystem?.toggleCameraMode();
       return;
     }
 
@@ -367,6 +471,21 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       }
       player?.isChargingThrow = false;
       player?.throwChargeTime = 0.0;
+    }
+
+    // Digit2 / Digit4 release: fire terrain ability if Geomancer was aiming.
+    // Guard on playerClass so a mid-aim player-switch doesn't fire the wrong unit's slot.
+    if (event.logicalKey == LogicalKeyboardKey.digit2 ||
+        event.logicalKey == LogicalKeyboardKey.digit4) {
+      if (_gs.isAimingTerrain) {
+        final player = _gs.selectedPlayer;
+        if (player != null && player.playerClass == PlayerClass.geomancer) {
+          final slot = event.logicalKey == LogicalKeyboardKey.digit2 ? 2 : 4;
+          CombatSystem.useClassAbility(_gs, player, slot);
+        }
+        _gs.isAimingTerrain = false;
+        _gs.terrainAimEventType = null;
+      }
     }
   }
 
@@ -411,12 +530,23 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     _fieldPainter.scale   = _scale;
     _fieldPainter.offsetX = _offsetX;
     _fieldPainter.offsetY = _offsetY;
+
+    // Sync WebGL viewport to new window dimensions
+    if (_renderSystem != null && _renderSystem!.ready) {
+      final w = html.window.innerWidth  ?? size.width.toInt();
+      final h = html.window.innerHeight ?? size.height.toInt();
+      _webglCanvas?.width  = w;
+      _webglCanvas?.height = h;
+      _renderSystem!.resize(w, h);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: widget.settings.viewMode == ViewMode.full3D
+          ? Colors.transparent
+          : Colors.black,
       body: Focus(
         focusNode: _focusNode,
         onKeyEvent: (node, event) {
@@ -428,8 +558,11 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
         },
         child: Column(
           children: [
-            // Scoreboard
-            Scoreboard(gs: _gs),
+            // Scoreboard — rebuilds with canvas ticks via ValueListenableBuilder
+            ValueListenableBuilder<int>(
+              valueListenable: _canvasRepaint,
+              builder: (_, __, ___) => Scoreboard(gs: _gs),
+            ),
 
             // Game canvas
             Expanded(
@@ -445,62 +578,101 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
                         size: Size(constraints.maxWidth, constraints.maxHeight),
                       ),
 
-                      // Event message (center top)
-                      if (_gs.lastEventMessage != null)
-                        Positioned(
-                          top: 16,
-                          left: 0,
-                          right: 0,
-                          child: _EventMessage(message: _gs.lastEventMessage!),
+                      // All dynamic overlays subscribe to _canvasRepaint so they
+                      // update each tick without a full GameWidget setState().
+                      ValueListenableBuilder<int>(
+                        valueListenable: _canvasRepaint,
+                        builder: (_, __, ___) => Stack(
+                          children: [
+                            // Event message (center top)
+                            if (_gs.lastEventMessage != null)
+                              Positioned(
+                                top: 16,
+                                left: 0,
+                                right: 0,
+                                child: _EventMessage(message: _gs.lastEventMessage!),
+                              ),
+
+                            // Combo display (center bottom)
+                            Positioned(
+                              bottom: 120,
+                              left: 0,
+                              right: 0,
+                              child: ComboDisplay(gs: _gs),
+                            ),
+
+                            // Throw charge bar (bottom center, above mana bars)
+                            Positioned(
+                              bottom: 80,
+                              left: 0,
+                              right: 0,
+                              child: Center(child: ThrowChargeBar(gs: _gs)),
+                            ),
+
+                            // Mana bars (bottom left)
+                            Positioned(
+                              bottom: 12,
+                              left: 12,
+                              child: ManaBars(gs: _gs),
+                            ),
+
+                            // Team roster panel (right side)
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: _RosterPanel(gs: _gs),
+                            ),
+
+                            // Settings gear button (top-left)
+                            Positioned(
+                              top: 8,
+                              left: 8,
+                              child: _SettingsButton(onTap: () {
+                                setState(() {
+                                  _showSettingsPanel = true;
+                                  _gs.paused = true;
+                                });
+                              }),
+                            ),
+
+                            // Pause overlay
+                            if (_gs.paused && !_showSettingsPanel)
+                              _PauseOverlay(onResume: () {
+                                setState(() => _gs.paused = false);
+                                _focusNode.requestFocus();
+                              }),
+
+                            // Game over overlay
+                            if (_gs.actState.gameOver) _GameOverOverlay(gs: _gs),
+
+                            // Act transition overlay
+                            if (_gs.showingActTransition)
+                              _ActTransitionOverlay(gs: _gs),
+                            if (_gs.showingRosterScreen)
+                              RosterScreen(
+                                gs: _gs,
+                                onConfirm: _applyRosterAndBeginNextAct,
+                              ),
+
+                            // In-game settings panel
+                            if (_showSettingsPanel)
+                              InGameSettingsPanel(
+                                gs: _gs,
+                                onClose: () {
+                                  setState(() {
+                                    _showSettingsPanel = false;
+                                    _gs.paused = false;
+                                  });
+                                  _focusNode.requestFocus();
+                                },
+                                onViewModeChanged: (mode) {
+                                  _fieldPainter.viewMode = mode;
+                                  _canvasRepaint.value++;
+                                },
+                              ),
+                          ],
                         ),
-
-                      // Combo display (center bottom)
-                      Positioned(
-                        bottom: 120,
-                        left: 0,
-                        right: 0,
-                        child: ComboDisplay(gs: _gs),
                       ),
-
-                      // Throw charge bar (bottom center, above mana bars)
-                      Positioned(
-                        bottom: 80,
-                        left: 0,
-                        right: 0,
-                        child: Center(child: ThrowChargeBar(gs: _gs)),
-                      ),
-
-                      // Mana bars (bottom left)
-                      Positioned(
-                        bottom: 12,
-                        left: 12,
-                        child: ManaBars(gs: _gs),
-                      ),
-
-                      // Team roster panel (right side)
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: _RosterPanel(gs: _gs),
-                      ),
-
-                      // Pause overlay
-                      if (_gs.paused) _PauseOverlay(onResume: () {
-                        setState(() => _gs.paused = false);
-                        _focusNode.requestFocus();
-                      }),
-
-                      // Game over overlay
-                      if (_gs.actState.gameOver) _GameOverOverlay(gs: _gs),
-
-                      // Act transition overlay
-                      if (_gs.showingActTransition)
-                        _ActTransitionOverlay(gs: _gs),
-                      if (_gs.showingRosterScreen)
-                        RosterScreen(
-                          gs: _gs,
-                          onConfirm: _applyRosterAndBeginNextAct,
-                        ),
                     ],
                   );
                 },
@@ -816,6 +988,28 @@ class _ScoreBox extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SettingsButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _SettingsButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        ),
+        child: const Icon(Icons.settings, color: Color(0xAAFFFFFF), size: 18),
+      ),
     );
   }
 }

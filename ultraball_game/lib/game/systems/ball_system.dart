@@ -215,7 +215,16 @@ class BallSystem {
     final prevX = holder.x - holder.velX * dt;
     final lineIdx = ball.checkPhaseLineCrossing(prevX, holder.x);
     if (lineIdx >= 0 && ball.phaseLineActive[lineIdx]) {
-      handlePhaseLineCrossing(gs, lineIdx);
+      // Don't reset charge when the carrier is entering their own scoring endzone:
+      // player team crosses x=30 leftward (lineIdx 0), opponent crosses x=110 rightward (lineIdx 4).
+      final enteringOwnEndzone =
+          (holder.team == Team.player  && lineIdx == 0 && holder.velX < 0) ||
+          (holder.team == Team.opponent && lineIdx == 4 && holder.velX > 0);
+      if (enteringOwnEndzone) {
+        ball.phaseLineActive[lineIdx] = false; // deactivate without resetting charge
+      } else {
+        handlePhaseLineCrossing(gs, lineIdx);
+      }
     }
 
     // Check explosion
@@ -362,6 +371,7 @@ class BallSystem {
 
     // Normal pickup
     ball.holderId = player.id;
+    ball.cooldownBonus = 0;
     final newTeam = player.team == Team.player ? 'player' : 'opponent';
     if (ball.possessingTeamId != newTeam) {
       ball.changePossession(newTeam);
@@ -386,7 +396,7 @@ class BallSystem {
     ball.isInFlight = true;
     ball.isChargedThrow = true;
     ball.isPowerPass = false;
-    ball.cooldownBonus = dist;
+    ball.cooldownBonus = 0;
     ball.chargeTimer = 0;
 
     thrower.passCooldown = 0.5;
@@ -426,8 +436,7 @@ class BallSystem {
     ball.isPowerPass = isPowerPass;
     ball.flightDistance = dist; // ball stops at target if uncaught
 
-    // Bonus charge time from distance
-    ball.cooldownBonus = dist; // 1 second per meter
+    ball.cooldownBonus = 0;
     ball.chargeTimer = 0;
   }
 

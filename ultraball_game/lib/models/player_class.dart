@@ -1,36 +1,40 @@
-enum PlayerClass { runner, enforcer, warden, handler, blitzer }
+enum PlayerClass { runner, geomancer, warden, handler, blitzer, trickster }
 
 extension PlayerClassInfo on PlayerClass {
   String get displayName => switch (this) {
-    PlayerClass.runner   => 'SPECTRE',
-    PlayerClass.enforcer => 'JUGGERNAUT',
-    PlayerClass.warden   => 'ARCHON',
+    PlayerClass.runner    => 'SPECTRE',
+    PlayerClass.geomancer => 'GEOMANCER',
+    PlayerClass.warden    => 'ARCHON',
     PlayerClass.handler  => 'WARDEN',
     PlayerClass.blitzer  => 'CORSAIR',
+    PlayerClass.trickster => 'TRICKSTER',
   };
 
   String get description => switch (this) {
-    PlayerClass.runner   => 'Speed · Evasion · Ball Carrier',
-    PlayerClass.enforcer => 'Power · Destruction · Crowd Control',
+    PlayerClass.runner    => 'Speed · Evasion · Ball Carrier',
+    PlayerClass.geomancer => 'Terrain · Disruption · Geological Control',
     PlayerClass.warden   => 'Defense · Healing · Team Fortress',
     PlayerClass.handler  => 'Support · Field Control · Restoration',
     PlayerClass.blitzer  => 'Disruption · Predation · Strip & Mark',
+    PlayerClass.trickster => 'Confusion · Traps · Creature Manipulation',
   };
 
   double get baseSpeed => switch (this) {
-    PlayerClass.runner   => 10.0,
-    PlayerClass.enforcer =>  6.5,
+    PlayerClass.runner    => 10.0,
+    PlayerClass.geomancer =>  7.0,
     PlayerClass.warden   =>  7.5,
     PlayerClass.handler  =>  8.0,
     PlayerClass.blitzer  =>  8.5,
+    PlayerClass.trickster =>  9.0,
   };
 
   double get maxHealth => switch (this) {
-    PlayerClass.runner   =>  75.0,
-    PlayerClass.enforcer => 145.0,
+    PlayerClass.runner    =>  75.0,
+    PlayerClass.geomancer => 115.0,
     PlayerClass.warden   => 120.0,
     PlayerClass.handler  =>  95.0,
     PlayerClass.blitzer  => 105.0,
+    PlayerClass.trickster =>  85.0,
   };
 
   // 9 regular abilities + 1 ultra = 10 slots (indices 0–9, slots 1–10)
@@ -47,11 +51,11 @@ extension PlayerClassInfo on PlayerClass {
       'Surge', 'Cutback', 'Slipstream',
       'ULTRAVIOLET',
     ],
-    PlayerClass.enforcer => [
-      'Hammer', 'Shatter', 'Warpath',
-      'Brain Rattle', 'Quake', 'Dead Ahead',
-      'Iron Hide', 'Berserk', 'Torpedo',
-      'RAMPAGE',
+    PlayerClass.geomancer => [
+      'Earth Fist', 'Raise Hill', 'Seismic Shove',
+      'Open Sinkhole', 'Tremor', 'Stone Armor',
+      'Earthmend', 'Upheaval', 'Fissure',
+      'TERRA NOVA',
     ],
     PlayerClass.warden   => [
       'Stonefist', 'Fault Line', 'March',
@@ -71,6 +75,12 @@ extension PlayerClassInfo on PlayerClass {
       'Condemn', 'Rout', 'Feed the Beast',
       'APEX',
     ],
+    PlayerClass.trickster => [
+      'Hex Strike', 'Phantom Step', 'Fox Sprint',
+      'Befuddle', 'Creature Goad', 'Position Swap',
+      'Jinx', 'Hex Nova', 'Chaos Fumble',
+      'PANDEMONIUM',
+    ],
   };
 
   // One-line description per ability slot (indices 0–9).
@@ -87,17 +97,17 @@ extension PlayerClassInfo on PlayerClass {
       '+20% speed · stun immunity for 3s · 20 Blue Mana',
       '2.5× speed · stun immunity · 7s · 5 Ultra Mana',
     ],
-    PlayerClass.enforcer => [
-      '22 dmg · 2.5m · basic attack',
-      '40 dmg · 6m knockback · 3.5m · 25 Red Mana',
-      '1.5× speed for 3s · 20 Blue Mana',
-      '20 dmg · 2.0s stun · 2.5m · 25 Red Mana',
-      '20 dmg/target · 4m AoE · 1.5s snare (40% slow) · 35 Red Mana',
-      'Dash 7m forward · 1.0s stun to first enemy hit · 20 Red Mana',
-      '+40 HP instant · 40 Blue Mana',
-      '+30% dmg for 5s · gain 25 Red Mana · costs 20 Blue Mana',
-      'Dash 5m · 3m knockback to all enemies along path · 30 Red Mana',
-      '+50% dmg · 30% dmg reduction · stun immunity · 8s · 5 Ultra Mana',
+    PlayerClass.geomancer => [
+      '18 dmg · 2.5m · basic attack',
+      'Hold to aim: raise hill (4m high) at target spot · 25 Red Mana',
+      '12 dmg · push 4m · 1.5s CD · 15 Red Mana',
+      'Hold to aim: open sinkhole (instant death) at target spot · 35 Red Mana',
+      '15 dmg/target · 5m AoE snare (1.5s, 40% slow) · 10s CD · 25 Red Mana',
+      '40% dmg reduction for 4s · self only · 10s CD · 30 Blue Mana',
+      '+35 HP self · 10s CD · 35 Blue Mana',
+      '+20% speed for 4s · gain 30 Red Mana · 5s CD · 20 Blue Mana',
+      'Dash 5m · creates fissure along path (2s pit strip) · 5s CD · 30 Red Mana',
+      'Rise 5m hills across 30m radius + open pits under all enemies · 5 Ultra Mana',
     ],
     PlayerClass.warden   => [
       '15 dmg · 2m push · 2.5m · basic attack',
@@ -135,15 +145,28 @@ extension PlayerClassInfo on PlayerClass {
       'Push target 4m toward creature + mark for 5s · 3.5m · 25 Red Mana',
       '2× speed + 35% dmg + stun immunity + attacks snare (2s) · 7s · 5 Ultra Mana',
     ],
+    PlayerClass.trickster => [
+      '10 dmg + Hex 3s (−20% dmg output) · 2.5m',
+      'Teleport 7m forward; leave snare trap at origin (8s, 50% slow) · 10s CD · 20 Blue Mana',
+      '1.5× speed for 3s · 5s CD · 15 Blue Mana',
+      '2.5s confusion (controls reversed) · force fumble if target has ball · 10s CD · 25 Red Mana',
+      'Reverse creature direction 5s; panic push nearby enemies · 20s CD · 40 Red Mana',
+      'Teleport-swap positions with target (8m range); steal ball if they hold it · 20s CD · 35 Blue Mana',
+      'Drain 25 Red + 20 Blue from target; give self half; stun 1s if they had full red · 10s CD · 25 Blue Mana',
+      'If target hexed: spread 4s hex to all enemies within 5m. If not: hex target + enemies within 3m for 3s · 5s CD · 20 Blue Mana',
+      'Force fumble + 1.5s stun if target has ball; else 20 dmg + Hex · 1.5s CD · 30 Red Mana',
+      'Mass confusion 3s on all enemies; reverse creature + drain enemy red mana · 5 Ultra Mana',
+    ],
   };
 
   // Max cooldowns for slots 1–10 (indices 0–9).
   // Ultra slot (index 9) has no cooldown — gated by ultra mana only.
   List<double> get slotMaxCooldowns => switch (this) {
-    PlayerClass.runner   => [ 0.5,  3.0,  5.0,  7.0,  8.0, 10.0, 15.0, 12.0, 12.0, 0.0],
-    PlayerClass.enforcer => [ 1.0,  3.0,  6.0,  8.0,  8.0, 10.0, 15.0, 12.0, 12.0, 0.0],
-    PlayerClass.warden   => [ 0.8,  3.0,  6.0, 10.0, 10.0, 12.0, 18.0, 14.0, 20.0, 0.0],
-    PlayerClass.handler  => [ 0.6,  3.0,  5.0, 10.0, 12.0, 10.0, 18.0, 18.0, 12.0, 0.0],
-    PlayerClass.blitzer  => [ 0.7,  3.0,  5.0,  8.0,  8.0, 10.0, 12.0, 10.0, 14.0, 0.0],
+    PlayerClass.runner   => [ 1.5,  1.5,  5.0,  5.0, 10.0, 10.0, 20.0, 10.0, 20.0, 0.0],
+    PlayerClass.geomancer => [ 1.5, 20.0,  1.5, 20.0, 10.0, 10.0, 10.0,  5.0,  5.0, 0.0],
+    PlayerClass.warden   => [ 1.5,  5.0,  5.0, 10.0, 10.0,  1.5, 10.0, 20.0, 20.0, 0.0],
+    PlayerClass.handler  => [ 1.5,  1.5,  5.0,  5.0, 10.0, 10.0, 20.0, 20.0, 10.0, 0.0],
+    PlayerClass.blitzer  => [ 1.5,  5.0,  1.5,  5.0, 10.0, 10.0, 10.0, 20.0, 20.0, 0.0],
+    PlayerClass.trickster => [ 1.5, 10.0,  5.0, 10.0, 20.0, 20.0, 10.0,  5.0,  1.5, 0.0],
   };
 }

@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 import '../../models/player.dart';
 import '../../models/damage_indicator.dart';
+import '../../models/terrain_event.dart';
 import '../game_state.dart';
 import 'act_system.dart';
+import 'terrain_system.dart';
 
 class CombatSystem {
   // Legacy entry-point used by AI; delegates to the class ability system.
@@ -21,14 +23,16 @@ class CombatSystem {
     switch (player.playerClass) {
       case PlayerClass.runner:
         _runnerAbility(gs, player, slot);
-      case PlayerClass.enforcer:
-        _enforcerAbility(gs, player, slot);
+      case PlayerClass.geomancer:
+        _geomancerAbility(gs, player, slot);
       case PlayerClass.warden:
         _wardenAbility(gs, player, slot);
       case PlayerClass.handler:
         _handlerAbility(gs, player, slot);
       case PlayerClass.blitzer:
         _blitzerAbility(gs, player, slot);
+      case PlayerClass.trickster:
+        _tricksterAbility(gs, player, slot);
     }
   }
 
@@ -41,7 +45,7 @@ class CombatSystem {
       if (p.tackleCooldown > 0) return;
       final t = _resolveTarget(gs, p, 2.5);
       if (t == null) return;
-      p.tackleCooldown = 0.5;
+      p.tackleCooldown = 1.5;
       gs.dataCollector?.onTackle(p.team == Team.opponent ? 'opponent' : 'player');
       applyDamage(gs, t, 12.0, p);
       checkCombo(gs, p);
@@ -53,7 +57,7 @@ class CombatSystem {
       final t = _resolveTarget(gs, p, 3.0);
       if (t == null) return;
       p.redMana -= 20;
-      p.slamCooldown = 3.0;
+      p.slamCooldown = 1.5;
       gs.dataCollector?.onSlam(p.team == Team.opponent ? 'opponent' : 'player');
       applyDamage(gs, t, 18.0, p);
       t.applySnare(1.5, 0.5);
@@ -72,7 +76,7 @@ class CombatSystem {
       if (p.ability4Cooldown > 0) return;
       if (p.blueMana < 20) return;
       p.blueMana -= 20;
-      p.ability4Cooldown = 7.0;
+      p.ability4Cooldown = 5.0;
       p.x = (p.x + math.cos(p.facing) * 6.0).clamp(0.0, 140.0);
       p.y = (p.y + math.sin(p.facing) * 6.0).clamp(0.0, 40.0);
       addIndicator(gs, p.x, p.y - 1, 'PHASE!', IndicatorType.event);
@@ -82,7 +86,7 @@ class CombatSystem {
       if (p.ability5Cooldown > 0) return;
       if (p.blueMana < 25) return;
       p.blueMana -= 25;
-      p.ability5Cooldown = 8.0;
+      p.ability5Cooldown = 10.0;
       p.applyDodge(1.5);
       addIndicator(gs, p.x, p.y - 1, 'GHOST!', IndicatorType.event);
 
@@ -101,7 +105,7 @@ class CombatSystem {
       // Clear Out — self-cleanse + heal 25 HP, 15s CD, 40 blue
       if (p.ability7Cooldown > 0) return;
       if (p.blueMana < 40) return;
-      p.ability7Cooldown = 15.0;
+      p.ability7Cooldown = 20.0;
       p.blueMana -= 40;
       p.cleanse();
       p.health = math.min(p.maxHealth, p.health + 25.0);
@@ -113,7 +117,7 @@ class CombatSystem {
       if (p.ability8Cooldown > 0) return;
       if (p.redMana < 25) return;
       p.redMana -= 25;
-      p.ability8Cooldown = 12.0;
+      p.ability8Cooldown = 10.0;
       // Move backward
       p.x = (p.x - math.cos(p.facing) * 4.0).clamp(0.0, 140.0);
       p.y = (p.y - math.sin(p.facing) * 4.0).clamp(0.0, 40.0);
@@ -134,7 +138,7 @@ class CombatSystem {
       if (p.ability9Cooldown > 0) return;
       if (p.blueMana < 20) return;
       p.blueMana -= 20;
-      p.ability9Cooldown = 12.0;
+      p.ability9Cooldown = 20.0;
       p.stunImmune = true;
       p.stunImmuneTimer = 3.0;
       p.speedBoostTimer = 3.0;
@@ -153,153 +157,157 @@ class CombatSystem {
     }
   }
 
-  // ─── ENFORCER abilities ───────────────────────────────────────────────────
-  // Physical dominator. Tanky (145 HP) but slowest (6.5 m/s). Red-mana focused.
+  // ─── GEOMANCER abilities ──────────────────────────────────────────────────
+  // Terrain shaper. Medium HP (115), medium speed (7 m/s). Red-mana focused.
+  // Slots 2 and 4 use hold-to-aim (human player) — AI calls them directly here.
 
-  static void _enforcerAbility(GameState gs, UltraballPlayer p, int slot) {
+  static void _geomancerAbility(GameState gs, UltraballPlayer p, int slot) {
     if (slot == 1) {
-      // Haymaker — 22 dmg, 1s CD
+      // Earth Fist — 18 dmg, 1s CD
       if (p.tackleCooldown > 0) return;
       final t = _resolveTarget(gs, p, 2.5);
       if (t == null) return;
-      p.tackleCooldown = 1.0;
+      p.tackleCooldown = 1.5;
       gs.dataCollector?.onTackle(p.team == Team.opponent ? 'opponent' : 'player');
-      applyDamage(gs, t, 22.0, p);
+      applyDamage(gs, t, 18.0, p);
       checkCombo(gs, p);
 
     } else if (slot == 2) {
-      // Thunder Slam — 40 dmg + 6m knockback, 3s CD, 25 red
+      // Raise Hill — hold-to-aim for human; AI calls directly
       if (p.slamCooldown > 0) return;
       if (p.redMana < 25) return;
-      final t = _resolveTarget(gs, p, 3.5);
-      if (t == null) return;
       p.redMana -= 25;
-      p.slamCooldown = 3.0;
+      p.slamCooldown = 20.0;
       gs.dataCollector?.onSlam(p.team == Team.opponent ? 'opponent' : 'player');
-      applyDamage(gs, t, 40.0, p);
+      final tx = (p.x + math.cos(p.facing) * GameState.terrainAimRange).clamp(0.0, 140.0);
+      final ty = (p.y + math.sin(p.facing) * GameState.terrainAimRange).clamp(0.0, 40.0);
+      TerrainSystem.applyEvent(gs, TerrainEvent(
+        type: TerrainEventType.riseMountain,
+        worldX: tx, worldY: ty,
+        radius: 5.0, intensity: 1.0, duration: 6.0,
+      ));
+      addIndicator(gs, tx, ty - 1, 'RAISE HILL!', IndicatorType.event);
+
+    } else if (slot == 3) {
+      // Seismic Shove — 12 dmg + push 4m, 5s CD, 15 red
+      if (p.sprintCooldown > 0) return;
+      if (p.redMana < 15) return;
+      final t = _resolveTarget(gs, p, 3.0);
+      if (t == null) return;
+      p.redMana -= 15;
+      p.sprintCooldown = 1.5;
+      applyDamage(gs, t, 12.0, p);
       if (t.isAlive) {
         final dx = t.x - p.x, dy = t.y - p.y;
         final dist = math.sqrt(dx * dx + dy * dy);
         if (dist > 0) {
-          t.x = (t.x + (dx / dist) * 6.0).clamp(0.0, 140.0);
-          t.y = (t.y + (dy / dist) * 6.0).clamp(0.0, 40.0);
+          t.x = (t.x + (dx / dist) * 4.0).clamp(0.0, 140.0);
+          t.y = (t.y + (dy / dist) * 4.0).clamp(0.0, 40.0);
         }
+        addIndicator(gs, t.x, t.y - 1, 'SHOVED!', IndicatorType.event);
       }
 
-    } else if (slot == 3) {
-      // Sprint — 1.5× speed for 3s, 6s CD, 20 blue
-      if (p.sprintCooldown > 0) return;
-      if (p.blueMana < 20) return;
-      p.blueMana -= 20;
-      p.speedBoostTimer = 3.0;
-      p.sprintCooldown = 6.0;
-
     } else if (slot == 4) {
-      // Headbutt — 20 dmg + 2s stun, 8s CD, 25 red
+      // Open Sinkhole — hold-to-aim for human; AI calls directly
       if (p.ability4Cooldown > 0) return;
-      if (p.redMana < 25) return;
-      final t = _resolveTarget(gs, p, 2.5);
-      if (t == null) return;
-      p.redMana -= 25;
-      p.ability4Cooldown = 8.0;
-      applyDamage(gs, t, 20.0, p);
-      t.stun(2.0);
-
-    } else if (slot == 5) {
-      // Ground Stomp — AoE 4m: 20 dmg + 1.5s snare (40% slow), 8s CD, 35 red
-      if (p.ability5Cooldown > 0) return;
       if (p.redMana < 35) return;
       p.redMana -= 35;
-      p.ability5Cooldown = 8.0;
+      p.ability4Cooldown = 20.0;
+      final tx = (p.x + math.cos(p.facing) * GameState.terrainAimRange).clamp(0.0, 140.0);
+      final ty = (p.y + math.sin(p.facing) * GameState.terrainAimRange).clamp(0.0, 40.0);
+      TerrainSystem.applyEvent(gs, TerrainEvent(
+        type: TerrainEventType.openPit,
+        worldX: tx, worldY: ty,
+        radius: 4.0, intensity: 1.0, duration: 6.0,
+      ));
+      addIndicator(gs, tx, ty - 1, 'SINKHOLE!', IndicatorType.kill);
+
+    } else if (slot == 5) {
+      // Tremor — AoE 5m: 15 dmg + 1.5s snare (40% slow), 8s CD, 25 red
+      if (p.ability5Cooldown > 0) return;
+      if (p.redMana < 25) return;
+      p.redMana -= 25;
+      p.ability5Cooldown = 10.0;
       int hit = 0;
       for (final enemy in gs.fieldPlayers) {
         if (enemy.team == p.team || !enemy.isAlive) continue;
         final dx = enemy.x - p.x, dy = enemy.y - p.y;
-        if (math.sqrt(dx * dx + dy * dy) <= 4.0) {
-          applyDamage(gs, enemy, 20.0, p);
+        if (math.sqrt(dx * dx + dy * dy) <= 5.0) {
+          applyDamage(gs, enemy, 15.0, p);
           enemy.applySnare(1.5, 0.4);
           hit++;
         }
       }
-      addIndicator(gs, p.x, p.y - 1, hit > 0 ? 'QUAKE! ×$hit' : 'QUAKE!', IndicatorType.kill);
+      addIndicator(gs, p.x, p.y - 1, hit > 0 ? 'TREMOR! ×$hit' : 'TREMOR!', IndicatorType.kill);
 
     } else if (slot == 6) {
-      // Bull Rush — dash 7m; stun + 10 dmg any enemy at landing, 10s CD, 20 red
+      // Stone Armor — 40% dmg reduction for 4s, self, 12s CD, 30 blue
       if (p.ability6Cooldown > 0) return;
-      if (p.redMana < 20) return;
-      p.redMana -= 20;
+      if (p.blueMana < 30) return;
+      p.blueMana -= 30;
       p.ability6Cooldown = 10.0;
-      p.x = (p.x + math.cos(p.facing) * 7.0).clamp(0.0, 140.0);
-      p.y = (p.y + math.sin(p.facing) * 7.0).clamp(0.0, 40.0);
-      for (final enemy in gs.fieldPlayers) {
-        if (enemy.team == p.team || !enemy.isAlive) continue;
-        final dx = enemy.x - p.x, dy = enemy.y - p.y;
-        if (math.sqrt(dx * dx + dy * dy) <= 2.5) {
-          applyDamage(gs, enemy, 10.0, p);
-          enemy.stun(1.0);
-          addIndicator(gs, enemy.x, enemy.y - 1, 'DEAD AHEAD!', IndicatorType.event);
-          break;
-        }
-      }
+      p.damageReductionFactor = 0.60;
+      p.damageReductionTimer = 4.0;
+      addIndicator(gs, p.x, p.y - 2, 'STONE ARMOR!', IndicatorType.event);
 
     } else if (slot == 7) {
-      // Bloodlust — self-heal 40 HP, 15s CD, 40 blue
+      // Earthmend — self +35 HP, 15s CD, 35 blue
       if (p.ability7Cooldown > 0) return;
-      if (p.blueMana < 40) return;
-      p.ability7Cooldown = 15.0;
-      p.blueMana -= 40;
-      p.health = math.min(p.maxHealth, p.health + 40.0);
-      addIndicator(gs, p.x, p.y - 2, '+40 HP', IndicatorType.heal);
+      if (p.blueMana < 35) return;
+      p.ability7Cooldown = 10.0;
+      p.blueMana -= 35;
+      p.health = math.min(p.maxHealth, p.health + 35.0);
+      addIndicator(gs, p.x, p.y - 2, '+35 HP', IndicatorType.heal);
 
     } else if (slot == 8) {
-      // Battle Cry — self +30% dmg for 5s + 25 red mana, 12s CD, 20 blue
+      // Upheaval — +20% speed 4s + gain 30 red mana, 10s CD, 20 blue
       if (p.ability8Cooldown > 0) return;
       if (p.blueMana < 20) return;
       p.blueMana -= 20;
-      p.ability8Cooldown = 12.0;
-      p.damageBoostFactor = 1.30;
-      p.damageBoostTimer = 5.0;
-      p.gainRedMana(25.0);
-      addIndicator(gs, p.x, p.y - 2, 'BERSERK!', IndicatorType.kill);
+      p.ability8Cooldown = 5.0;
+      p.speedBoostTimer = 4.0;
+      p.gainRedMana(30.0);
+      addIndicator(gs, p.x, p.y - 2, 'UPHEAVAL!', IndicatorType.event);
 
     } else if (slot == 9) {
-      // Shoulder Charge — dash 5m, knock back all enemies hit 3m, 12s CD, 30 red
+      // Fissure — dash 5m + leave pit strip along path (2 cells wide, 2s), 12s CD, 30 red
       if (p.ability9Cooldown > 0) return;
       if (p.redMana < 30) return;
       p.redMana -= 30;
-      p.ability9Cooldown = 12.0;
+      p.ability9Cooldown = 5.0;
       final destX = (p.x + math.cos(p.facing) * 5.0).clamp(0.0, 140.0);
       final destY = (p.y + math.sin(p.facing) * 5.0).clamp(0.0, 40.0);
-      // Check for enemies along the path
-      for (final enemy in gs.fieldPlayers) {
-        if (enemy.team == p.team || !enemy.isAlive) continue;
-        final dx = enemy.x - p.x, dy = enemy.y - p.y;
-        if (math.sqrt(dx * dx + dy * dy) <= 6.0) {
-          final eDx = enemy.x - destX, eDy = enemy.y - destY;
-          final dist = math.sqrt(eDx * eDx + eDy * eDy);
-          if (dist > 0) {
-            enemy.x = (enemy.x + (eDx / dist) * 3.0).clamp(0.0, 140.0);
-            enemy.y = (enemy.y + (eDy / dist) * 3.0).clamp(0.0, 40.0);
-          }
-          applyDamage(gs, enemy, 15.0, p);
-          addIndicator(gs, enemy.x, enemy.y - 1, 'TORPEDO!', IndicatorType.event);
-        }
-      }
+      TerrainSystem.applyEvent(gs, TerrainEvent(
+        type: TerrainEventType.openPit,
+        worldX: (p.x + destX) / 2, worldY: (p.y + destY) / 2,
+        radius: 3.0, intensity: 1.0, duration: 2.0,
+        directionRad: p.facing,
+      ));
       p.x = destX;
       p.y = destY;
+      addIndicator(gs, destX, destY - 1, 'FISSURE!', IndicatorType.kill);
 
     } else if (slot == 10) {
-      // RAMPAGE — 8s: 50% dmg boost + 30% dmg reduction + stun immune, costs 5 ultra
+      // TERRA NOVA — raise hills + open pits under all enemies, costs 5 ultra
       if (p.ultraMana < 5) return;
       p.ultraMana -= 5;
-      p.damageBoostFactor = 1.50;
-      p.damageBoostTimer = 8.0;
-      p.damageReductionFactor = 0.70;
-      p.damageReductionTimer = 8.0;
-      p.stunImmune = true;
-      p.stunImmuneTimer = 8.0;
-      addIndicator(gs, p.x, p.y - 2, 'RAMPAGE!', IndicatorType.kill);
-      gs.showEvent('RAMPAGE! ${p.name} is an unstoppable force for 8 seconds!');
+      // Raise hills in a wide radius around self
+      TerrainSystem.applyEvent(gs, TerrainEvent(
+        type: TerrainEventType.riseMountain,
+        worldX: p.x, worldY: p.y,
+        radius: 30.0, intensity: 0.7, duration: 8.0,
+      ));
+      // Open pits under each living enemy
+      for (final enemy in gs.fieldPlayers) {
+        if (enemy.team == p.team || !enemy.isAlive) continue;
+        TerrainSystem.applyEvent(gs, TerrainEvent(
+          type: TerrainEventType.openPit,
+          worldX: enemy.x, worldY: enemy.y,
+          radius: 3.0, intensity: 1.0, duration: 6.0,
+        ));
+      }
+      addIndicator(gs, p.x, p.y - 2, 'TERRA NOVA!', IndicatorType.kill);
+      gs.showEvent('TERRA NOVA! ${p.name} reshapes the earth!');
     }
   }
 
@@ -312,7 +320,7 @@ class CombatSystem {
       if (p.tackleCooldown > 0) return;
       final t = _resolveTarget(gs, p, 2.5);
       if (t == null) return;
-      p.tackleCooldown = 0.8;
+      p.tackleCooldown = 1.5;
       gs.dataCollector?.onTackle(p.team == Team.opponent ? 'opponent' : 'player');
       applyDamage(gs, t, 15.0, p);
       if (t.isAlive) {
@@ -332,7 +340,7 @@ class CombatSystem {
       final t = _resolveTarget(gs, p, 3.0);
       if (t == null) return;
       p.redMana -= 25;
-      p.slamCooldown = 3.0;
+      p.slamCooldown = 5.0;
       gs.dataCollector?.onSlam(p.team == Team.opponent ? 'opponent' : 'player');
       applyDamage(gs, t, 30.0, p);
       t.stun(1.0);
@@ -343,7 +351,7 @@ class CombatSystem {
       if (p.blueMana < 20) return;
       p.blueMana -= 20;
       p.speedBoostTimer = 3.0;
-      p.sprintCooldown = 6.0;
+      p.sprintCooldown = 5.0;
 
     } else if (slot == 4) {
       // Bulwark — self 50% dmg reduction for 3s, 10s CD, 25 blue
@@ -373,7 +381,7 @@ class CombatSystem {
       final t = _findNearestAlly(gs, p, 5.0);
       if (t == null) return;
       p.blueMana -= 20;
-      p.ability6Cooldown = 12.0;
+      p.ability6Cooldown = 1.5;
       t.cleanse();
       addIndicator(gs, t.x, t.y - 2, 'ABSOLVED!', IndicatorType.event);
 
@@ -381,7 +389,7 @@ class CombatSystem {
       // Second Wind — self +35 HP + 20 blue, 18s CD, 35 blue
       if (p.ability7Cooldown > 0) return;
       if (p.blueMana < 35) return;
-      p.ability7Cooldown = 18.0;
+      p.ability7Cooldown = 10.0;
       p.blueMana -= 35;
       p.health = math.min(p.maxHealth, p.health + 35.0);
       p.blueMana = math.min(100, p.blueMana + 20.0);
@@ -394,7 +402,7 @@ class CombatSystem {
       final t = _findNearestAlly(gs, p, 5.0);
       if (t == null) return;
       p.blueMana -= 30;
-      p.ability8Cooldown = 14.0;
+      p.ability8Cooldown = 20.0;
       t.damageReductionFactor = 0.70;
       t.damageReductionTimer = 4.0;
       addIndicator(gs, t.x, t.y - 2, 'AEGIS!', IndicatorType.event);
@@ -451,7 +459,7 @@ class CombatSystem {
       if (p.tackleCooldown > 0) return;
       final t = _resolveTarget(gs, p, 2.5);
       if (t == null) return;
-      p.tackleCooldown = 0.6;
+      p.tackleCooldown = 1.5;
       gs.dataCollector?.onTackle(p.team == Team.opponent ? 'opponent' : 'player');
       applyDamage(gs, t, 10.0, p);
       checkCombo(gs, p);
@@ -463,7 +471,7 @@ class CombatSystem {
       final t = _resolveTarget(gs, p, 3.0);
       if (t == null) return;
       p.redMana -= 20;
-      p.slamCooldown = 3.0;
+      p.slamCooldown = 1.5;
       gs.dataCollector?.onSlam(p.team == Team.opponent ? 'opponent' : 'player');
       applyDamage(gs, t, 15.0, p);
       t.applySnare(2.0, 0.4);
@@ -484,7 +492,7 @@ class CombatSystem {
       final t = _findNearestAlly(gs, p, 5.0);
       if (t == null) return;
       p.blueMana -= 30;
-      p.ability4Cooldown = 10.0;
+      p.ability4Cooldown = 5.0;
       t.health = math.min(t.maxHealth, t.health + 30.0);
       addIndicator(gs, t.x, t.y - 2, '+30 HP', IndicatorType.heal);
 
@@ -495,7 +503,7 @@ class CombatSystem {
       final t = _findNearestAlly(gs, p, 5.0);
       if (t == null) return;
       p.blueMana -= 25;
-      p.ability5Cooldown = 12.0;
+      p.ability5Cooldown = 10.0;
       t.blueMana = math.min(100, t.blueMana + 35.0);
       addIndicator(gs, t.x, t.y - 1, '+35 BLU', IndicatorType.combo);
 
@@ -518,7 +526,7 @@ class CombatSystem {
       final t = _findNearestAlly(gs, p, 5.0);
       if (t == null) return;
       p.blueMana -= 45;
-      p.ability7Cooldown = 18.0;
+      p.ability7Cooldown = 20.0;
       t.health = math.min(t.maxHealth, t.health + 60.0);
       t.cleanse();
       addIndicator(gs, t.x, t.y - 2, '+60 HP', IndicatorType.heal);
@@ -529,7 +537,7 @@ class CombatSystem {
       if (p.ability8Cooldown > 0) return;
       if (p.blueMana < 40) return;
       p.blueMana -= 40;
-      p.ability8Cooldown = 18.0;
+      p.ability8Cooldown = 20.0;
       int boosted = 0;
       for (final mate in gs.fieldPlayers) {
         if (mate.team != p.team || mate.id == p.id || !mate.isAlive) continue;
@@ -547,7 +555,7 @@ class CombatSystem {
       if (p.ability9Cooldown > 0) return;
       if (p.redMana < 25) return;
       p.redMana -= 25;
-      p.ability9Cooldown = 12.0;
+      p.ability9Cooldown = 10.0;
       p.x = (p.x + math.cos(p.facing) * 5.0).clamp(0.0, 140.0);
       p.y = (p.y + math.sin(p.facing) * 5.0).clamp(0.0, 40.0);
       for (final enemy in gs.fieldPlayers) {
@@ -592,7 +600,7 @@ class CombatSystem {
       if (p.tackleCooldown > 0) return;
       final t = _resolveTarget(gs, p, 2.5);
       if (t == null) return;
-      p.tackleCooldown = 0.7;
+      p.tackleCooldown = 1.5;
       gs.dataCollector?.onTackle(p.team == Team.opponent ? 'opponent' : 'player');
       applyDamage(gs, t, 18.0, p);
       checkCombo(gs, p);
@@ -604,7 +612,7 @@ class CombatSystem {
       final t = _resolveTarget(gs, p, 3.0);
       if (t == null) return;
       p.redMana -= 25;
-      p.slamCooldown = 3.0;
+      p.slamCooldown = 5.0;
       gs.dataCollector?.onSlam(p.team == Team.opponent ? 'opponent' : 'player');
       final hadBall = gs.ball.holderId == t.id;
       applyDamage(gs, t, 25.0, p);
@@ -625,14 +633,14 @@ class CombatSystem {
       if (p.blueMana < 15) return;
       p.blueMana -= 15;
       p.speedBoostTimer = 3.0;
-      p.sprintCooldown = 5.0;
+      p.sprintCooldown = 1.5;
 
     } else if (slot == 4) {
       // Aggressive Rush — dash 5m + snare enemy at landing (2s, 50% slow), 8s CD, 20 red
       if (p.ability4Cooldown > 0) return;
       if (p.redMana < 20) return;
       p.redMana -= 20;
-      p.ability4Cooldown = 8.0;
+      p.ability4Cooldown = 5.0;
       p.x = (p.x + math.cos(p.facing) * 5.0).clamp(0.0, 140.0);
       p.y = (p.y + math.sin(p.facing) * 5.0).clamp(0.0, 40.0);
       for (final enemy in gs.fieldPlayers) {
@@ -650,7 +658,7 @@ class CombatSystem {
       if (p.ability5Cooldown > 0) return;
       if (p.blueMana < 20) return;
       p.blueMana -= 20;
-      p.ability5Cooldown = 8.0;
+      p.ability5Cooldown = 10.0;
       p.damageBoostFactor = math.max(p.damageBoostFactor, 1.20);
       p.damageBoostTimer = 4.0;
       addIndicator(gs, p.x, p.y - 2, '+DMG!', IndicatorType.kill);
@@ -682,7 +690,7 @@ class CombatSystem {
       final t = _resolveTarget(gs, p, 20.0); // long range, targeting only
       if (t == null) return;
       p.blueMana -= 20;
-      p.ability7Cooldown = 12.0;
+      p.ability7Cooldown = 10.0;
       t.applyMark(5.0);
       addIndicator(gs, t.x, t.y - 2, 'CONDEMNED!', IndicatorType.kill);
 
@@ -691,7 +699,7 @@ class CombatSystem {
       if (p.ability8Cooldown > 0) return;
       if (p.blueMana < 25) return;
       p.blueMana -= 25;
-      p.ability8Cooldown = 10.0;
+      p.ability8Cooldown = 20.0;
       int hit = 0;
       for (final enemy in gs.fieldPlayers) {
         if (enemy.team == p.team || !enemy.isAlive) continue;
@@ -712,7 +720,7 @@ class CombatSystem {
       final t = _resolveTarget(gs, p, 3.5);
       if (t == null) return;
       p.redMana -= 25;
-      p.ability9Cooldown = 14.0;
+      p.ability9Cooldown = 20.0;
       final creature = gs.creature;
       final dx = creature.x - t.x;
       final dy = creature.y - t.y;
@@ -819,10 +827,18 @@ class CombatSystem {
     // Mark bonus: +25% damage to marked targets
     final markMult = victim.markedTimer > 0 ? 1.25 : 1.0;
 
+    // High-ground bonus: +15% if attacker is on elevated terrain
+    final highGroundMult = (attacker != null &&
+            gs.terrain.cellAt(attacker.x, attacker.y).height > 1.0)
+        ? 1.15
+        : 1.0;
+
     final finalDmg = (damage
             * (attacker?.damageBoostFactor ?? 1.0)
+            * (attacker?.hexedFactor ?? 1.0)
             * victim.damageReductionFactor
-            * markMult)
+            * markMult
+            * highGroundMult)
         .clamp(0.0, 9999.0);
 
     victim.health -= finalDmg;
@@ -928,5 +944,228 @@ class CombatSystem {
     gs.indicators.add(
       DamageIndicator(worldX: x, worldY: y, text: text, type: type),
     );
+  }
+
+  static void processTraps(GameState gs, double dt) {
+    for (int i = gs.tricksterTraps.length - 1; i >= 0; i--) {
+      final trap = gs.tricksterTraps[i];
+      trap.timer -= dt;
+      if (trap.timer <= 0) { gs.tricksterTraps.removeAt(i); continue; }
+      if (trap.triggered) continue;
+      for (final p in gs.fieldPlayers) {
+        if (p.team == trap.ownerTeam || !p.isAlive) continue;
+        final dx = p.x - trap.worldX, dy = p.y - trap.worldY;
+        if (dx * dx + dy * dy <= trap.radius * trap.radius) {
+          p.applySnare(trap.snareDuration, trap.snareMultiplier);
+          addIndicator(gs, p.x, p.y - 1, 'TRAPPED!', IndicatorType.event);
+          trap.triggered = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // ─── TRICKSTER abilities ──────────────────────────────────────────────────
+  // Crowd-control specialist and trickster. Low HP (85) but fast (9 m/s).
+  // Inspired by Loki, Anansi, Puck, Kitsune, Coyote.
+
+  static void _tricksterAbility(GameState gs, UltraballPlayer p, int slot) {
+    if (slot == 1) {
+      // Hex Strike — 10 dmg + 3s Hex (−20% dmg output), 1.5s CD
+      if (p.tackleCooldown > 0) return;
+      final t = _resolveTarget(gs, p, 2.5);
+      if (t == null) return;
+      p.tackleCooldown = 1.5;
+      gs.dataCollector?.onTackle(p.team == Team.opponent ? 'opponent' : 'player');
+      applyDamage(gs, t, 10.0, p);
+      if (t.isAlive) {
+        t.applyHex(3.0, 0.80);
+        addIndicator(gs, t.x, t.y - 1, 'HEX!', IndicatorType.event);
+      }
+      checkCombo(gs, p);
+
+    } else if (slot == 2) {
+      // Phantom Step — teleport 7m forward, leave snare trap at origin
+      if (p.slamCooldown > 0) return;
+      if (p.blueMana < 20) return;
+      p.blueMana -= 20;
+      p.slamCooldown = 10.0;
+      final trapX = p.x, trapY = p.y;
+      p.x = (p.x + math.cos(p.facing) * 7.0).clamp(0.0, 140.0);
+      p.y = (p.y + math.sin(p.facing) * 7.0).clamp(0.0, 40.0);
+      gs.tricksterTraps.add(TricksterTrap(
+        worldX: trapX, worldY: trapY, ownerTeam: p.team,
+        radius: 2.5, timer: 8.0, snareDuration: 2.0, snareMultiplier: 0.5,
+      ));
+      addIndicator(gs, p.x, p.y - 1, 'PHANTOM!', IndicatorType.event);
+
+    } else if (slot == 3) {
+      // Fox Sprint — 1.5× speed for 3s, 5s CD, 15 blue
+      if (p.sprintCooldown > 0) return;
+      if (p.blueMana < 15) return;
+      p.blueMana -= 15;
+      p.speedBoostTimer = 3.0;
+      p.sprintCooldown = 5.0;
+
+    } else if (slot == 4) {
+      // Befuddle — 2.5s confusion + force fumble if target has ball, 10s CD, 25 red
+      if (p.ability4Cooldown > 0) return;
+      if (p.redMana < 25) return;
+      final t = _resolveTarget(gs, p, 3.0);
+      if (t == null) return;
+      p.redMana -= 25;
+      p.ability4Cooldown = 10.0;
+      t.applyConfusion(2.5);
+      addIndicator(gs, t.x, t.y - 1, 'CONFUSED!', IndicatorType.kill);
+      if (gs.ball.holderId == t.id) {
+        gs.ball.holderId = null;
+        gs.ball.isInFlight = false;
+        gs.ball.velX = 0;
+        gs.ball.velY = 0;
+        addIndicator(gs, t.x, t.y - 2, 'FUMBLE!', IndicatorType.kill);
+        gs.showEvent('BEFUDDLE! ${t.name} drops the ball in confusion!');
+      }
+
+    } else if (slot == 5) {
+      // Creature Goad — reverse creature direction 5s + push nearby enemies, 20s CD, 40 red
+      if (p.ability5Cooldown > 0) return;
+      if (p.redMana < 40) return;
+      p.redMana -= 40;
+      p.ability5Cooldown = 20.0;
+      gs.creature.reverseDirection(5.0);
+      int pushed = 0;
+      for (final enemy in gs.fieldPlayers) {
+        if (enemy.team == p.team || !enemy.isAlive) continue;
+        final dx = enemy.x - gs.creature.x, dy = enemy.y - gs.creature.y;
+        final dist = math.sqrt(dx * dx + dy * dy);
+        if (dist <= 8.0 && dist > 0) {
+          enemy.x = (enemy.x + (dx / dist) * 5.0).clamp(0.0, 140.0);
+          enemy.y = (enemy.y + (dy / dist) * 5.0).clamp(0.0, 40.0);
+          pushed++;
+        }
+      }
+      addIndicator(gs, gs.creature.x, gs.creature.y - 2, 'GOADED!', IndicatorType.kill);
+      gs.showEvent('CREATURE GOAD! ${gs.creature.name} reverses direction${pushed > 0 ? ", $pushed enemies scattered!" : "!"}');
+
+    } else if (slot == 6) {
+      // Position Swap — swap positions with target (8m range); steal ball if they have it, 60s CD, 35 blue
+      if (p.ability6Cooldown > 0) return;
+      if (p.blueMana < 35) return;
+      final t = _findNearestEnemy(gs, p, 8.0);
+      if (t == null) return;
+      p.blueMana -= 35;
+      p.ability6Cooldown = 20.0;
+      final oldX = p.x, oldY = p.y;
+      p.x = t.x; p.y = t.y;
+      t.x = oldX; t.y = oldY;
+      if (gs.ball.holderId == t.id) {
+        gs.ball.holderId = p.id;
+        gs.ball.changePossession(p.team == Team.player ? 'player' : 'opponent');
+        addIndicator(gs, p.x, p.y - 2, 'STOLEN!', IndicatorType.kill);
+      } else {
+        addIndicator(gs, p.x, p.y - 1, 'SWAPPED!', IndicatorType.event);
+      }
+
+    } else if (slot == 7) {
+      // Jinx — drain 25 red + 20 blue from target; give self half; stun 1s if drained full, 10s CD, 25 blue
+      if (p.ability7Cooldown > 0) return;
+      if (p.blueMana < 25) return;
+      final t = _resolveTarget(gs, p, 5.0);
+      if (t == null) return;
+      p.blueMana -= 25;
+      p.ability7Cooldown = 10.0;
+      final drainedRed = math.min(t.redMana, 25.0);
+      final drainedBlue = math.min(t.blueMana, 20.0);
+      t.redMana = math.max(0, t.redMana - 25.0);
+      t.blueMana = math.max(0, t.blueMana - 20.0);
+      p.gainRedMana(drainedRed / 2.0);
+      p.blueMana = math.min(100, p.blueMana + drainedBlue / 2.0);
+      if (drainedRed >= 25.0) {
+        t.stun(1.0);
+        addIndicator(gs, t.x, t.y - 1, 'JINXED!', IndicatorType.kill);
+      } else {
+        addIndicator(gs, t.x, t.y - 1, 'DRAINED!', IndicatorType.event);
+      }
+
+    } else if (slot == 8) {
+      // Hex Nova — if target is hexed: spread 4s hex to all enemies within 5m.
+      // If not: hex target + all enemies within 3m for 3s. 10s CD, 20 blue.
+      if (p.ability8Cooldown > 0) return;
+      if (p.blueMana < 20) return;
+      final t = _resolveTarget(gs, p, 5.0);
+      if (t == null) return;
+      p.blueMana -= 20;
+      p.ability8Cooldown = 5.0;
+      if (t.hexedTimer > 0) {
+        // Spread phase: erupt the hex outward from the target
+        int spread = 0;
+        for (final enemy in gs.fieldPlayers) {
+          if (enemy.team == p.team || !enemy.isAlive) continue;
+          final dx = enemy.x - t.x, dy = enemy.y - t.y;
+          if (dx * dx + dy * dy <= 25.0) { // 5m radius
+            enemy.applyHex(4.0, 0.80);
+            addIndicator(gs, enemy.x, enemy.y - 1, 'HEX!', IndicatorType.event);
+            spread++;
+          }
+        }
+        gs.showEvent('HEX NOVA! Curse erupts — $spread enemies hexed!');
+      } else {
+        // Seed phase: hex target and nearby cluster
+        int hit = 0;
+        for (final enemy in gs.fieldPlayers) {
+          if (enemy.team == p.team || !enemy.isAlive) continue;
+          final dx = enemy.x - t.x, dy = enemy.y - t.y;
+          if (dx * dx + dy * dy <= 9.0) { // 3m radius from target
+            enemy.applyHex(3.0, 0.80);
+            addIndicator(gs, enemy.x, enemy.y - 1, 'HEX!', IndicatorType.event);
+            hit++;
+          }
+        }
+        t.applyHex(3.0, 0.80); // always hex the primary target
+        if (hit == 0) addIndicator(gs, t.x, t.y - 1, 'HEX!', IndicatorType.event);
+        gs.showEvent('HEX NOVA! ${t.name} hexed${hit > 1 ? " + ${hit - 1} nearby!" : "!"}');
+      }
+
+    } else if (slot == 9) {
+      // Chaos Fumble — force fumble + 1.5s stun if target has ball; else 20 dmg + Hex, 10s CD, 30 red
+      if (p.ability9Cooldown > 0) return;
+      if (p.redMana < 30) return;
+      final t = _resolveTarget(gs, p, 3.5);
+      if (t == null) return;
+      p.redMana -= 30;
+      p.ability9Cooldown = 1.5;
+      if (gs.ball.holderId == t.id) {
+        gs.ball.holderId = null;
+        gs.ball.isInFlight = false;
+        gs.ball.velX = 0;
+        gs.ball.velY = 0;
+        t.stun(1.5);
+        addIndicator(gs, t.x, t.y - 1, 'CHAOS!', IndicatorType.kill);
+        gs.showEvent('CHAOS FUMBLE! ${t.name} loses the ball!');
+      } else {
+        applyDamage(gs, t, 20.0, p);
+        if (t.isAlive) {
+          t.applyHex(3.0, 0.80);
+          addIndicator(gs, t.x, t.y - 1, 'HEX!', IndicatorType.event);
+        }
+      }
+
+    } else if (slot == 10) {
+      // PANDEMONIUM — mass confusion 3s on all enemies; reverse creature; drain enemy red mana, 5 ultra
+      if (p.ultraMana < 5) return;
+      p.ultraMana -= 5;
+      int confused = 0;
+      for (final enemy in gs.fieldPlayers) {
+        if (enemy.team == p.team || !enemy.isAlive) continue;
+        enemy.applyConfusion(3.0);
+        p.gainRedMana(enemy.redMana / 2.0);
+        enemy.redMana = 0;
+        addIndicator(gs, enemy.x, enemy.y - 1, '?!?!', IndicatorType.kill);
+        confused++;
+      }
+      gs.creature.reverseDirection(6.0);
+      addIndicator(gs, p.x, p.y - 2, 'PANDEMONIUM!', IndicatorType.kill);
+      gs.showEvent('PANDEMONIUM! $confused enemies confused, creature reverses!');
+    }
   }
 }

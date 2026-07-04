@@ -19,6 +19,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   CreatureType _neutralCreatureType = CreatureType.chaos;
   bool _fastMode = false;
   ViewMode _viewMode = ViewMode.flat;
+  bool _useCubeModels = false;
   AiStrategy _homeStrategy = AiStrategy.numericalEdge;
   AiTactics  _homeTactics  = AiTactics.heroBall;
   AiStrategy _aiStrategy   = AiStrategy.tempoTrap;
@@ -39,6 +40,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       creatureType: creatureType,
       fastMode: _fastMode,
       viewMode: _viewMode,
+      useCubeModels: _useCubeModels,
       homeStrategy: _homeStrategy,
       homeTactics:  _homeTactics,
       aiStrategy:   _aiStrategy,
@@ -46,7 +48,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       homeRosterOrder: List.from(_homeRosterOrder),
     );
 
-    Navigator.of(context).pushReplacement(
+    Navigator.of(context).push(
       MaterialPageRoute(
         builder: (ctx) => GameWidget(settings: settings),
       ),
@@ -442,6 +444,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ],
                 ),
+                if (_viewMode == ViewMode.full3D) ...[
+                  const SizedBox(height: 12),
+                  const Divider(color: Color(0xFF2A2A3A), height: 1),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'CHARACTER MODELS',
+                              style: TextStyle(
+                                color: Color(0xFF8888AA),
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _useCubeModels ? 'Default cubes' : 'Character rigs',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        value: _useCubeModels,
+                        onChanged: (v) => setState(() => _useCubeModels = v),
+                        activeColor: const Color(0xFF4488FF),
+                        inactiveThumbColor: const Color(0xFF6666AA),
+                        inactiveTrackColor: const Color(0xFF1A1A2E),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -1211,22 +1253,24 @@ class _EditableTeamRoster extends StatefulWidget {
 class _EditableTeamRosterState extends State<_EditableTeamRoster> {
   final Set<int> _expanded = {};
 
-  static Color _classColor(int playerIdx) => switch (playerIdx % 5) {
+  static Color _classColor(int playerIdx) => switch (playerIdx % 6) {
     0 => const Color(0xFF44FFCC),
     1 => const Color(0xFFFF44AA),
     2 => const Color(0xFFFF5544),
     3 => const Color(0xFF4488FF),
-    _ => const Color(0xFFFFCC44),
+    4 => const Color(0xFFFFCC44),
+    _ => const Color(0xFFAA44FF),
   };
 
   static String _classBadge(int playerIdx) => _playerClass(playerIdx).displayName;
 
-  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 5) {
+  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 6) {
     0 => PlayerClass.runner,
     1 => PlayerClass.blitzer,
-    2 => PlayerClass.enforcer,
+    2 => PlayerClass.geomancer,
     3 => PlayerClass.warden,
-    _ => PlayerClass.handler,
+    4 => PlayerClass.handler,
+    _ => PlayerClass.trickster,
   };
 
   Widget _buildInfoPanel(int playerIdx) {
@@ -1458,22 +1502,24 @@ class _ReadonlyTeamRoster extends StatefulWidget {
 class _ReadonlyTeamRosterState extends State<_ReadonlyTeamRoster> {
   final Set<int> _expanded = {};
 
-  static Color _classColor(int playerIdx) => switch (playerIdx % 5) {
+  static Color _classColor(int playerIdx) => switch (playerIdx % 6) {
     0 => const Color(0xFF44FFCC),
     1 => const Color(0xFFFF44AA),
     2 => const Color(0xFFFF5544),
     3 => const Color(0xFF4488FF),
-    _ => const Color(0xFFFFCC44),
+    4 => const Color(0xFFFFCC44),
+    _ => const Color(0xFFAA44FF),
   };
 
   static String _classBadge(int playerIdx) => _playerClass(playerIdx).displayName;
 
-  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 5) {
+  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 6) {
     0 => PlayerClass.runner,
     1 => PlayerClass.blitzer,
-    2 => PlayerClass.enforcer,
+    2 => PlayerClass.geomancer,
     3 => PlayerClass.warden,
-    _ => PlayerClass.handler,
+    4 => PlayerClass.handler,
+    _ => PlayerClass.trickster,
   };
 
   Widget _buildInfoPanel(int playerIdx) {
@@ -1678,7 +1724,7 @@ class _ClassesSection extends StatelessWidget {
   static const _entries = [
     (PlayerClass.runner,   Color(0xFF44FFCC)),
     (PlayerClass.blitzer,  Color(0xFFFF44AA)),
-    (PlayerClass.enforcer, Color(0xFFFF5544)),
+    (PlayerClass.geomancer, Color(0xFFFF5544)),
     (PlayerClass.warden,   Color(0xFF4488FF)),
     (PlayerClass.handler,  Color(0xFFFFCC44)),
   ];

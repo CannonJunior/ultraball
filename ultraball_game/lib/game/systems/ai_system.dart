@@ -34,8 +34,8 @@ class AiSystem {
     final playerTeam = gs.getTeamOnField(Team.player);
     final ball       = gs.ball;
     final policy     = gs.activePolicy;
-    final tactics    = gs.settings.aiTactics;
-    final strategy   = gs.settings.aiStrategy;
+    final tactics    = gs.effectiveAiTactics;
+    final strategy   = gs.effectiveAiStrategy;
 
     // Pre-sort opponents by distance to holder for defense ranking
     final holderForSort = gs.getPlayerById(ball.holderId ?? '');
@@ -83,6 +83,13 @@ class AiSystem {
         continue;
       }
 
+      // Confused: move erratically
+      if (opp.confusedTimer > 0) {
+        opp.velX = math.sin(opp.confusedTimer * 7.3) * opp.speed;
+        opp.velY = math.cos(opp.confusedTimer * 5.1) * opp.speed;
+        continue;
+      }
+
       final avoid = _getCreatureAvoidance(gs, opp);
 
       if (ball.holderId == null && !ball.isInFlight) {
@@ -104,7 +111,7 @@ class AiSystem {
           // Chase in-flight ball to catch it
           _moveToward(opp, ball.x, ball.y, avoid);
         } else {
-          _opponentSupportBehavior(opp, gs, avoid, opponents, playerTeam,
+          _opponentSupportBehavior(opp, gs, avoid, playerTeam,
               policy, tactics, strategy);
         }
         _tryAttackNearest(gs, opp, playerTeam, focusTarget);
@@ -225,7 +232,6 @@ class AiSystem {
     UltraballPlayer opp,
     GameState gs,
     _Vec2 avoid,
-    List<UltraballPlayer> teammates,
     List<UltraballPlayer> defenders,
     dynamic policy,
     AiTactics tactics,
@@ -319,7 +325,7 @@ class AiSystem {
       targetX = (targetX + holder.x) / 2.0;
     }
 
-    _moveToward(opp, targetX.clamp(22.0, 138.0), targetY.clamp(2.0, 38.0), avoid);
+    _moveToward(opp, targetX.clamp(30.0, 138.0), targetY.clamp(2.0, 38.0), avoid);
   }
 
   // ── Opponent defense ─────────────────────────────────────────────────────
@@ -445,6 +451,13 @@ class AiSystem {
       if (!p.isAlive || p.isStunned) {
         p.velX = 0;
         p.velY = 0;
+        continue;
+      }
+
+      // Confused: move erratically
+      if (p.confusedTimer > 0) {
+        p.velX = math.sin(p.confusedTimer * 7.3) * p.speed;
+        p.velY = math.cos(p.confusedTimer * 5.1) * p.speed;
         continue;
       }
 
@@ -738,10 +751,10 @@ class AiSystem {
     // Predict where the target will be when ball arrives
     final flightTime = dist / BallSystem.ballSpeed;
     final rawPredX = (target.x + target.velX * flightTime).clamp(0.0, 140.0);
-    // Clamp so passes never land inside the thrower's own scoring endzone
+    // Clamp so passes never land inside the thrower's own endzone buffer (x<30 for opponent, x>110 for player)
     final predX = thrower.team == Team.opponent
-        ? rawPredX.clamp(22.0, 140.0)
-        : rawPredX.clamp(0.0, 118.0);
+        ? rawPredX.clamp(30.0, 140.0)
+        : rawPredX.clamp(0.0, 110.0);
     final predY = (target.y + target.velY * flightTime).clamp(0.0, 40.0);
 
     BallSystem.tryPass(gs, thrower, predX, predY, false);
@@ -796,7 +809,11 @@ class AiSystem {
       if (ratio > 0.45) sprint = true; // charge building — sprint to score/pass
     }
 
-    if (sprint) CombatSystem.useClassAbility(gs, p, 3);
+    if (sprint) {
+      // Geomancer's sprint is Upheaval (slot 8); every other class uses slot 3
+      final sprintSlot = p.playerClass == PlayerClass.geomancer ? 8 : 3;
+      CombatSystem.useClassAbility(gs, p, sprintSlot);
+    }
   }
 
   /// Use healing and protective abilities based on class role.
@@ -872,10 +889,32 @@ class AiSystem {
           if (hasWounded) CombatSystem.useClassAbility(gs, p, 4);
         }
 
-      case PlayerClass.enforcer:
-        // Bloodlust (slot 7): self-heal when below 55%
-        if (p.ability7Cooldown <= 0 && p.blueMana >= 40 && hp < 0.55) {
+      case PlayerClass.geomancer:
+        // Earthmend (slot 7): self-heal when below 55%
+        if (p.ability7Cooldown <= 0 && p.blueMana >= 35 && hp < 0.55) {
           CombatSystem.useClassAbility(gs, p, 7);
+        }
+        // Raise Hill (slot 2): use occasionally when near enemies
+        if (p.slamCooldown <= 0 && p.redMana >= 25) {
+          bool nearEnemy = false;
+          for (final e in gs.fieldPlayers) {
+            if (e.team == p.team || !e.isAlive) continue;
+            final dx = e.x - p.x, dy = e.y - p.y;
+            if (dx * dx + dy * dy <= 100.0) { nearEnemy = true; break; }
+          }
+          if (nearEnemy) CombatSystem.useClassAbility(gs, p, 2);
+        }
+        // Open Sinkhole (slot 4): use near enemy ball carrier
+        if (p.ability4Cooldown <= 0 && p.redMana >= 35) {
+          final holder = gs.getPlayerById(gs.ball.holderId ?? '');
+          if (holder != null && holder.team != p.team) {
+            final dx = holder.x - p.x, dy = holder.y - p.y;
+            if (dx * dx + dy * dy <= 225.0) { // 15m
+              // Face toward holder then fire
+              p.facing = math.atan2(dy, dx);
+              CombatSystem.useClassAbility(gs, p, 4);
+            }
+          }
         }
 
       case PlayerClass.runner:
@@ -888,6 +927,26 @@ class AiSystem {
 
       case PlayerClass.blitzer:
         break;
+
+      case PlayerClass.trickster:
+        // Jinx (slot 7): drain enemy mana when a target is in range
+        if (p.ability7Cooldown <= 0 && p.blueMana >= 25) {
+          CombatSystem.useClassAbility(gs, p, 7);
+        }
+        // Chaos Fumble (slot 9): use near ball carrier
+        if (p.ability9Cooldown <= 0 && p.redMana >= 30) {
+          final holder = gs.getPlayerById(gs.ball.holderId ?? '');
+          if (holder != null && holder.team != p.team) {
+            final dx = holder.x - p.x, dy = holder.y - p.y;
+            if (dx * dx + dy * dy <= 16.0) {
+              CombatSystem.useClassAbility(gs, p, 9);
+            }
+          }
+        }
+        // Befuddle (slot 4): confuse enemies near ball carrier
+        if (p.ability4Cooldown <= 0 && p.redMana >= 25) {
+          CombatSystem.useClassAbility(gs, p, 4);
+        }
     }
   }
 

@@ -6,8 +6,33 @@ import '../models/creature.dart';
 import '../models/act_state.dart';
 import '../models/damage_indicator.dart';
 import '../models/game_settings.dart';
+import '../models/gameplay_preferences.dart';
+import '../models/terrain_grid.dart';
+import '../models/terrain_event.dart';
 import '../ai/ai_policy.dart';
-import '../ai/game_data_collector.dart';
+import '../ai/ai_strategy.dart';
+import '../ai/game_data_sink.dart';
+
+class TricksterTrap {
+  final double worldX;
+  final double worldY;
+  final double radius;
+  final Team ownerTeam;
+  double timer;
+  bool triggered = false;
+  final double snareDuration;
+  final double snareMultiplier;
+
+  TricksterTrap({
+    required this.worldX,
+    required this.worldY,
+    required this.ownerTeam,
+    this.radius = 2.5,
+    this.timer = 8.0,
+    this.snareDuration = 2.0,
+    this.snareMultiplier = 0.5,
+  });
+}
 
 class GameState {
   final GameSettings settings;
@@ -38,7 +63,7 @@ class GameState {
   bool paused = false;
   bool gameStarted = false;
   AiPolicy? activePolicy;
-  GameDataCollector? dataCollector;
+  GameDataSink? dataCollector;
 
   // Tab-targeting
   String? currentTargetId;      // id of targeted enemy (opponent player)
@@ -53,13 +78,53 @@ class GameState {
   // Pass targeting
   bool isAiming = false;
 
+  // Terrain state
+  TerrainGrid terrain = TerrainGrid();
+
+  // Trickster traps
+  List<TricksterTrap> tricksterTraps = [];
+
+  // Geomancer hold-to-aim terrain placement
+  bool isAimingTerrain = false;
+  TerrainEventType? terrainAimEventType;
+  static const double terrainAimRange = 10.0;
+
   // Act transition state
   bool showingActTransition = false;
   double actTransitionTimer = 0;
   String actTransitionMessage = '';
   bool showingRosterScreen = false;
 
+  // ── Runtime preferences (display + AI overrides) ─────────────────────────
+  final GameplayPreferences prefs = GameplayPreferences();
+
+  /// Effective AI strategy for the opponent — override takes precedence.
+  AiStrategy get effectiveAiStrategy =>
+      prefs.aiStrategyOverride ?? settings.aiStrategy;
+
+  /// Effective AI tactics for the opponent — override takes precedence.
+  AiTactics get effectiveAiTactics =>
+      prefs.aiTacticsOverride ?? settings.aiTactics;
+
   GameState({required this.settings});
+
+  /// Minimal constructor for unit tests — populates _playerById without
+  /// calling initialize() so tests control roster contents precisely.
+  GameState.forTesting({
+    required GameSettings testSettings,
+    List<UltraballPlayer>? players,
+    List<UltraballPlayer>? opponents,
+  }) : settings = testSettings {
+    playerRoster  = List.of(players   ?? []);
+    opponentRoster = List.of(opponents ?? []);
+    for (final p in playerRoster)   _playerById[p.id] = p;
+    for (final p in opponentRoster) _playerById[p.id] = p;
+    ball     = Ultraball(x: 70, y: 20);
+    creature = Creature(type: CreatureType.kraken);
+    actState.isActive = true;
+    actState.timerSeconds = 60.0;
+    markRosterDirty();
+  }
 
   // ---- Roster cache management ----
 
@@ -127,9 +192,9 @@ class GameState {
     final playerNames = settings.homePlayerNames;
     for (int i = 0; i < 15; i++) {
       final cls = const [
-        PlayerClass.runner, PlayerClass.blitzer, PlayerClass.enforcer,
-        PlayerClass.warden, PlayerClass.handler,
-      ][i % 5];
+        PlayerClass.runner, PlayerClass.blitzer, PlayerClass.geomancer,
+        PlayerClass.warden, PlayerClass.handler, PlayerClass.trickster,
+      ][i % 6];
       final startX = 80.0 + rand.nextDouble() * 20.0;
       final startY = 5.0 + rand.nextDouble() * 30.0;
       final p = UltraballPlayer(
@@ -152,9 +217,9 @@ class GameState {
     final opponentNames = settings.awayPlayerNames;
     for (int i = 0; i < 15; i++) {
       final cls = const [
-        PlayerClass.runner, PlayerClass.blitzer, PlayerClass.enforcer,
-        PlayerClass.warden, PlayerClass.handler,
-      ][i % 5];
+        PlayerClass.runner, PlayerClass.blitzer, PlayerClass.geomancer,
+        PlayerClass.warden, PlayerClass.handler, PlayerClass.trickster,
+      ][i % 6];
       final startX = 40.0 + rand.nextDouble() * 20.0;
       final startY = 5.0 + rand.nextDouble() * 30.0;
       final p = UltraballPlayer(

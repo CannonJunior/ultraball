@@ -42,6 +42,7 @@ class GameSettings {
   final CreatureType creatureType;
   final bool fastMode;
   final ViewMode viewMode;
+  final bool useCubeModels; // full3D only: use single-cube placeholders instead of character rigs
   final AiStrategy homeStrategy;
   final AiTactics  homeTactics;
   final AiStrategy aiStrategy;
@@ -63,6 +64,7 @@ class GameSettings {
     required this.creatureType,
     required this.fastMode,
     this.viewMode = ViewMode.flat,
+    this.useCubeModels = false,
     this.homeStrategy = AiStrategy.numericalEdge,
     this.homeTactics  = AiTactics.heroBall,
     this.aiStrategy   = AiStrategy.tempoTrap,

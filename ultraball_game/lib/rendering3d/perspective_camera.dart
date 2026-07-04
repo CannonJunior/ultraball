@@ -27,7 +27,7 @@ class PerspectiveCamera {
   double _thirdPersonHeight = 4.0;
   double _thirdPersonPitch = 25.0;
   final double _thirdPersonFOV = 90.0;
-  final double _broadcastFOV = 60.0;
+  final double _broadcastFOV = 65.0;  // match UltraballRenderSystem init FOV
 
   // Unused in Ultraball but retained for API compatibility with updateCameraLerp
   double rollAngle = 0.0;

@@ -87,6 +87,11 @@ class UltraballPlayer {
   bool attacksApplySnare = false;
   double attacksApplySnareTimer = 0.0;
 
+  // Trickster status effects
+  double hexedTimer = 0.0;
+  double hexedFactor = 1.0; // <1.0 = reduced damage output when hexed
+  double confusedTimer = 0.0;
+
   // Red mana decay
   static const double redDecayDelay = 3.0;
   static const double redDecayRate = 3.0;
@@ -250,6 +255,16 @@ class UltraballPlayer {
       attacksApplySnare = attacksApplySnareTimer > 0;
     }
 
+    // Trickster debuffs
+    if (hexedTimer > 0) {
+      hexedTimer -= dt;
+      if (hexedTimer <= 0) { hexedTimer = 0; hexedFactor = 1.0; }
+    }
+    if (confusedTimer > 0) {
+      confusedTimer -= dt;
+      if (confusedTimer <= 0) confusedTimer = 0;
+    }
+
     // Jump physics
     if (isAirborne) {
       zVelocity -= _gravity * dt;
@@ -342,11 +357,24 @@ class UltraballPlayer {
     if (hotRate < rate) { hotRate = rate; }
   }
 
+  void applyHex(double duration, double factor) {
+    if (dodgeTimer > 0) return;
+    if (duration > hexedTimer) hexedTimer = duration;
+    if (factor < hexedFactor) hexedFactor = factor;
+  }
+
+  void applyConfusion(double duration) {
+    if (dodgeTimer > 0) return;
+    if (stunImmune) return;
+    if (duration > confusedTimer) confusedTimer = duration;
+  }
+
   // Remove all crowd-control debuffs
   void cleanse() {
     snareTimer = 0.0;
     snareMultiplier = 1.0;
     markedTimer = 0.0;
+    hexedTimer = 0.0; hexedFactor = 1.0; confusedTimer = 0.0;
     if (!stunImmune && state == PlayerState.stunned) {
       stunTimer = 0.0;
       state = PlayerState.idle;
@@ -370,5 +398,6 @@ class UltraballPlayer {
     hotRate = 0;
     attacksApplySnare = false;
     attacksApplySnareTimer = 0;
+    hexedTimer = 0.0; hexedFactor = 1.0; confusedTimer = 0.0;
   }
 }

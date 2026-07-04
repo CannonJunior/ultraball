@@ -3,11 +3,12 @@ import 'dart:convert';
 import 'dart:html' as html;
 import '../game/game_state.dart';
 import 'ai_strategy.dart';
+import 'game_data_sink.dart';
 import 'game_record.dart';
 
 /// Collects gameplay events into a [GameRecord] and persists experience
 /// to browser localStorage after each game.
-class GameDataCollector {
+class GameDataCollector implements GameDataSink {
   final GameRecord record;
   double _clock = 0.0;
 

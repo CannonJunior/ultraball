@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../game/game_state.dart';
 import '../models/player.dart';
@@ -296,10 +297,11 @@ class _ClassBadge extends StatelessWidget {
 
   Color get _color => switch (cls) {
     PlayerClass.runner   => const Color(0xFF44FFCC),
-    PlayerClass.enforcer => const Color(0xFFFF5544),
+    PlayerClass.geomancer => const Color(0xFFFF5544),
     PlayerClass.warden   => const Color(0xFF4488FF),
     PlayerClass.handler  => const Color(0xFFFFCC44),
     PlayerClass.blitzer  => const Color(0xFFFF44AA),
+    PlayerClass.trickster => const Color(0xFFAA44FF),
   };
 
   @override

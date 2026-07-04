@@ -33,6 +33,23 @@ class PlayerMeshBuilder {
       key, () => Mesh.box(width: w, height: h, depth: d, color: color));
   }
 
+  static CharacterRig buildCube(Team team) {
+    final color = team == Team.player
+        ? Vector3(0.15, 0.30, 0.85)
+        : Vector3(0.88, 0.15, 0.15);
+    final mesh = _cache.putIfAbsent(
+      'cube_${team.name}',
+      () => Mesh.cube(size: 1.6, color: color),
+    );
+    return CharacterRig(parts: [
+      RigPart(
+        mesh: mesh,
+        name: 'body',
+        restPosition: Vector3(0, 0.8, 0), // centre at half-height
+      ),
+    ]);
+  }
+
   static CharacterRig build(Team team, PlayerClass playerClass) {
     final t = team.name;
     final c = playerClass.name;
@@ -121,10 +138,11 @@ class PlayerMeshBuilder {
   // Subtle per-class jersey tint so classes are distinguishable on the same team
   static Vector3 _classJerseyShift(PlayerClass cls) => switch (cls) {
     PlayerClass.runner   => Vector3( 0.00,  0.08, -0.05),  // brighter mid
-    PlayerClass.enforcer => Vector3(-0.05, -0.05,  0.00),  // slightly darker
+    PlayerClass.geomancer => Vector3(-0.05, -0.05,  0.00),  // slightly darker
     PlayerClass.warden   => Vector3( 0.05,  0.05,  0.05),  // lighter
     PlayerClass.handler  => Vector3(-0.02,  0.08,  0.04),  // cyan-ish
     PlayerClass.blitzer  => Vector3( 0.08, -0.02, -0.08),  // warmer
+    PlayerClass.trickster => Vector3(-0.10,  0.05,  0.15),  // TRICKSTER — purple shift
   };
 
   static Vector3 _pantsColor(Team team) => team == Team.player
@@ -134,8 +152,9 @@ class PlayerMeshBuilder {
   static Vector3 _helmetColor(PlayerClass cls) => switch (cls) {
     PlayerClass.runner   => Vector3(0.90, 0.75, 0.10),  // SPECTRE — gold
     PlayerClass.blitzer  => Vector3(0.90, 0.45, 0.08),  // CORSAIR — orange
-    PlayerClass.enforcer => Vector3(0.12, 0.45, 0.12),  // JUGGERNAUT — dark green
+    PlayerClass.geomancer => Vector3(0.12, 0.45, 0.12),  // GEOMANCER — earthy green
     PlayerClass.warden   => Vector3(0.78, 0.78, 0.80),  // ARCHON — silver
     PlayerClass.handler  => Vector3(0.10, 0.80, 0.85),  // WARDEN — cyan
+    PlayerClass.trickster => Vector3(0.60, 0.10, 0.90),  // TRICKSTER — violet
   };
 }
