@@ -277,6 +277,12 @@ class Mesh {
     Vector3? color,
   }) => _buildMeshBox(width: width, height: height, depth: depth, color: color);
 
+  factory Mesh.targetIndicator({
+    required double size,
+    required double lineWidth,
+    required Vector3 color,
+  }) => _buildMeshTargetIndicator(size: size, lineWidth: lineWidth, color: color);
+
   @override
   String toString() {
     return 'Mesh(vertices: $vertexCount, triangles: $triangleCount)';

@@ -242,7 +242,7 @@ class BallSystem {
       // Player scored Ultra (reached opponent's left endzone)
       // Check if it's a Meta (pass caught by player already in endzone)
       // We handle that in tryPickup
-      ActSystem.scoreUltra(gs, 'player');
+      ActSystem.scoreUltra(gs, 'player', holder);
       holder.gainUltraMana(7.0);
       CombatSystem.addIndicator(
         gs,
@@ -255,7 +255,7 @@ class BallSystem {
       _resetAfterScore(gs);
     } else if (holder.team == Team.opponent && holder.x >= 120) {
       // Opponent scored Ultra
-      ActSystem.scoreUltra(gs, 'opponent');
+      ActSystem.scoreUltra(gs, 'opponent', holder);
       holder.gainUltraMana(7.0);
       CombatSystem.addIndicator(
         gs,
@@ -340,7 +340,7 @@ class BallSystem {
     if (player.team == Team.player && player.x <= 20) {
       ball.holderId = player.id;
       ball.changePossession('player');
-      ActSystem.scoreMeta(gs, 'player');
+      ActSystem.scoreMeta(gs, 'player', player);
       player.gainUltraMana(3.0);
       CombatSystem.addIndicator(
         gs,
@@ -355,7 +355,7 @@ class BallSystem {
     } else if (player.team == Team.opponent && player.x >= 120) {
       ball.holderId = player.id;
       ball.changePossession('opponent');
-      ActSystem.scoreMeta(gs, 'opponent');
+      ActSystem.scoreMeta(gs, 'opponent', player);
       player.gainUltraMana(3.0);
       CombatSystem.addIndicator(
         gs,
@@ -440,8 +440,8 @@ class BallSystem {
     ball.chargeTimer = 0;
   }
 
-  static void _resetAfterScore(GameState gs) {
-    // Reset ball to midfield
+  /// Reset the ball to the midfield start state — used at the top of each act.
+  static void resetForAct(GameState gs) {
     final ball = gs.ball;
     ball.x = 70;
     ball.y = 20;
@@ -458,4 +458,6 @@ class BallSystem {
     ball.resetPhaseLines();
     ball.possessingTeamId = null;
   }
+
+  static void _resetAfterScore(GameState gs) => resetForAct(gs);
 }

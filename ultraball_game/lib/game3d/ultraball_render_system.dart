@@ -50,6 +50,19 @@ class UltraballRenderSystem {
   bool _ready = false;
   bool get ready => _ready;
 
+  // ── Target indicator state ────────────────────────────────────────────────
+  double _elapsedTime = 0.0;
+  Mesh? _targetIndicatorMesh;
+  Transform3d? _targetIndicatorTransform;
+  Mesh? _targetAcquiredMesh;
+  Transform3d? _targetAcquiredTransform;
+  Vector3? _targetIndicatorAnimFrom;
+  double _targetIndicatorAnimStartTime = -1.0;
+  double _targetAcquiredStartTime      = -1.0;
+  String? _lastTargetIndicatorId;
+  static const double _targetIndicatorAnimDuration = 0.30;
+  static const double _targetAcquiredDuration       = 0.50;
+
   // ── Creature motion tracking ───────────────────────────────────────────────
   double _creatureAnimTime = 0.0;
   double _prevCreatureX = double.nan;  // nan = first-frame sentinel
@@ -128,6 +141,7 @@ class UltraballRenderSystem {
   // Advances animation timers and camera.  Must be called before render().
   void update(GameState gs, double dt) {
     if (!_ready) return;
+    _elapsedTime += dt;
 
     // Player animation
     for (final player in gs.fieldPlayers) {
@@ -221,6 +235,9 @@ class UltraballRenderSystem {
       _renderPlayer(r, c, player);
     }
 
+    // ── Target indicator (unlit — always on top of field geometry) ────────
+    _renderTargetIndicator(r, c, gs);
+
     // ── Ball (unlit — self-luminous energy sphere) ────────────────────────
     _renderBall(r, c, gs);
   }
@@ -313,6 +330,80 @@ class UltraballRenderSystem {
     for (final part in rig.parts) {
       r.render(part.mesh, part.getWorldTransform(charT), c);
     }
+  }
+
+  void _renderTargetIndicator(WebGLRenderer r, PerspectiveCamera c, GameState gs) {
+    if (gs.currentTargetId == null) {
+      _targetIndicatorMesh = null;
+      _lastTargetIndicatorId = null;
+      return;
+    }
+
+    UltraballPlayer? target;
+    for (final p in gs.fieldPlayers) {
+      if (p.id == gs.currentTargetId) { target = p; break; }
+    }
+    if (target == null || !target.isAlive) return;
+
+    const size      = 1.5;
+    const lineWidth = 0.10;
+    // Red for enemy targets; green for player-team targets (e.g. pass targeting).
+    final color = target.team == Team.opponent
+        ? Vector3(1.0, 0.15, 0.15)
+        : Vector3(0.15, 1.0, 0.35);
+
+    final targetChanged = _lastTargetIndicatorId != gs.currentTargetId;
+
+    if (_targetIndicatorMesh == null || targetChanged) {
+      if (targetChanged && _targetIndicatorTransform != null) {
+        _targetIndicatorAnimFrom = _targetIndicatorTransform!.position.clone();
+        _targetIndicatorAnimStartTime = _elapsedTime;
+      }
+      _targetIndicatorMesh = Mesh.targetIndicator(size: size, lineWidth: lineWidth, color: color);
+      _lastTargetIndicatorId = gs.currentTargetId;
+    }
+
+    // "Target acquired" flash — yellow ring that briefly appears on target change.
+    if (targetChanged) {
+      _targetAcquiredMesh = Mesh.targetIndicator(
+        size: size * 1.3,
+        lineWidth: lineWidth * 1.3,
+        color: Vector3(1.0, 1.0, 0.1),
+      );
+      _targetAcquiredStartTime = _elapsedTime;
+    }
+
+    final targetPos = Vector3(target.x, target.zHeight, target.y);
+
+    if (_targetAcquiredMesh != null && _targetAcquiredStartTime >= 0) {
+      final age = _elapsedTime - _targetAcquiredStartTime;
+      if (age < _targetAcquiredDuration) {
+        _targetAcquiredTransform ??= Transform3d();
+        _targetAcquiredTransform!.position = targetPos;
+        r.renderUnlit(_targetAcquiredMesh!, _targetAcquiredTransform!, c);
+      }
+    }
+
+    // Ease-out cubic slide from old target position to new.
+    _targetIndicatorTransform ??= Transform3d();
+    Vector3 displayPos;
+    final animFrom = _targetIndicatorAnimFrom;
+    if (animFrom != null && _targetIndicatorAnimStartTime >= 0) {
+      final age = _elapsedTime - _targetIndicatorAnimStartTime;
+      final raw = (age / _targetIndicatorAnimDuration).clamp(0.0, 1.0);
+      final t   = 1.0 - math.pow(1.0 - raw, 3.0).toDouble();
+      displayPos = Vector3(
+        animFrom.x + (targetPos.x - animFrom.x) * t,
+        0.0,
+        animFrom.z + (targetPos.z - animFrom.z) * t,
+      );
+      if (raw >= 1.0) _targetIndicatorAnimFrom = null;
+    } else {
+      displayPos = targetPos;
+    }
+
+    _targetIndicatorTransform!.position = displayPos;
+    r.renderUnlit(_targetIndicatorMesh!, _targetIndicatorTransform!, c);
   }
 
   void _renderBall(WebGLRenderer r, PerspectiveCamera c, GameState gs) {

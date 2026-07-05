@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import '../../models/player.dart';
 import '../../models/act_state.dart';
 import '../game_state.dart';
+import 'ball_system.dart';
 
 class ActSystem {
   static void update(GameState gs, double dt) {
@@ -49,8 +50,9 @@ class ActSystem {
     }
   }
 
-  static void scoreUltra(GameState gs, String teamId) {
+  static void scoreUltra(GameState gs, String teamId, [UltraballPlayer? scorer]) {
     gs.dataCollector?.onUltra(teamId);
+    scorer?.pointsThisMatch += 7;
     final act = gs.actState;
     if (teamId == 'player') {
       act.playerScore += 7;
@@ -89,8 +91,9 @@ class ActSystem {
     }
   }
 
-  static void scoreMeta(GameState gs, String teamId) {
+  static void scoreMeta(GameState gs, String teamId, [UltraballPlayer? scorer]) {
     gs.dataCollector?.onMeta(teamId);
+    scorer?.pointsThisMatch += 3;
     if (teamId == 'player') {
       gs.actState.playerScore += 3;
       gs.showEvent('META! +3pts for ${gs.settings.homeTeamName}!');
@@ -100,9 +103,55 @@ class ActSystem {
     }
   }
 
+  /// Handles forfeit/sub logic when a player dies — extracted from CombatSystem
+  /// so that act-state mutations are owned by ActSystem.
+  static void notifyPlayerDeath(GameState gs, UltraballPlayer victim) {
+    final roster = gs.getTeamRoster(victim.team);
+    final onField = roster.where((p) => p.isOnField && p.isAlive).length;
+    final teamId = victim.team == Team.player ? 'player' : 'opponent';
+
+    final allDead = roster.every((p) => !p.isAlive);
+    if (allDead) {
+      if (victim.team == Team.player) {
+        gs.actState.playerForfeit = true;
+        gs.showEvent('PLAYER TEAM FORFEIT!');
+      } else {
+        gs.actState.opponentForfeit = true;
+        gs.showEvent('OPPONENT TEAM FORFEIT!');
+      }
+      return;
+    }
+
+    final subUsed = teamId == 'player'
+        ? gs.actState.playerSubUsed
+        : gs.actState.opponentSubUsed;
+    if (!subUsed && onField < 7) {
+      final sub = roster.firstWhere(
+        (p) => !p.isOnField && p.isAlive,
+        orElse: () => roster[0],
+      );
+      if (!sub.isOnField && sub.isAlive) {
+        sub.isOnField = true;
+        sub.x = victim.team == Team.player ? 90.0 : 50.0;
+        sub.y = 20.0;
+        sub.health = sub.maxHealth;
+        sub.blueMana = 100;
+        sub.redMana = 0;
+        if (teamId == 'player') {
+          gs.actState.playerSubUsed = true;
+        } else {
+          gs.actState.opponentSubUsed = true;
+        }
+        gs.showEvent('SUB IN: ${sub.name}!');
+      }
+    }
+  }
+
   static void scoreKilla(GameState gs, String teamId, [UltraballPlayer? scorer]) {
     gs.dataCollector?.onKilla(teamId);
     scorer?.gainUltraMana(1.0);
+    scorer?.killsThisMatch += 1;
+    scorer?.pointsThisMatch += 1;
     if (teamId == 'player') {
       gs.actState.playerScore += 1;
       gs.actState.playerKills += 1;
@@ -173,16 +222,7 @@ class ActSystem {
     _resetPositions(gs);
 
     // Reset ball
-    gs.ball.x = 70;
-    gs.ball.y = 20;
-    gs.ball.velX = 0;
-    gs.ball.velY = 0;
-    gs.ball.holderId = null;
-    gs.ball.isInFlight = false;
-    gs.ball.chargeTimer = 0;
-    gs.ball.cooldownBonus = 0;
-    gs.ball.resetPhaseLines();
-    gs.ball.possessingTeamId = null;
+    BallSystem.resetForAct(gs);
 
     gs.showEvent('ACT ${act.currentAct} BEGIN!');
   }

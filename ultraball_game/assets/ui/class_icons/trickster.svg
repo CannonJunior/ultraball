@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Diamond + dots — chaos / debuffer -->
+  <path fill="currentColor" d="M12 3L3 12l9 9 9-9-9-9zm0 4.24L18.76 12 12 18.76 5.24 12 12 7.24z"/>
+  <circle fill="currentColor" cx="12" cy="12" r="2"/>
+</svg>

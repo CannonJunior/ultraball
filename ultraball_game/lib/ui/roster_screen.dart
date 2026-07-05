@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/player.dart';
 import '../models/act_state.dart';
 import '../game/game_state.dart';
+import 'ui_assets.dart';
 
 class RosterScreen extends StatefulWidget {
   final GameState gs;
@@ -148,14 +149,7 @@ class _RosterScreenState extends State<RosterScreen> {
     );
   }
 
-  static Color _classColor(PlayerClass cls) => switch (cls) {
-    PlayerClass.runner   => const Color(0xFF44FFCC),
-    PlayerClass.blitzer  => const Color(0xFFFF44AA),
-    PlayerClass.geomancer => const Color(0xFFFF5544),
-    PlayerClass.warden   => const Color(0xFF4488FF),
-    PlayerClass.handler  => const Color(0xFFFFCC44),
-    PlayerClass.trickster => const Color(0xFFAA44FF),
-  };
+  static Color _classColor(PlayerClass cls) => UiAssets.classColor(cls);
 
   Widget _buildAliveRow(int index, int fieldCount) {
     final player = _ordered[index];
@@ -447,12 +441,5 @@ class _RosterScreenState extends State<RosterScreen> {
 
   String _classBadge(PlayerClass cls) => cls.displayName;
 
-  Color _classBadgeColor(PlayerClass cls) => switch (cls) {
-    PlayerClass.runner   => const Color(0xFF44FFCC),
-    PlayerClass.geomancer => const Color(0xFFFF5544),
-    PlayerClass.warden   => const Color(0xFF4488FF),
-    PlayerClass.handler  => const Color(0xFFFFCC44),
-    PlayerClass.blitzer  => const Color(0xFFFF44AA),
-    PlayerClass.trickster => const Color(0xFFAA44FF),
-  };
+  Color _classBadgeColor(PlayerClass cls) => UiAssets.classColor(cls);
 }

@@ -652,29 +652,39 @@ class FieldPainter extends CustomPainter {
     final r = sm(1.2);
     final isTarget = p.id == gs.currentTargetId;
 
-    // Target ring
+    // Target halo — red glow ring (matches TargetFrame border color)
     if (isTarget) {
+      _gp
+        ..color = const Color(0xFFFF3333).withValues(alpha: 0.32)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+      canvas.drawCircle(pos, r + sm(1.2), _gp);
+      _gp.maskFilter = null;
       _sp
-        ..color = const Color(0xFFFF2222).withValues(alpha: 0.9)
+        ..color = const Color(0xFFFF6B6B).withValues(alpha: 0.92)
         ..strokeWidth = sm(0.3);
       canvas.drawCircle(pos, r + sm(0.9), _sp);
       _sp
-        ..color = const Color(0xFFFF4444).withValues(alpha: 0.4)
-        ..strokeWidth = sm(0.12);
-      canvas.drawCircle(pos, r + sm(1.4), _sp);
-      _drawTargetTriangles(canvas, pos, r + sm(1.7));
+        ..color = const Color(0xFFFF6B6B).withValues(alpha: 0.32)
+        ..strokeWidth = sm(0.14);
+      canvas.drawCircle(pos, r + sm(1.5), _sp);
+      _drawTargetTriangles(canvas, pos, r + sm(1.8));
     }
 
-    // Selection ring
+    // Selection halo — cyan-blue glow (matches ManaBars frame border)
     if (p.isSelected) {
+      _gp
+        ..color = const Color(0xFF1E88E5).withValues(alpha: 0.38)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+      canvas.drawCircle(pos, r + sm(1.0), _gp);
+      _gp.maskFilter = null;
       _sp
-        ..color = Colors.white.withValues(alpha: 0.9)
-        ..strokeWidth = sm(0.25);
+        ..color = const Color(0xFF4cc9f0).withValues(alpha: 0.95)
+        ..strokeWidth = sm(0.28);
       canvas.drawCircle(pos, r + sm(0.6), _sp);
       _sp
-        ..color = Colors.white.withValues(alpha: 0.3)
-        ..strokeWidth = sm(0.1);
-      canvas.drawCircle(pos, r + sm(1.0), _sp);
+        ..color = const Color(0xFF4cc9f0).withValues(alpha: 0.28)
+        ..strokeWidth = sm(0.12);
+      canvas.drawCircle(pos, r + sm(1.05), _sp);
     }
 
     // Ball holder glow

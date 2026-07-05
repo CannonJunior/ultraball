@@ -59,7 +59,7 @@ class FieldMeshes {
   static const List<double> _phaseLineXCoords = [30, 50, 70, 90, 110];
 
   static Transform3d phaseLineTransform(int index) => Transform3d(
-        position: Vector3(_phaseLineXCoords[index], 1.5, 20.0),
+        position: Vector3(_phaseLineXCoords[index], 0.04, 20.0),
       );
 }
 
@@ -90,11 +90,11 @@ class FieldMeshBuilder {
 
       // Phase line walls — thin vertical box spanning the full field width (Z)
       phaseLineActive: Mesh.box(
-        width: 0.35, height: 3.0, depth: 40.0,
+        width: 0.35, height: 0.08, depth: 40.0,
         color: Vector3(0.0, 0.88, 1.0),
       ),
       phaseLineInactive: Mesh.box(
-        width: 0.35, height: 3.0, depth: 40.0,
+        width: 0.35, height: 0.08, depth: 40.0,
         color: Vector3(0.14, 0.20, 0.28),
       ),
     );

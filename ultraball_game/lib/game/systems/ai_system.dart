@@ -23,7 +23,7 @@ class AiSystem {
 
   static void update(GameState gs, double dt) {
     if (!gs.actState.isActive || gs.actState.gameOver) return;
-    _updateOpponentAI(gs, dt);
+    if (!gs.settings.testMode) _updateOpponentAI(gs, dt);
     _updateFriendlyAI(gs, dt);
   }
 
@@ -352,10 +352,12 @@ class AiSystem {
       // ── Rusher: chase the carrier ──
       if (tactics == AiTactics.focusFire && focusTarget != null) {
         // Converge on the single weakest target, not necessarily the holder
+        opp.currentTargetId = focusTarget.id;
         _moveToward(opp, focusTarget.x, focusTarget.y, avoid);
         CombatSystem.tryAttack(gs, opp, 'tackle');
         if (opp.redMana >= 20) CombatSystem.tryAttack(gs, opp, 'slam');
       } else if (creatureHerd > 0.5 || tactics == AiTactics.creatureFlank) {
+        opp.currentTargetId = holder.id;
         final c = gs.creature;
         final pushX = holder.x + (holder.x < c.x ? 8.0 : -8.0);
         final pushY = holder.y + (holder.y < c.y ? 6.0 : -6.0);
@@ -363,6 +365,7 @@ class AiSystem {
         CombatSystem.tryAttack(gs, opp, 'tackle');
         if (aggression > 0.5 && opp.redMana >= 20) CombatSystem.tryAttack(gs, opp, 'slam');
       } else {
+        opp.currentTargetId = holder.id;
         _moveToward(opp, holder.x, holder.y, avoid);
         CombatSystem.tryAttack(gs, opp, 'tackle');
         if (aggression > 0.5 && opp.redMana >= 20) CombatSystem.tryAttack(gs, opp, 'slam');
@@ -379,6 +382,7 @@ class AiSystem {
         // Cover the furthest-ahead receiver proportional to rank
         final coverIdx = (myRank - rushers) % receivers.length;
         final target = receivers[coverIdx];
+        opp.currentTargetId = target.id;
         _moveToward(opp, target.x, target.y, avoid);
       } else {
         // Zone: halfway between holder and player's scoring zone (x=20)
@@ -539,7 +543,7 @@ class AiSystem {
 
     for (final tm in filteredTM) {
       // Must be ahead toward endzone (lower X) by at least 3m, or charge critical
-      if (tm.x > p.x - (chargeDanger ? -5.0 : 3.0)) continue;
+      if (!chargeDanger && tm.x > p.x - 3.0) continue;
 
       int nearOpp = 0;
       double closestOppDistSq = double.infinity;
@@ -773,6 +777,7 @@ class AiSystem {
       final dx = focusTarget.x - attacker.x;
       final dy = focusTarget.y - attacker.y;
       if (dx * dx + dy * dy < _attackScanSq * 4) {
+        attacker.currentTargetId = focusTarget.id;
         CombatSystem.tryAttack(gs, attacker, 'tackle');
         if (attacker.redMana >= 20) CombatSystem.tryAttack(gs, attacker, 'slam');
         return;
@@ -784,6 +789,7 @@ class AiSystem {
       final dx = e.x - attacker.x;
       final dy = e.y - attacker.y;
       if (dx * dx + dy * dy < _attackScanSq) {
+        attacker.currentTargetId = e.id;
         CombatSystem.tryAttack(gs, attacker, 'tackle');
         if (attacker.redMana >= 20) CombatSystem.tryAttack(gs, attacker, 'slam');
         return;
@@ -821,7 +827,7 @@ class AiSystem {
     final hp = p.health / p.maxHealth;
 
     switch (p.playerClass) {
-      case PlayerClass.warden:
+      case PlayerClass.archon:
         // Rally (slot 9): AoE heal if 2+ nearby allies are wounded
         if (p.ability9Cooldown <= 0 && p.blueMana >= 50) {
           int wounded = 0;
@@ -869,7 +875,7 @@ class AiSystem {
           if (hasCCd) CombatSystem.useClassAbility(gs, p, 6);
         }
 
-      case PlayerClass.handler:
+      case PlayerClass.warden:
         // Trauma Pack (slot 7): emergency heal critical ally
         if (p.ability7Cooldown <= 0 && p.blueMana >= 45) {
           final hasCritical = gs.getTeamOnField(p.team).any((a) {
@@ -917,7 +923,7 @@ class AiSystem {
           }
         }
 
-      case PlayerClass.runner:
+      case PlayerClass.spectre:
         // Clear Out (slot 7): self-heal + cleanse when low or CC'd
         if (p.ability7Cooldown <= 0 && p.blueMana >= 40) {
           if (hp < 0.50 || p.snareTimer > 0 || p.isStunned) {
@@ -925,7 +931,7 @@ class AiSystem {
           }
         }
 
-      case PlayerClass.blitzer:
+      case PlayerClass.corsair:
         break;
 
       case PlayerClass.trickster:
@@ -946,6 +952,28 @@ class AiSystem {
         // Befuddle (slot 4): confuse enemies near ball carrier
         if (p.ability4Cooldown <= 0 && p.redMana >= 25) {
           CombatSystem.useClassAbility(gs, p, 4);
+        }
+
+      case PlayerClass.wrecker:
+        // Sledge (slot 2): stun nearby enemies
+        if (p.slamCooldown <= 0 && p.redMana >= 20) {
+          CombatSystem.useClassAbility(gs, p, 2);
+          return;
+        }
+        // Crumple (slot 4): heavy damage + snare
+        if (p.ability4Cooldown <= 0 && p.redMana >= 25) {
+          CombatSystem.useClassAbility(gs, p, 4);
+          return;
+        }
+        // Spine Breaker (slot 6): big damage + long stun
+        if (p.ability6Cooldown <= 0 && p.redMana >= 30) {
+          CombatSystem.useClassAbility(gs, p, 6);
+          return;
+        }
+        // Death Blow (slot 9): maximum single-target damage
+        if (p.ability9Cooldown <= 0 && p.redMana >= 35) {
+          CombatSystem.useClassAbility(gs, p, 9);
+          return;
         }
     }
   }

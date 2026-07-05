@@ -30,6 +30,7 @@ class GameDataCollector implements GameDataSink {
           startedAt: DateTime.now(),
         );
 
+  @override
   void tick(double dt) => _clock += dt;
 
   void _emit(GameEventType type, Map<String, dynamic> data) {
@@ -38,6 +39,7 @@ class GameDataCollector implements GameDataSink {
 
   // ---- Event sinks (called from game systems) ----
 
+  @override
   void onUltra(String teamId) {
     if (teamId == 'opponent') {
       _aiUltras++;
@@ -47,6 +49,7 @@ class GameDataCollector implements GameDataSink {
     _emit(GameEventType.ultra, {'team': teamId});
   }
 
+  @override
   void onMeta(String teamId) {
     if (teamId == 'opponent') {
       _aiMetas++;
@@ -56,6 +59,7 @@ class GameDataCollector implements GameDataSink {
     _emit(GameEventType.meta, {'team': teamId});
   }
 
+  @override
   void onKilla(String killingTeamId) {
     if (killingTeamId == 'opponent') {
       _aiKillas++;
@@ -65,6 +69,7 @@ class GameDataCollector implements GameDataSink {
     _emit(GameEventType.killa, {'killingTeam': killingTeamId});
   }
 
+  @override
   void onCreatureKill(String victimTeamId) {
     // Creature kill benefits the opposing team
     if (victimTeamId == 'player') {
@@ -75,21 +80,25 @@ class GameDataCollector implements GameDataSink {
     _emit(GameEventType.creatureKill, {'victimTeam': victimTeamId});
   }
 
+  @override
   void onPass(String teamId) {
     if (teamId == 'opponent') _aiPasses++;
     _emit(GameEventType.pass, {'team': teamId});
   }
 
+  @override
   void onTackle(String teamId) {
     if (teamId == 'opponent') _aiTackles++;
     _emit(GameEventType.tackle, {'team': teamId});
   }
 
+  @override
   void onSlam(String teamId) {
     if (teamId == 'opponent') _aiSlams++;
     _emit(GameEventType.slam, {'team': teamId});
   }
 
+  @override
   void onExplosion(String holderTeamId) {
     if (holderTeamId == 'opponent') {
       _aiExplosions++;
@@ -99,6 +108,7 @@ class GameDataCollector implements GameDataSink {
     _emit(GameEventType.explosion, {'holderTeam': holderTeamId});
   }
 
+  @override
   void onActEnd(int actNumber) {
     _emit(GameEventType.actEnd, {'act': actNumber});
   }

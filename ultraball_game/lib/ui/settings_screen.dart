@@ -19,12 +19,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   CreatureType _neutralCreatureType = CreatureType.chaos;
   bool _fastMode = false;
   ViewMode _viewMode = ViewMode.flat;
-  bool _useCubeModels = false;
+  bool _useCubeModels = true;
   AiStrategy _homeStrategy = AiStrategy.numericalEdge;
   AiTactics  _homeTactics  = AiTactics.heroBall;
   AiStrategy _aiStrategy   = AiStrategy.tempoTrap;
   AiTactics  _aiTactics    = AiTactics.focusFire;
   List<int> _homeRosterOrder = List.generate(15, (i) => i);
+  bool _testMode = false;
 
   void _startMatch() {
     final home = TeamDefinition.teams[_homeTeamIdx];
@@ -46,6 +47,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       aiStrategy:   _aiStrategy,
       aiTactics:    _aiTactics,
       homeRosterOrder: List.from(_homeRosterOrder),
+      testMode: _testMode,
     );
 
     Navigator.of(context).push(
@@ -290,7 +292,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _FieldLabel('HOME STRATEGY'),
                       const SizedBox(height: 4),
                       Text(
-                        'How your AI teammates approach the game',
+                        'How AI teammates approach the game',
                         style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 9),
                       ),
                       const SizedBox(height: 10),
@@ -308,7 +310,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _FieldLabel('HOME TACTICS'),
                       const SizedBox(height: 4),
                       Text(
-                        'How your AI teammates behave moment-to-moment',
+                        'How AI teammates behave moment-to-moment',
                         style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 9),
                       ),
                       const SizedBox(height: 10),
@@ -509,6 +511,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ('SPACE ×2', 'Double-jump (costs 15 Blue Mana)'),
                   ('TAB', 'Cycle enemy target'),
                   ('SHIFT+TAB', 'Switch controlled player'),
+                  ('M', 'Toggle damage / healing meter'),
+                  ('C', 'Cycle player class (Test Mode only)'),
                   ('ESC', 'Clear target / Pause'),
                 ].map(
                   (entry) => Padding(
@@ -548,6 +552,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ],
                     ),
                   ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Test Mode toggle
+          _SettingCard(
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'TEST MODE',
+                        style: TextStyle(
+                          color: Color(0xFF8888AA),
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _testMode
+                            ? '1v1 dummy — C key cycles class'
+                            : 'Full match (7v7)',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.6),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: _testMode,
+                  onChanged: (v) => setState(() => _testMode = v),
+                  activeColor: const Color(0xFF44FF88),
+                  inactiveThumbColor: const Color(0xFF6666AA),
+                  inactiveTrackColor: const Color(0xFF1A1A2E),
                 ),
               ],
             ),
@@ -1253,24 +1300,26 @@ class _EditableTeamRoster extends StatefulWidget {
 class _EditableTeamRosterState extends State<_EditableTeamRoster> {
   final Set<int> _expanded = {};
 
-  static Color _classColor(int playerIdx) => switch (playerIdx % 6) {
+  static Color _classColor(int playerIdx) => switch (playerIdx % 7) {
     0 => const Color(0xFF44FFCC),
     1 => const Color(0xFFFF44AA),
     2 => const Color(0xFFFF5544),
     3 => const Color(0xFF4488FF),
     4 => const Color(0xFFFFCC44),
-    _ => const Color(0xFFAA44FF),
+    5 => const Color(0xFFAA44FF),
+    _ => const Color(0xFFFF7700),
   };
 
   static String _classBadge(int playerIdx) => _playerClass(playerIdx).displayName;
 
-  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 6) {
-    0 => PlayerClass.runner,
-    1 => PlayerClass.blitzer,
+  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 7) {
+    0 => PlayerClass.spectre,
+    1 => PlayerClass.corsair,
     2 => PlayerClass.geomancer,
-    3 => PlayerClass.warden,
-    4 => PlayerClass.handler,
-    _ => PlayerClass.trickster,
+    3 => PlayerClass.archon,
+    4 => PlayerClass.warden,
+    5 => PlayerClass.trickster,
+    _ => PlayerClass.wrecker,
   };
 
   Widget _buildInfoPanel(int playerIdx) {
@@ -1502,24 +1551,26 @@ class _ReadonlyTeamRoster extends StatefulWidget {
 class _ReadonlyTeamRosterState extends State<_ReadonlyTeamRoster> {
   final Set<int> _expanded = {};
 
-  static Color _classColor(int playerIdx) => switch (playerIdx % 6) {
+  static Color _classColor(int playerIdx) => switch (playerIdx % 7) {
     0 => const Color(0xFF44FFCC),
     1 => const Color(0xFFFF44AA),
     2 => const Color(0xFFFF5544),
     3 => const Color(0xFF4488FF),
     4 => const Color(0xFFFFCC44),
-    _ => const Color(0xFFAA44FF),
+    5 => const Color(0xFFAA44FF),
+    _ => const Color(0xFFFF7700),
   };
 
   static String _classBadge(int playerIdx) => _playerClass(playerIdx).displayName;
 
-  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 6) {
-    0 => PlayerClass.runner,
-    1 => PlayerClass.blitzer,
+  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 7) {
+    0 => PlayerClass.spectre,
+    1 => PlayerClass.corsair,
     2 => PlayerClass.geomancer,
-    3 => PlayerClass.warden,
-    4 => PlayerClass.handler,
-    _ => PlayerClass.trickster,
+    3 => PlayerClass.archon,
+    4 => PlayerClass.warden,
+    5 => PlayerClass.trickster,
+    _ => PlayerClass.wrecker,
   };
 
   Widget _buildInfoPanel(int playerIdx) {
@@ -1722,11 +1773,13 @@ class _ClassesSection extends StatelessWidget {
   const _ClassesSection();
 
   static const _entries = [
-    (PlayerClass.runner,   Color(0xFF44FFCC)),
-    (PlayerClass.blitzer,  Color(0xFFFF44AA)),
+    (PlayerClass.spectre,    Color(0xFF44FFCC)),
+    (PlayerClass.corsair,   Color(0xFFFF44AA)),
     (PlayerClass.geomancer, Color(0xFFFF5544)),
-    (PlayerClass.warden,   Color(0xFF4488FF)),
-    (PlayerClass.handler,  Color(0xFFFFCC44)),
+    (PlayerClass.archon,    Color(0xFF4488FF)),
+    (PlayerClass.warden,   Color(0xFFFFCC44)),
+    (PlayerClass.trickster, Color(0xFFAA44FF)),
+    (PlayerClass.wrecker,  Color(0xFFFF7700)),
   ];
 
   @override
@@ -1773,10 +1826,6 @@ class _ClassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final abilities    = cls.abilityNames;
-    final cooldowns    = cls.slotMaxCooldowns;
-    final descriptions = cls.abilityDescriptions;
-
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -1829,58 +1878,8 @@ class _ClassCard extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _AbilityRow(label: 'BASIC',    abilities: abilities.sublist(0, 3), cooldowns: cooldowns.sublist(0, 3), descriptions: descriptions.sublist(0, 3), color: color),
-                const SizedBox(height: 4),
-                _AbilityRow(label: 'TACTICAL', abilities: abilities.sublist(3, 6), cooldowns: cooldowns.sublist(3, 6), descriptions: descriptions.sublist(3, 6), color: color),
-                const SizedBox(height: 4),
-                _AbilityRow(label: 'ADVANCED', abilities: abilities.sublist(6, 9), cooldowns: cooldowns.sublist(6, 9), descriptions: descriptions.sublist(6, 9), color: color),
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFCC00).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: const Color(0xFFFFCC00).withValues(alpha: 0.5), width: 1),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '⚡ ULTRA',
-                        style: TextStyle(color: Color(0xFFFFCC00), fontSize: 10, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 90,
-                        child: Text(
-                          abilities[9],
-                          style: const TextStyle(
-                            color: Color(0xFFFFCC00),
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          descriptions[9],
-                          style: TextStyle(
-                            color: const Color(0xFFFFCC00).withValues(alpha: 0.65),
-                            fontSize: 9.5,
-                            height: 1.3,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+            padding: const EdgeInsets.fromLTRB(10, 2, 10, 10),
+            child: _AbilityTable(cls: cls, color: color),
           ),
         ],
       ),
@@ -1921,96 +1920,166 @@ class _StatPill extends StatelessWidget {
   }
 }
 
-class _AbilityRow extends StatelessWidget {
-  final String label;
-  final List<String> abilities;
-  final List<double> cooldowns;
-  final List<String> descriptions;
+class _AbilityTable extends StatelessWidget {
+  final PlayerClass cls;
   final Color color;
 
-  const _AbilityRow({
-    required this.label,
-    required this.abilities,
-    required this.cooldowns,
-    required this.descriptions,
-    required this.color,
-  });
+  const _AbilityTable({required this.cls, required this.color});
+
+  static String _cdLabel(double cd) {
+    if (cd <= 0) return '—';
+    return cd == cd.truncateToDouble() ? '${cd.toInt()}s' : '${cd}s';
+  }
+
+  TableRow _headerRow() {
+    const style = TextStyle(
+      color: Color(0xFF6688AA),
+      fontSize: 8.5,
+      letterSpacing: 1,
+      fontWeight: FontWeight.bold,
+    );
+    return TableRow(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: color.withValues(alpha: 0.3), width: 1)),
+      ),
+      children: [
+        Padding(padding: const EdgeInsets.fromLTRB(2, 3, 2, 5), child: Text('#',      style: style, textAlign: TextAlign.center)),
+        Padding(padding: const EdgeInsets.fromLTRB(4, 3, 4, 5), child: Text('ABILITY', style: style)),
+        Padding(padding: const EdgeInsets.fromLTRB(2, 3, 2, 5), child: Text('MANA',    style: style)),
+        Padding(padding: const EdgeInsets.fromLTRB(4, 3, 4, 5), child: Text('RANGE',   style: style)),
+        Padding(padding: const EdgeInsets.fromLTRB(2, 3, 4, 5), child: Text('CD',      style: style)),
+        Padding(padding: const EdgeInsets.fromLTRB(4, 3, 2, 5), child: Text('EFFECT',  style: style)),
+      ],
+    );
+  }
+
+  TableRow _abilityRow(int i, String name, String desc, String cost, String range, double cd) {
+    final isUltra = i == 9;
+    final slot    = i + 1;
+    final rowBg   = isUltra
+        ? const Color(0xFFFFCC00).withValues(alpha: 0.06)
+        : (i.isEven ? color.withValues(alpha: 0.04) : Colors.transparent);
+
+    final nameStyle = TextStyle(
+      color: isUltra ? const Color(0xFFFFCC00) : Colors.white.withValues(alpha: 0.9),
+      fontSize: 10,
+      fontWeight: FontWeight.bold,
+    );
+    final descStyle = TextStyle(
+      color: isUltra
+          ? const Color(0xFFFFCC00).withValues(alpha: 0.75)
+          : Colors.white.withValues(alpha: 0.55),
+      fontSize: 9.5,
+      height: 1.35,
+    );
+    final rangeStyle = TextStyle(
+      color: Colors.white.withValues(alpha: 0.5),
+      fontSize: 9.5,
+    );
+    final cdStyle = TextStyle(
+      color: isUltra ? const Color(0xFFFFCC00) : color.withValues(alpha: 0.75),
+      fontSize: 9,
+      fontWeight: FontWeight.bold,
+    );
+
+    return TableRow(
+      decoration: BoxDecoration(
+        color: rowBg,
+        border: Border(bottom: BorderSide(color: color.withValues(alpha: 0.08), width: 1)),
+      ),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 5, 2, 5),
+          child: Text(
+            isUltra ? '⚡' : '$slot',
+            style: TextStyle(
+              color: isUltra ? const Color(0xFFFFCC00) : Colors.white.withValues(alpha: 0.3),
+              fontSize: isUltra ? 12 : 9,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 5, 4, 5),
+          child: Text(name, style: nameStyle),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 5, 2, 5),
+          child: _ManaBadge(cost),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 5, 4, 5),
+          child: Text(range, style: rangeStyle),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 5, 4, 5),
+          child: Text(_cdLabel(cd), style: cdStyle),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 5, 2, 5),
+          child: Text(desc, style: descStyle),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final names     = cls.abilityNames;
+    final descs     = cls.abilityDescriptions;
+    final costs     = cls.abilityManaCosts;
+    final ranges    = cls.abilityRanges;
+    final cooldowns = cls.slotMaxCooldowns;
+
+    return Table(
+      columnWidths: const {
+        0: FixedColumnWidth(20),
+        1: FixedColumnWidth(90),
+        2: FixedColumnWidth(42),
+        3: FixedColumnWidth(60),
+        4: FixedColumnWidth(32),
+        5: FlexColumnWidth(1),
+      },
+      defaultVerticalAlignment: TableCellVerticalAlignment.top,
       children: [
-        SizedBox(
-          width: 64,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 5),
-            child: Text(
-              label,
-              style: TextStyle(
-                color: color.withValues(alpha: 0.5),
-                fontSize: 8.5,
-                letterSpacing: 1,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ),
-        Expanded(
-          child: Column(
-            children: List.generate(abilities.length, (i) {
-              final cd = cooldowns[i];
-              return Container(
-                margin: const EdgeInsets.only(bottom: 3),
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.07),
-                  borderRadius: BorderRadius.circular(3),
-                  border: Border.all(color: color.withValues(alpha: 0.2), width: 1),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 80,
-                      child: Text(
-                        abilities[i],
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.9),
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        descriptions[i],
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.55),
-                          fontSize: 9.5,
-                          height: 1.3,
-                        ),
-                      ),
-                    ),
-                    if (cd > 0)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: Text(
-                          '${cd}s',
-                          style: TextStyle(
-                            color: color.withValues(alpha: 0.7),
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            }),
-          ),
-        ),
+        _headerRow(),
+        for (int i = 0; i < 10; i++)
+          _abilityRow(i, names[i], descs[i], costs[i], ranges[i], cooldowns[i]),
       ],
+    );
+  }
+}
+
+class _ManaBadge extends StatelessWidget {
+  final String cost;
+  const _ManaBadge(this.cost);
+
+  @override
+  Widget build(BuildContext context) {
+    if (cost == '—') {
+      return Text('—', style: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 9));
+    }
+    final isRed  = cost.endsWith('R');
+    final isBlue = cost.endsWith('B');
+    final badgeColor = isRed
+        ? const Color(0xFFFF5566)
+        : isBlue
+            ? const Color(0xFF4499FF)
+            : const Color(0xFFFFCC00);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(
+        color: badgeColor.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Text(
+        cost,
+        style: TextStyle(
+          color: badgeColor,
+          fontSize: 9,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 }

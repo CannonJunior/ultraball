@@ -1,0 +1,55 @@
+{
+  "_comment": "Ultraball UI theme — edit any value and hot-restart to apply. Colors use #RRGGBB hex. Rebuild required after changing SVG files in class_icons/ or score_icons/.",
+
+  "colors": {
+    "homeTeam":       "#1E88E5",
+    "awayTeam":       "#E53935",
+    "accent":         "#FFCC00",
+    "scoreUltra":     "#FFCC00",
+    "scoreMeta":      "#44BBFF",
+    "scoreKilla":     "#FF7744",
+    "background":     "#0D0D1A",
+    "surface":        "#08080F",
+    "borderSubtle":   "#222244",
+    "borderAccent":   "#334466",
+    "classSpectre":   "#44FFCC",
+    "classCorsair":   "#FF44AA",
+    "classGeomancer": "#FF5544",
+    "classArchon":    "#4488FF",
+    "classWarden":    "#FFCC44",
+    "classTrickster": "#AA44FF",
+    "phaseActive":    "#00FFFF",
+    "phaseInactive":  "#333333",
+    "alive":          "#44FF88",
+    "dead":           "#FF4444"
+  },
+
+  "scoreboard": {
+    "scoreSize":            36.0,
+    "timerSize":            24.0,
+    "teamNameSize":         11.0,
+    "subInfoSize":          9.0,
+    "showAliveCount":       true,
+    "showScoreBreakdown":   true,
+    "showActHistory":       true,
+    "backgroundOpacity":    0.9,
+    "borderOpacity":        0.15
+  },
+
+  "damageMeter": {
+    "defaultVisible":      false,
+    "defaultTab":          "damage",
+    "showPassiveHealing":  false,
+    "width":               220.0
+  },
+
+  "summary": {
+    "defaultTab":          "scoreboard",
+    "showHealingColumn":   true,
+    "defaultSortColumn":   "damage"
+  },
+
+  "phaseLine": {
+    "showBallPosition":    true
+  }
+}

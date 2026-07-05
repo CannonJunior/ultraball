@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'ui/settings_screen.dart';
+import 'ui/ui_theme.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await UiTheme.loadFromAsset();
   runApp(const UltraballApp());
 }
 

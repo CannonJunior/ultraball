@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   vector_math: ^2.1.4
+  flutter_svg: ^2.0.0
 
 dev_dependencies:
   flutter_test:
@@ -20,3 +21,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/
+    - assets/ui/
+    - assets/ui/class_icons/
+    - assets/ui/score_icons/

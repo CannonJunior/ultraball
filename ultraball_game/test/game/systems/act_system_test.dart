@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ultraball_game/game/systems/act_system.dart';
-import 'package:ultraball_game/models/player.dart';
 import '../../helpers/game_state_factory.dart';
 
 void main() {
@@ -110,6 +109,40 @@ void main() {
 
       expect(gs.actState.timerSeconds, equals(60.0),
           reason: 'timer must not tick while game is paused');
+    });
+  });
+
+  // ── pointsThisMatch tracking ─────────────────────────────────────────────
+
+  group('ActSystem — pointsThisMatch', () {
+    test('scoreUltra adds 7 to scorer.pointsThisMatch', () {
+      final gs = makeGs();
+      final scorer = gs.playerRoster.first;
+      scorer.pointsThisMatch = 0;
+
+      ActSystem.scoreUltra(gs, 'player', scorer);
+
+      expect(scorer.pointsThisMatch, equals(7));
+    });
+
+    test('scoreMeta adds 3 to scorer.pointsThisMatch', () {
+      final gs = makeGs();
+      final scorer = gs.playerRoster.first;
+      scorer.pointsThisMatch = 0;
+
+      ActSystem.scoreMeta(gs, 'player', scorer);
+
+      expect(scorer.pointsThisMatch, equals(3));
+    });
+
+    test('scoreKilla adds 1 to scorer.pointsThisMatch', () {
+      final gs = makeGs();
+      final scorer = gs.playerRoster.first;
+      scorer.pointsThisMatch = 0;
+
+      ActSystem.scoreKilla(gs, 'player', scorer);
+
+      expect(scorer.pointsThisMatch, equals(1));
     });
   });
 

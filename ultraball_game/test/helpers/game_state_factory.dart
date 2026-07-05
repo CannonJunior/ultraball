@@ -16,7 +16,7 @@ UltraballPlayer makePlayer({
   Team team = Team.player,
   double x = 70.0,
   double y = 20.0,
-  PlayerClass playerClass = PlayerClass.runner,
+  PlayerClass playerClass = PlayerClass.spectre,
   bool isOnField = true,
 }) {
   final p = UltraballPlayer(

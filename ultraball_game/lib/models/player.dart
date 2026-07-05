@@ -19,7 +19,7 @@ class UltraballPlayer {
   double facing = 0.0; // radians, 0=right
 
   // Class
-  PlayerClass playerClass = PlayerClass.runner;
+  PlayerClass playerClass = PlayerClass.spectre;
 
   // Stats
   double health = 100;
@@ -66,8 +66,11 @@ class UltraballPlayer {
   double damageReductionTimer = 0.0;
   bool stunImmune = false;
   double stunImmuneTimer = 0.0;
-  double speedMultiplierOverride = 1.5;
+  double speedMultiplierOverride = 1.0;
   double speedMultiplierTimer = 0.0;
+
+  // Terrain surface speed modifier — updated each tick by TerrainSystem
+  double terrainSpeedMult = 1.0;
 
   // Snare debuff
   double snareTimer = 0.0;
@@ -82,6 +85,8 @@ class UltraballPlayer {
   // Heal over time
   double hotTimer = 0.0;
   double hotRate = 0.0; // HP healed per second
+  // Callback to credit healing to the original caster instead of self
+  void Function(double healAmount)? _hotCasterCredit;
 
   // Blood Rush: attacks apply snare
   bool attacksApplySnare = false;
@@ -91,6 +96,35 @@ class UltraballPlayer {
   double hexedTimer = 0.0;
   double hexedFactor = 1.0; // <1.0 = reduced damage output when hexed
   double confusedTimer = 0.0;
+
+  // GCD (Global Cooldown) — 1 second shared lockout after any ability fires
+  double gcdRemaining = 0.0;
+  double gcdMax = 1.0;
+
+  // Ability queue (slot numbers 1-10, FIFO, max 5)
+  List<int> abilityQueue = [];
+
+  // Target-of-target: who is this player targeting (set by AI / combat system)
+  String? currentTargetId;
+
+  // Combat text: last executed ability name and fade timer
+  String? lastExecutedAbility;
+  double lastExecutedTimer = 0.0;
+
+  // Max durations for buff progress rings (set alongside timers)
+  double damageBoostMax = 0.0;
+  double damageReductionMax = 0.0;
+  double stunImmuneMax = 0.0;
+  double speedMultiplierMax = 0.0;
+  double snareMax = 0.0;
+  double markedMax = 0.0;
+  double dodgeMax = 0.0;
+  double hotMax = 0.0;
+  double attacksApplySnareMax = 0.0;
+  double hexedMax = 0.0;
+  double confusedMax = 0.0;
+  double stunMax = 0.0;
+  double speedBoostMax = 0.0;
 
   // Red mana decay
   static const double redDecayDelay = 3.0;
@@ -108,7 +142,26 @@ class UltraballPlayer {
 
   bool get isAirborne => zHeight > 0 || zVelocity > 0;
 
+  double getSlotCooldown(int slot) => switch (slot) {
+    1 => tackleCooldown,
+    2 => slamCooldown,
+    3 => sprintCooldown,
+    4 => ability4Cooldown,
+    5 => ability5Cooldown,
+    6 => ability6Cooldown,
+    7 => ability7Cooldown,
+    8 => ability8Cooldown,
+    9 => ability9Cooldown,
+    _ => 0.0,
+  };
+
   bool isPlayerControlled = false;
+
+  // ── Match-wide statistics (accumulated, never reset mid-match) ─────────────
+  double totalDamageDealt = 0.0;
+  double totalHealingDone = 0.0;
+  int killsThisMatch = 0;
+  int pointsThisMatch = 0;
 
   // Throw charging
   bool isChargingThrow = false;
@@ -138,6 +191,7 @@ class UltraballPlayer {
       s *= 1.5;
     }
     if (snareTimer > 0) { s *= snareMultiplier; }
+    s *= terrainSpeedMult;
     return s;
   }
 
@@ -209,7 +263,7 @@ class UltraballPlayer {
       speedMultiplierTimer -= dt;
       if (speedMultiplierTimer <= 0) {
         speedMultiplierTimer = 0;
-        speedMultiplierOverride = 1.5;
+        speedMultiplierOverride = 1.0;
       }
     }
 
@@ -237,14 +291,17 @@ class UltraballPlayer {
     // Heal over time
     if (hotTimer > 0) {
       hotTimer -= dt;
-      health = math.min(maxHealth, health + hotRate * dt);
+      final hotHeal = math.min(maxHealth - health, hotRate * dt);
+      health += hotHeal;
+      if (hotHeal > 0) _hotCasterCredit?.call(hotHeal);
       if (hotTimer <= 0) {
         hotTimer = 0;
         hotRate = 0;
+        _hotCasterCredit = null;
       }
     }
 
-    // Passive health regen — slow enough not to prevent burst kills but makes sustained fights recoverable
+    // Passive health regen — not tracked in totalHealingDone (passive, not ability-sourced)
     if (health < maxHealth) {
       health = math.min(maxHealth, health + 2.0 * dt);
     }
@@ -263,6 +320,13 @@ class UltraballPlayer {
     if (confusedTimer > 0) {
       confusedTimer -= dt;
       if (confusedTimer <= 0) confusedTimer = 0;
+    }
+
+    // GCD and combat text timers
+    if (gcdRemaining > 0) gcdRemaining = math.max(0, gcdRemaining - dt);
+    if (lastExecutedTimer > 0) {
+      lastExecutedTimer = math.max(0, lastExecutedTimer - dt);
+      if (lastExecutedTimer <= 0) lastExecutedAbility = null;
     }
 
     // Jump physics
@@ -296,6 +360,7 @@ class UltraballPlayer {
     if (dodgeTimer > 0) return; // dodge frames block CC
     state = PlayerState.stunned;
     stunTimer = duration;
+    stunMax = math.max(stunMax, duration);
     velX = 0;
     velY = 0;
   }
@@ -340,33 +405,34 @@ class UltraballPlayer {
   // Snare: apply only if it worsens the current snare
   void applySnare(double duration, double multiplier) {
     if (dodgeTimer > 0) return;
-    if (duration > snareTimer) { snareTimer = duration; }
+    if (duration > snareTimer) { snareTimer = duration; snareMax = math.max(snareMax, duration); }
     if (multiplier < snareMultiplier) { snareMultiplier = multiplier; }
   }
 
   void applyMark(double duration) {
-    if (markedTimer < duration) { markedTimer = duration; }
+    if (markedTimer < duration) { markedTimer = duration; markedMax = math.max(markedMax, duration); }
   }
 
   void applyDodge(double duration) {
-    if (dodgeTimer < duration) { dodgeTimer = duration; }
+    if (dodgeTimer < duration) { dodgeTimer = duration; dodgeMax = math.max(dodgeMax, duration); }
   }
 
-  void applyHoT(double duration, double rate) {
-    if (hotTimer < duration) { hotTimer = duration; }
+  void applyHoT(double duration, double rate, {void Function(double)? casterCredit}) {
+    if (hotTimer < duration) { hotTimer = duration; hotMax = math.max(hotMax, duration); }
     if (hotRate < rate) { hotRate = rate; }
+    if (casterCredit != null) { _hotCasterCredit = casterCredit; }
   }
 
   void applyHex(double duration, double factor) {
     if (dodgeTimer > 0) return;
-    if (duration > hexedTimer) hexedTimer = duration;
+    if (duration > hexedTimer) { hexedTimer = duration; hexedMax = math.max(hexedMax, duration); }
     if (factor < hexedFactor) hexedFactor = factor;
   }
 
   void applyConfusion(double duration) {
     if (dodgeTimer > 0) return;
     if (stunImmune) return;
-    if (duration > confusedTimer) confusedTimer = duration;
+    if (duration > confusedTimer) { confusedTimer = duration; confusedMax = math.max(confusedMax, duration); }
   }
 
   // Remove all crowd-control debuffs
@@ -384,20 +450,37 @@ class UltraballPlayer {
   void resetBuffs() {
     damageBoostFactor = 1.0;
     damageBoostTimer = 0;
+    damageBoostMax = 0;
     damageReductionFactor = 1.0;
     damageReductionTimer = 0;
+    damageReductionMax = 0;
     stunImmune = false;
     stunImmuneTimer = 0;
+    stunImmuneMax = 0;
     speedMultiplierTimer = 0;
-    speedMultiplierOverride = 1.5;
+    speedMultiplierMax = 0;
+    speedMultiplierOverride = 1.0;
     snareTimer = 0;
+    snareMax = 0;
     snareMultiplier = 1.0;
     markedTimer = 0;
+    markedMax = 0;
     dodgeTimer = 0;
+    dodgeMax = 0;
     hotTimer = 0;
+    hotMax = 0;
     hotRate = 0;
+    _hotCasterCredit = null;
     attacksApplySnare = false;
     attacksApplySnareTimer = 0;
-    hexedTimer = 0.0; hexedFactor = 1.0; confusedTimer = 0.0;
+    attacksApplySnareMax = 0;
+    hexedTimer = 0.0; hexedFactor = 1.0; hexedMax = 0;
+    confusedTimer = 0.0; confusedMax = 0;
+    stunTimer = 0; stunMax = 0;
+    speedBoostTimer = 0; speedBoostMax = 0;
+    gcdRemaining = 0; gcdMax = 1.0;
+    abilityQueue = [];
+    lastExecutedAbility = null;
+    lastExecutedTimer = 0;
   }
 }

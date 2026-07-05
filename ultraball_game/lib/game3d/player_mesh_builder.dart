@@ -137,12 +137,13 @@ class PlayerMeshBuilder {
 
   // Subtle per-class jersey tint so classes are distinguishable on the same team
   static Vector3 _classJerseyShift(PlayerClass cls) => switch (cls) {
-    PlayerClass.runner   => Vector3( 0.00,  0.08, -0.05),  // brighter mid
+    PlayerClass.spectre   => Vector3( 0.00,  0.08, -0.05),  // brighter mid
     PlayerClass.geomancer => Vector3(-0.05, -0.05,  0.00),  // slightly darker
-    PlayerClass.warden   => Vector3( 0.05,  0.05,  0.05),  // lighter
-    PlayerClass.handler  => Vector3(-0.02,  0.08,  0.04),  // cyan-ish
-    PlayerClass.blitzer  => Vector3( 0.08, -0.02, -0.08),  // warmer
+    PlayerClass.archon   => Vector3( 0.05,  0.05,  0.05),  // lighter
+    PlayerClass.warden  => Vector3(-0.02,  0.08,  0.04),  // cyan-ish
+    PlayerClass.corsair  => Vector3( 0.08, -0.02, -0.08),  // warmer
     PlayerClass.trickster => Vector3(-0.10,  0.05,  0.15),  // TRICKSTER — purple shift
+    PlayerClass.wrecker  => Vector3( 0.15, -0.08, -0.10),  // WRECKER — deep red-orange shift
   };
 
   static Vector3 _pantsColor(Team team) => team == Team.player
@@ -150,11 +151,12 @@ class PlayerMeshBuilder {
       : Vector3(0.42, 0.08, 0.08);  // dark maroon
 
   static Vector3 _helmetColor(PlayerClass cls) => switch (cls) {
-    PlayerClass.runner   => Vector3(0.90, 0.75, 0.10),  // SPECTRE — gold
-    PlayerClass.blitzer  => Vector3(0.90, 0.45, 0.08),  // CORSAIR — orange
+    PlayerClass.spectre   => Vector3(0.90, 0.75, 0.10),  // SPECTRE — gold
+    PlayerClass.corsair  => Vector3(0.90, 0.45, 0.08),  // CORSAIR — orange
     PlayerClass.geomancer => Vector3(0.12, 0.45, 0.12),  // GEOMANCER — earthy green
-    PlayerClass.warden   => Vector3(0.78, 0.78, 0.80),  // ARCHON — silver
-    PlayerClass.handler  => Vector3(0.10, 0.80, 0.85),  // WARDEN — cyan
+    PlayerClass.archon   => Vector3(0.78, 0.78, 0.80),  // ARCHON — silver
+    PlayerClass.warden  => Vector3(0.10, 0.80, 0.85),  // WARDEN — cyan
     PlayerClass.trickster => Vector3(0.60, 0.10, 0.90),  // TRICKSTER — violet
+    PlayerClass.wrecker  => Vector3(0.85, 0.20, 0.02),  // WRECKER — crimson
   };
 }

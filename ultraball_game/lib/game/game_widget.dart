@@ -20,6 +20,9 @@ import '../ui/mana_bars.dart';
 import '../ui/throw_charge_bar.dart';
 import '../ui/roster_screen.dart';
 import '../ui/in_game_settings_panel.dart';
+import '../ui/damage_meter.dart';
+import '../ui/game_summary_screen.dart';
+import '../ui/ui_theme.dart';
 import '../ai/learning_ai.dart';
 import '../ai/game_data_collector.dart';
 import '../game3d/ultraball_render_system.dart';
@@ -55,6 +58,7 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
   final ValueNotifier<int> _canvasRepaint = ValueNotifier<int>(0);
 
   bool _showSettingsPanel = false;
+  bool _showDamageMeter   = false;
 
   // Typed reference retained for finalise() which is not on GameDataSink
   GameDataCollector? _dataCollector;
@@ -64,6 +68,7 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     super.initState();
     _gs = GameState(settings: widget.settings);
     _gs.initialize();
+    _showDamageMeter = UiTheme.instance.damageMeterDefaultVisible;
     _fieldPainter = FieldPainter(gs: _gs, repaint: _canvasRepaint)
       ..viewMode = widget.settings.viewMode;
     // Wire up the adaptive AI policy and data collector for this game
@@ -177,6 +182,8 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       return;
     }
 
+    _gs.matchTimeElapsed += dt;
+
     // Increment throw charge for the selected player
     final selPlayer = _gs.selectedPlayer;
     if (selPlayer != null) {
@@ -201,6 +208,12 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     // Update all players — iterate rosters directly to avoid allPlayers allocation
     for (final p in _gs.playerRoster)   { p.update(dt); }
     for (final p in _gs.opponentRoster) { p.update(dt); }
+
+    // Drain ability queue for selected player
+    final selForQueue = _gs.selectedPlayer;
+    if (selForQueue != null && selForQueue.isAlive) {
+      CombatSystem.drainAbilityQueue(_gs, selForQueue);
+    }
 
     // Update AI
     AiSystem.update(_gs, dt);
@@ -375,71 +388,107 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       return;
     }
 
-    // 1–7: class ability slots
+    // 1–9, 0: class ability slots — goes through GCD/queue system
     if (key == LogicalKeyboardKey.digit1) {
-      if (player != null) CombatSystem.useClassAbility(_gs, player, 1);
+      if (player != null) _tryFireAbility(player, 1);
       return;
     }
     if (key == LogicalKeyboardKey.digit2) {
       if (player != null) {
         if (player.playerClass == PlayerClass.geomancer) {
-          // Hold-to-aim: start aiming terrain placement
+          // Hold-to-aim: start aiming terrain placement (Geomancer special case)
           if (player.slamCooldown <= 0 && player.redMana >= 25) {
             _gs.isAimingTerrain = true;
             _gs.terrainAimEventType = TerrainEventType.riseMountain;
+          } else {
+            // On CD or no mana: enqueue via normal path
+            _tryFireAbility(player, 2);
           }
         } else {
-          CombatSystem.useClassAbility(_gs, player, 2);
+          _tryFireAbility(player, 2);
         }
       }
       return;
     }
     if (key == LogicalKeyboardKey.digit3) {
-      if (player != null) CombatSystem.useClassAbility(_gs, player, 3);
+      if (player != null) _tryFireAbility(player, 3);
       return;
     }
     if (key == LogicalKeyboardKey.digit4) {
       if (player != null) {
         if (player.playerClass == PlayerClass.geomancer) {
-          // Hold-to-aim: start aiming terrain placement
+          // Hold-to-aim: start aiming terrain placement (Geomancer special case)
           if (player.ability4Cooldown <= 0 && player.redMana >= 35) {
             _gs.isAimingTerrain = true;
             _gs.terrainAimEventType = TerrainEventType.openPit;
+          } else {
+            // On CD or no mana: enqueue via normal path
+            _tryFireAbility(player, 4);
           }
         } else {
-          CombatSystem.useClassAbility(_gs, player, 4);
+          _tryFireAbility(player, 4);
         }
       }
       return;
     }
     if (key == LogicalKeyboardKey.digit5) {
-      if (player != null) CombatSystem.useClassAbility(_gs, player, 5);
+      if (player != null) _tryFireAbility(player, 5);
       return;
     }
     if (key == LogicalKeyboardKey.digit6) {
-      if (player != null) CombatSystem.useClassAbility(_gs, player, 6);
+      if (player != null) _tryFireAbility(player, 6);
       return;
     }
     if (key == LogicalKeyboardKey.digit7) {
-      if (player != null) CombatSystem.useClassAbility(_gs, player, 7);
+      if (player != null) _tryFireAbility(player, 7);
       return;
     }
     if (key == LogicalKeyboardKey.digit8) {
-      if (player != null) CombatSystem.useClassAbility(_gs, player, 8);
+      if (player != null) _tryFireAbility(player, 8);
       return;
     }
     if (key == LogicalKeyboardKey.digit9) {
-      if (player != null) CombatSystem.useClassAbility(_gs, player, 9);
+      if (player != null) _tryFireAbility(player, 9);
       return;
     }
     if (key == LogicalKeyboardKey.digit0) {
-      if (player != null) CombatSystem.useClassAbility(_gs, player, 10);
+      if (player != null) _tryFireAbility(player, 10);
+      return;
+    }
+
+    // C: cycle player class (test mode only)
+    if (key == LogicalKeyboardKey.keyC) {
+      if (player != null && _gs.settings.testMode) {
+        final classes = PlayerClass.values;
+        final nextCls = classes[(classes.indexOf(player.playerClass) + 1) % classes.length];
+        player.playerClass = nextCls;
+        player.baseSpeed = nextCls.baseSpeed;
+        player.maxHealth = nextCls.maxHealth;
+        player.health = nextCls.maxHealth;
+        player.redMana = 0;
+        player.blueMana = 100;
+        player.tackleCooldown = 0;
+        player.slamCooldown = 0;
+        player.sprintCooldown = 0;
+        player.ability4Cooldown = 0;
+        player.ability5Cooldown = 0;
+        player.ability6Cooldown = 0;
+        player.ability7Cooldown = 0;
+        player.ability8Cooldown = 0;
+        player.ability9Cooldown = 0;
+      }
       return;
     }
 
     // V: toggle 3D camera mode (broadcast ↔ third-person follow)
     if (key == LogicalKeyboardKey.keyV) {
       _renderSystem?.toggleCameraMode();
+      return;
+    }
+
+    // M: toggle damage/healing meter
+    if (key == LogicalKeyboardKey.keyM) {
+      setState(() => _showDamageMeter = !_showDamageMeter);
       return;
     }
 
@@ -477,7 +526,7 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     // Guard on playerClass so a mid-aim player-switch doesn't fire the wrong unit's slot.
     if (event.logicalKey == LogicalKeyboardKey.digit2 ||
         event.logicalKey == LogicalKeyboardKey.digit4) {
-      if (_gs.isAimingTerrain) {
+      if (_gs.isAimingTerrain && !_gs.paused && !_gs.actState.gameOver) {
         final player = _gs.selectedPlayer;
         if (player != null && player.playerClass == PlayerClass.geomancer) {
           final slot = event.logicalKey == LogicalKeyboardKey.digit2 ? 2 : 4;
@@ -486,6 +535,26 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
         _gs.isAimingTerrain = false;
         _gs.terrainAimEventType = null;
       }
+    }
+  }
+
+  /// Fire an ability immediately if ready, or enqueue it (max 5, no duplicates).
+  void _tryFireAbility(UltraballPlayer player, int slot) {
+    if (player.gcdRemaining > 0 || player.getSlotCooldown(slot) > 0) {
+      // GCD active or slot on cooldown: enqueue
+      if (player.abilityQueue.length < 5 && !player.abilityQueue.contains(slot)) {
+        player.abilityQueue.add(slot);
+      }
+      return;
+    }
+    CombatSystem.useClassAbility(_gs, player, slot);
+    // Set GCD and show combat text
+    player.gcdRemaining = 1.0;
+    player.gcdMax = 1.0;
+    final names = player.playerClass.abilityNames;
+    if (slot >= 1 && slot <= names.length) {
+      player.lastExecutedAbility = names[slot - 1];
+      player.lastExecutedTimer = 1.2;
     }
   }
 
@@ -609,11 +678,21 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
                               child: Center(child: ThrowChargeBar(gs: _gs)),
                             ),
 
-                            // Mana bars (bottom left)
+                            // Target frame + target-of-target + mana bars (bottom left)
                             Positioned(
                               bottom: 12,
                               left: 12,
-                              child: ManaBars(gs: _gs),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  TargetFrame(gs: _gs),
+                                  if (_gs.currentTarget != null) const SizedBox(height: 4),
+                                  TargetOfTargetFrame(gs: _gs),
+                                  if (_gs.currentTarget != null) const SizedBox(height: 6),
+                                  ManaBars(gs: _gs),
+                                ],
+                              ),
                             ),
 
                             // Team roster panel (right side)
@@ -635,6 +714,14 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
                               }),
                             ),
 
+                            // Damage / healing meter (bottom-right, toggled by [M])
+                            if (_showDamageMeter && !_gs.actState.gameOver)
+                              Positioned(
+                                bottom: 12,
+                                right: 8,
+                                child: DamageMeter(gs: _gs),
+                              ),
+
                             // Pause overlay
                             if (_gs.paused && !_showSettingsPanel)
                               _PauseOverlay(onResume: () {
@@ -642,8 +729,12 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
                                 _focusNode.requestFocus();
                               }),
 
-                            // Game over overlay
-                            if (_gs.actState.gameOver) _GameOverOverlay(gs: _gs),
+                            // Game summary (replaces bare game-over box)
+                            if (_gs.actState.gameOver)
+                              GameSummaryScreen(
+                                gs: _gs,
+                                onBack: () => Navigator.of(context).pop(),
+                              ),
 
                             // Act transition overlay
                             if (_gs.showingActTransition)
@@ -852,145 +943,6 @@ class _PauseOverlay extends StatelessWidget {
   }
 }
 
-class _GameOverOverlay extends StatelessWidget {
-  final GameState gs;
-  const _GameOverOverlay({required this.gs});
-
-  @override
-  Widget build(BuildContext context) {
-    final act = gs.actState;
-    final playerWon = act.playerScore > act.opponentScore;
-    final tied = act.playerScore == act.opponentScore;
-
-    String headline;
-    Color headlineColor;
-    if (act.playerForfeit) {
-      headline = '${gs.settings.awayTeamName} WINS BY FORFEIT!';
-      headlineColor = const Color(0xFFE53935);
-    } else if (act.opponentForfeit) {
-      headline = '${gs.settings.homeTeamName} WINS BY FORFEIT!';
-      headlineColor = const Color(0xFF1E88E5);
-    } else if (tied) {
-      headline = 'DRAW!';
-      headlineColor = const Color(0xFFFFCC00);
-    } else if (playerWon) {
-      headline = '${gs.settings.homeTeamName} WINS!';
-      headlineColor = const Color(0xFF1E88E5);
-    } else {
-      headline = '${gs.settings.awayTeamName} WINS!';
-      headlineColor = const Color(0xFFE53935);
-    }
-
-    return Container(
-      color: Colors.black.withValues(alpha: 0.85),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'GAME OVER',
-              style: TextStyle(
-                color: Color(0xFF888888),
-                fontSize: 20,
-                letterSpacing: 5,
-                fontWeight: FontWeight.w300,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              headline,
-              style: TextStyle(
-                color: headlineColor,
-                fontSize: 40,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 4,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _ScoreBox(
-                  team: gs.settings.awayTeamName,
-                  score: act.opponentScore,
-                  color: const Color(0xFFE53935),
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    'VS',
-                    style: TextStyle(
-                      color: Color(0xFF555555),
-                      fontSize: 18,
-                    ),
-                  ),
-                ),
-                _ScoreBox(
-                  team: gs.settings.homeTeamName,
-                  score: act.playerScore,
-                  color: const Color(0xFF1E88E5),
-                ),
-              ],
-            ),
-            const SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFFCC00),
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-              ),
-              child: const Text(
-                'BACK TO MENU',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 3,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ScoreBox extends StatelessWidget {
-  final String team;
-  final int score;
-  final Color color;
-
-  const _ScoreBox({required this.team, required this.score, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          '$score',
-          style: TextStyle(
-            color: color,
-            fontSize: 64,
-            fontWeight: FontWeight.w900,
-            height: 1.0,
-          ),
-        ),
-        Text(
-          team,
-          style: TextStyle(
-            color: color.withValues(alpha: 0.7),
-            fontSize: 12,
-            letterSpacing: 2,
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class _SettingsButton extends StatelessWidget {
   final VoidCallback onTap;

@@ -6,7 +6,7 @@ enum ViewMode { flat, threeQuarter, full3D }
 class TeamDefinition {
   final String name;
   final CreatureType creatureType;
-  final List<String> playerNames; // 15 names: slots 0,5,10=SPECTRE  1,6,11=CORSAIR  2,7,12=JUGGERNAUT  3,8,13=ARCHON  4,9,14=WARDEN
+  final List<String> playerNames; // 15 names: slot (i % 7) → SPECTRE, CORSAIR, GEOMANCER, ARCHON, WARDEN, TRICKSTER, WRECKER
 
   const TeamDefinition(this.name, this.creatureType, this.playerNames);
 
@@ -50,6 +50,7 @@ class GameSettings {
   // Roster order: indices 0-14 into playerNames. First 7 go on field, rest are reserves in sub order.
   final List<int> homeRosterOrder;
   final List<int> awayRosterOrder;
+  final bool testMode;
 
   static List<String> _namesFor(String teamName) {
     final match = TeamDefinition.teams.where((t) => t.name == teamName).firstOrNull;
@@ -64,13 +65,14 @@ class GameSettings {
     required this.creatureType,
     required this.fastMode,
     this.viewMode = ViewMode.flat,
-    this.useCubeModels = false,
+    this.useCubeModels = true,
     this.homeStrategy = AiStrategy.numericalEdge,
     this.homeTactics  = AiTactics.heroBall,
     this.aiStrategy   = AiStrategy.tempoTrap,
     this.aiTactics    = AiTactics.focusFire,
     List<int>? homeRosterOrder,
     List<int>? awayRosterOrder,
+    this.testMode = false,
   })  : homePlayerNames = homePlayerNames ?? _namesFor(homeTeamName),
         awayPlayerNames = awayPlayerNames ?? _namesFor(awayTeamName),
         homeRosterOrder = homeRosterOrder ?? List.generate(15, (i) => i),

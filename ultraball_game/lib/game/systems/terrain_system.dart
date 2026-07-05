@@ -2,8 +2,10 @@ import 'dart:math' as math;
 import '../../models/terrain_grid.dart';
 import '../../models/terrain_event.dart';
 import '../../models/damage_indicator.dart';
+import '../../models/player.dart';
 import '../game_state.dart';
 import 'combat_system.dart';
+import 'act_system.dart';
 
 class TerrainSystem {
   static void update(GameState gs, double dt) {
@@ -35,8 +37,10 @@ class TerrainSystem {
 
   static void _applyTerrainEffectsToPlayers(GameState gs, double dt) {
     for (final p in gs.fieldPlayers) {
-      if (!p.isAlive || p.isAirborne) continue;
+      if (!p.isAlive) continue;
+      if (p.isAirborne) { p.terrainSpeedMult = 1.0; continue; }
       final cell = gs.terrain.cellAt(p.x, p.y);
+      p.terrainSpeedMult = cell.speedMult;
 
       // Pit: instant death for non-creature players
       if (cell.isPit) {
@@ -52,6 +56,8 @@ class TerrainSystem {
           gs.ball.velY = 0;
         }
         if (gs.selectedPlayer?.id == p.id) gs.selectNextPlayer();
+        final killaTeam = p.team == Team.player ? 'opponent' : 'player';
+        ActSystem.scoreKilla(gs, killaTeam);
         CombatSystem.handlePlayerDeath(gs, p);
         continue;
       }
@@ -71,6 +77,8 @@ class TerrainSystem {
             gs.ball.velY = 0;
           }
           if (gs.selectedPlayer?.id == p.id) gs.selectNextPlayer();
+          final killaTeam = p.team == Team.player ? 'opponent' : 'player';
+          ActSystem.scoreKilla(gs, killaTeam);
           CombatSystem.handlePlayerDeath(gs, p);
         }
       }

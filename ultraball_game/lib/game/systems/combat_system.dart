@@ -3,6 +3,7 @@ import '../../models/player.dart';
 import '../../models/damage_indicator.dart';
 import '../../models/terrain_event.dart';
 import '../game_state.dart';
+import '../ability_stats_collector.dart';
 import 'act_system.dart';
 import 'terrain_system.dart';
 
@@ -20,26 +21,45 @@ class CombatSystem {
 
   static void useClassAbility(GameState gs, UltraballPlayer player, int slot) {
     if (!player.isAlive || player.isStunned) return;
+
+    final stats = gs.abilityStats;
+    final before = stats != null
+        ? AbilityStatsCollector.snap(gs, player.team)
+        : null;
+
     switch (player.playerClass) {
-      case PlayerClass.runner:
-        _runnerAbility(gs, player, slot);
+      case PlayerClass.spectre:
+        _spectreAbility(gs, player, slot);
       case PlayerClass.geomancer:
         _geomancerAbility(gs, player, slot);
+      case PlayerClass.archon:
+        _archonAbility(gs, player, slot);
       case PlayerClass.warden:
         _wardenAbility(gs, player, slot);
-      case PlayerClass.handler:
-        _handlerAbility(gs, player, slot);
-      case PlayerClass.blitzer:
-        _blitzerAbility(gs, player, slot);
+      case PlayerClass.corsair:
+        _corsairAbility(gs, player, slot);
       case PlayerClass.trickster:
         _tricksterAbility(gs, player, slot);
+      case PlayerClass.wrecker:
+        _wreckerAbility(gs, player, slot);
+    }
+
+    if (stats != null && before != null) {
+      final after = AbilityStatsCollector.snap(gs, player.team);
+      stats.recordUse(
+        player: player,
+        slot: slot,
+        before: before,
+        after: after,
+        gameTimeRemaining: gs.actState.timerSeconds,
+      );
     }
   }
 
-  // ─── RUNNER abilities ─────────────────────────────────────────────────────
+  // ─── SPECTRE abilities ────────────────────────────────────────────────────
   // Speed-focused ball carrier. Fragile (75 HP) but fastest (10 m/s).
 
-  static void _runnerAbility(GameState gs, UltraballPlayer p, int slot) {
+  static void _spectreAbility(GameState gs, UltraballPlayer p, int slot) {
     if (slot == 1) {
       // Quick Strike — 12 dmg, 0.5s CD
       if (p.tackleCooldown > 0) return;
@@ -57,7 +77,7 @@ class CombatSystem {
       final t = _resolveTarget(gs, p, 3.0);
       if (t == null) return;
       p.redMana -= 20;
-      p.slamCooldown = 1.5;
+      p.slamCooldown = 5.0;
       gs.dataCollector?.onSlam(p.team == Team.opponent ? 'opponent' : 'player');
       applyDamage(gs, t, 18.0, p);
       t.applySnare(1.5, 0.5);
@@ -69,6 +89,7 @@ class CombatSystem {
       if (p.blueMana < 15) return;
       p.blueMana -= 15;
       p.speedBoostTimer = 3.0;
+      p.speedBoostMax = 3.0;
       p.sprintCooldown = 5.0;
 
     } else if (slot == 4) {
@@ -76,9 +97,9 @@ class CombatSystem {
       if (p.ability4Cooldown > 0) return;
       if (p.blueMana < 20) return;
       p.blueMana -= 20;
-      p.ability4Cooldown = 5.0;
-      p.x = (p.x + math.cos(p.facing) * 6.0).clamp(0.0, 140.0);
-      p.y = (p.y + math.sin(p.facing) * 6.0).clamp(0.0, 40.0);
+      p.ability4Cooldown = 1.5;
+      p.x = (p.x + math.cos(p.facing) * 6.0).clamp(0.0, GameState.fieldWidth);
+      p.y = (p.y + math.sin(p.facing) * 6.0).clamp(0.0, GameState.fieldHeight);
       addIndicator(gs, p.x, p.y - 1, 'PHASE!', IndicatorType.event);
 
     } else if (slot == 5) {
@@ -97,7 +118,7 @@ class CombatSystem {
       final t = _resolveTarget(gs, p, 2.5);
       if (t == null) return;
       p.redMana -= 30;
-      p.ability6Cooldown = 10.0;
+      p.ability6Cooldown = 20.0;
       applyDamage(gs, t, 15.0, p);
       t.stun(2.0);
 
@@ -108,7 +129,7 @@ class CombatSystem {
       p.ability7Cooldown = 20.0;
       p.blueMana -= 40;
       p.cleanse();
-      p.health = math.min(p.maxHealth, p.health + 25.0);
+      _applyHealing(gs, p, 25.0, p);
       addIndicator(gs, p.x, p.y - 2, '+25 HP', IndicatorType.heal);
       addIndicator(gs, p.x, p.y - 3, 'CLEANSED!', IndicatorType.event);
 
@@ -119,8 +140,8 @@ class CombatSystem {
       p.redMana -= 25;
       p.ability8Cooldown = 10.0;
       // Move backward
-      p.x = (p.x - math.cos(p.facing) * 4.0).clamp(0.0, 140.0);
-      p.y = (p.y - math.sin(p.facing) * 4.0).clamp(0.0, 40.0);
+      p.x = (p.x - math.cos(p.facing) * 4.0).clamp(0.0, GameState.fieldWidth);
+      p.y = (p.y - math.sin(p.facing) * 4.0).clamp(0.0, GameState.fieldHeight);
       int hit = 0;
       for (final enemy in gs.fieldPlayers) {
         if (enemy.team == p.team || !enemy.isAlive) continue;
@@ -138,10 +159,12 @@ class CombatSystem {
       if (p.ability9Cooldown > 0) return;
       if (p.blueMana < 20) return;
       p.blueMana -= 20;
-      p.ability9Cooldown = 20.0;
+      p.ability9Cooldown = 10.0;
       p.stunImmune = true;
       p.stunImmuneTimer = 3.0;
+      p.stunImmuneMax = 3.0;
       p.speedBoostTimer = 3.0;
+      p.speedBoostMax = 3.0;
       addIndicator(gs, p.x, p.y - 1, 'SLIPSTREAM!', IndicatorType.event);
 
     } else if (slot == 10) {
@@ -150,8 +173,10 @@ class CombatSystem {
       p.ultraMana -= 5;
       p.speedMultiplierOverride = 2.5;
       p.speedMultiplierTimer = 7.0;
+      p.speedMultiplierMax = 7.0;
       p.stunImmune = true;
       p.stunImmuneTimer = 7.0;
+      p.stunImmuneMax = 7.0;
       addIndicator(gs, p.x, p.y - 2, 'ULTRAVIOLET!', IndicatorType.kill);
       gs.showEvent('ULTRAVIOLET! ${p.name} is beyond reach for 7 seconds!');
     }
@@ -179,8 +204,8 @@ class CombatSystem {
       p.redMana -= 25;
       p.slamCooldown = 20.0;
       gs.dataCollector?.onSlam(p.team == Team.opponent ? 'opponent' : 'player');
-      final tx = (p.x + math.cos(p.facing) * GameState.terrainAimRange).clamp(0.0, 140.0);
-      final ty = (p.y + math.sin(p.facing) * GameState.terrainAimRange).clamp(0.0, 40.0);
+      final tx = (p.x + math.cos(p.facing) * GameState.terrainAimRange).clamp(0.0, GameState.fieldWidth);
+      final ty = (p.y + math.sin(p.facing) * GameState.terrainAimRange).clamp(0.0, GameState.fieldHeight);
       TerrainSystem.applyEvent(gs, TerrainEvent(
         type: TerrainEventType.riseMountain,
         worldX: tx, worldY: ty,
@@ -201,8 +226,8 @@ class CombatSystem {
         final dx = t.x - p.x, dy = t.y - p.y;
         final dist = math.sqrt(dx * dx + dy * dy);
         if (dist > 0) {
-          t.x = (t.x + (dx / dist) * 4.0).clamp(0.0, 140.0);
-          t.y = (t.y + (dy / dist) * 4.0).clamp(0.0, 40.0);
+          t.x = (t.x + (dx / dist) * 4.0).clamp(0.0, GameState.fieldWidth);
+          t.y = (t.y + (dy / dist) * 4.0).clamp(0.0, GameState.fieldHeight);
         }
         addIndicator(gs, t.x, t.y - 1, 'SHOVED!', IndicatorType.event);
       }
@@ -213,8 +238,8 @@ class CombatSystem {
       if (p.redMana < 35) return;
       p.redMana -= 35;
       p.ability4Cooldown = 20.0;
-      final tx = (p.x + math.cos(p.facing) * GameState.terrainAimRange).clamp(0.0, 140.0);
-      final ty = (p.y + math.sin(p.facing) * GameState.terrainAimRange).clamp(0.0, 40.0);
+      final tx = (p.x + math.cos(p.facing) * GameState.terrainAimRange).clamp(0.0, GameState.fieldWidth);
+      final ty = (p.y + math.sin(p.facing) * GameState.terrainAimRange).clamp(0.0, GameState.fieldHeight);
       TerrainSystem.applyEvent(gs, TerrainEvent(
         type: TerrainEventType.openPit,
         worldX: tx, worldY: ty,
@@ -248,6 +273,7 @@ class CombatSystem {
       p.ability6Cooldown = 10.0;
       p.damageReductionFactor = 0.60;
       p.damageReductionTimer = 4.0;
+      p.damageReductionMax = 4.0;
       addIndicator(gs, p.x, p.y - 2, 'STONE ARMOR!', IndicatorType.event);
 
     } else if (slot == 7) {
@@ -256,7 +282,7 @@ class CombatSystem {
       if (p.blueMana < 35) return;
       p.ability7Cooldown = 10.0;
       p.blueMana -= 35;
-      p.health = math.min(p.maxHealth, p.health + 35.0);
+      _applyHealing(gs, p, 35.0, p);
       addIndicator(gs, p.x, p.y - 2, '+35 HP', IndicatorType.heal);
 
     } else if (slot == 8) {
@@ -266,6 +292,7 @@ class CombatSystem {
       p.blueMana -= 20;
       p.ability8Cooldown = 5.0;
       p.speedBoostTimer = 4.0;
+      p.speedBoostMax = 4.0;
       p.gainRedMana(30.0);
       addIndicator(gs, p.x, p.y - 2, 'UPHEAVAL!', IndicatorType.event);
 
@@ -275,8 +302,8 @@ class CombatSystem {
       if (p.redMana < 30) return;
       p.redMana -= 30;
       p.ability9Cooldown = 5.0;
-      final destX = (p.x + math.cos(p.facing) * 5.0).clamp(0.0, 140.0);
-      final destY = (p.y + math.sin(p.facing) * 5.0).clamp(0.0, 40.0);
+      final destX = (p.x + math.cos(p.facing) * 5.0).clamp(0.0, GameState.fieldWidth);
+      final destY = (p.y + math.sin(p.facing) * 5.0).clamp(0.0, GameState.fieldHeight);
       TerrainSystem.applyEvent(gs, TerrainEvent(
         type: TerrainEventType.openPit,
         worldX: (p.x + destX) / 2, worldY: (p.y + destY) / 2,
@@ -311,10 +338,10 @@ class CombatSystem {
     }
   }
 
-  // ─── WARDEN abilities ─────────────────────────────────────────────────────
+  // ─── ARCHON abilities ─────────────────────────────────────────────────────
   // Defensive anchor and team healer. High HP (120), medium speed (7.5 m/s).
 
-  static void _wardenAbility(GameState gs, UltraballPlayer p, int slot) {
+  static void _archonAbility(GameState gs, UltraballPlayer p, int slot) {
     if (slot == 1) {
       // Shield Bash — 15 dmg + 2m push, 0.8s CD
       if (p.tackleCooldown > 0) return;
@@ -327,8 +354,8 @@ class CombatSystem {
         final dx = t.x - p.x, dy = t.y - p.y;
         final dist = math.sqrt(dx * dx + dy * dy);
         if (dist > 0) {
-          t.x = (t.x + (dx / dist) * 2.0).clamp(0.0, 140.0);
-          t.y = (t.y + (dy / dist) * 2.0).clamp(0.0, 40.0);
+          t.x = (t.x + (dx / dist) * 2.0).clamp(0.0, GameState.fieldWidth);
+          t.y = (t.y + (dy / dist) * 2.0).clamp(0.0, GameState.fieldHeight);
         }
       }
       checkCombo(gs, p);
@@ -340,7 +367,7 @@ class CombatSystem {
       final t = _resolveTarget(gs, p, 3.0);
       if (t == null) return;
       p.redMana -= 25;
-      p.slamCooldown = 5.0;
+      p.slamCooldown = 10.0;
       gs.dataCollector?.onSlam(p.team == Team.opponent ? 'opponent' : 'player');
       applyDamage(gs, t, 30.0, p);
       t.stun(1.0);
@@ -351,6 +378,7 @@ class CombatSystem {
       if (p.blueMana < 20) return;
       p.blueMana -= 20;
       p.speedBoostTimer = 3.0;
+      p.speedBoostMax = 3.0;
       p.sprintCooldown = 5.0;
 
     } else if (slot == 4) {
@@ -361,6 +389,7 @@ class CombatSystem {
       p.ability4Cooldown = 10.0;
       p.damageReductionFactor = 0.50;
       p.damageReductionTimer = 3.0;
+      p.damageReductionMax = 3.0;
       addIndicator(gs, p.x, p.y - 2, 'FORTRESS!', IndicatorType.event);
 
     } else if (slot == 5) {
@@ -370,8 +399,8 @@ class CombatSystem {
       final t = _findNearestAlly(gs, p, 5.0);
       if (t == null) return;
       p.blueMana -= 30;
-      p.ability5Cooldown = 10.0;
-      t.health = math.min(t.maxHealth, t.health + 35.0);
+      p.ability5Cooldown = 5.0;
+      _applyHealing(gs, t, 35.0, p);
       addIndicator(gs, t.x, t.y - 2, '+35 HP', IndicatorType.heal);
 
     } else if (slot == 6) {
@@ -391,7 +420,7 @@ class CombatSystem {
       if (p.blueMana < 35) return;
       p.ability7Cooldown = 10.0;
       p.blueMana -= 35;
-      p.health = math.min(p.maxHealth, p.health + 35.0);
+      _applyHealing(gs, p, 35.0, p);
       p.blueMana = math.min(100, p.blueMana + 20.0);
       addIndicator(gs, p.x, p.y - 2, '+35 HP', IndicatorType.heal);
 
@@ -405,6 +434,7 @@ class CombatSystem {
       p.ability8Cooldown = 20.0;
       t.damageReductionFactor = 0.70;
       t.damageReductionTimer = 4.0;
+      t.damageReductionMax = 4.0;
       addIndicator(gs, t.x, t.y - 2, 'AEGIS!', IndicatorType.event);
 
     } else if (slot == 9) {
@@ -418,7 +448,7 @@ class CombatSystem {
         if (mate.team != p.team || !mate.isAlive) continue;
         final dx = mate.x - p.x, dy = mate.y - p.y;
         if (math.sqrt(dx * dx + dy * dy) <= 7.0) {
-          mate.health = math.min(mate.maxHealth, mate.health + 25.0);
+          _applyHealing(gs, mate, 25.0, p);
           mate.snareTimer = 0;
           mate.snareMultiplier = 1.0;
           addIndicator(gs, mate.x, mate.y - 2, '+25 HP', IndicatorType.heal);
@@ -441,19 +471,21 @@ class CombatSystem {
       for (final target in targets) {
         target.damageReductionFactor = 0.50;
         target.damageReductionTimer = 6.0;
+        target.damageReductionMax = 6.0;
         target.stunImmune = true;
         target.stunImmuneTimer = 6.0;
-        target.applyHoT(6.0, 8.0);
+        target.stunImmuneMax = 6.0;
+        target.applyHoT(6.0, 8.0, casterCredit: (amt) => p.totalHealingDone += amt);
         addIndicator(gs, target.x, target.y - 2, 'CITADEL!', IndicatorType.event);
       }
       gs.showEvent('CITADEL! ${targets.length} players shielded for 6s!');
     }
   }
 
-  // ─── HANDLER abilities ────────────────────────────────────────────────────
+  // ─── WARDEN abilities ─────────────────────────────────────────────────────
   // Field captain and support quarterback. Medium stats (95 HP, 8 m/s).
 
-  static void _handlerAbility(GameState gs, UltraballPlayer p, int slot) {
+  static void _wardenAbility(GameState gs, UltraballPlayer p, int slot) {
     if (slot == 1) {
       // Quick Jab — 10 dmg, 0.6s CD
       if (p.tackleCooldown > 0) return;
@@ -471,7 +503,7 @@ class CombatSystem {
       final t = _resolveTarget(gs, p, 3.0);
       if (t == null) return;
       p.redMana -= 20;
-      p.slamCooldown = 1.5;
+      p.slamCooldown = 5.0;
       gs.dataCollector?.onSlam(p.team == Team.opponent ? 'opponent' : 'player');
       applyDamage(gs, t, 15.0, p);
       t.applySnare(2.0, 0.4);
@@ -483,6 +515,7 @@ class CombatSystem {
       if (p.blueMana < 15) return;
       p.blueMana -= 15;
       p.speedBoostTimer = 3.0;
+      p.speedBoostMax = 3.0;
       p.sprintCooldown = 5.0;
 
     } else if (slot == 4) {
@@ -492,8 +525,8 @@ class CombatSystem {
       final t = _findNearestAlly(gs, p, 5.0);
       if (t == null) return;
       p.blueMana -= 30;
-      p.ability4Cooldown = 5.0;
-      t.health = math.min(t.maxHealth, t.health + 30.0);
+      p.ability4Cooldown = 10.0;
+      _applyHealing(gs, t, 30.0, p);
       addIndicator(gs, t.x, t.y - 2, '+30 HP', IndicatorType.heal);
 
     } else if (slot == 5) {
@@ -503,7 +536,7 @@ class CombatSystem {
       final t = _findNearestAlly(gs, p, 5.0);
       if (t == null) return;
       p.blueMana -= 25;
-      p.ability5Cooldown = 10.0;
+      p.ability5Cooldown = 1.5;
       t.blueMana = math.min(100, t.blueMana + 35.0);
       addIndicator(gs, t.x, t.y - 1, '+35 BLU', IndicatorType.combo);
 
@@ -527,7 +560,7 @@ class CombatSystem {
       if (t == null) return;
       p.blueMana -= 45;
       p.ability7Cooldown = 20.0;
-      t.health = math.min(t.maxHealth, t.health + 60.0);
+      _applyHealing(gs, t, 60.0, p);
       t.cleanse();
       addIndicator(gs, t.x, t.y - 2, '+60 HP', IndicatorType.heal);
       addIndicator(gs, t.x, t.y - 3, 'CLEANSED!', IndicatorType.event);
@@ -556,8 +589,8 @@ class CombatSystem {
       if (p.redMana < 25) return;
       p.redMana -= 25;
       p.ability9Cooldown = 10.0;
-      p.x = (p.x + math.cos(p.facing) * 5.0).clamp(0.0, 140.0);
-      p.y = (p.y + math.sin(p.facing) * 5.0).clamp(0.0, 40.0);
+      p.x = (p.x + math.cos(p.facing) * 5.0).clamp(0.0, GameState.fieldWidth);
+      p.y = (p.y + math.sin(p.facing) * 5.0).clamp(0.0, GameState.fieldHeight);
       for (final enemy in gs.fieldPlayers) {
         if (enemy.team == p.team || !enemy.isAlive) continue;
         final dx = enemy.x - p.x, dy = enemy.y - p.y;
@@ -576,14 +609,14 @@ class CombatSystem {
       int targets = 0;
       for (final mate in gs.getTeamOnField(p.team)) {
         if (mate.id == p.id || !mate.isAlive) continue;
-        mate.health = math.min(mate.maxHealth, mate.health + 35.0);
+        _applyHealing(gs, mate, 35.0, p);
         mate.blueMana = math.min(100, mate.blueMana + 40.0);
         mate.cleanse();
         addIndicator(gs, mate.x, mate.y - 2, 'SYMPHONY!', IndicatorType.heal);
         targets++;
       }
       // Also apply to self
-      p.health = math.min(p.maxHealth, p.health + 35.0);
+      _applyHealing(gs, p, 35.0, p);
       p.blueMana = math.min(100, p.blueMana + 40.0);
       p.cleanse();
       addIndicator(gs, p.x, p.y - 2, 'SYMPHONY!', IndicatorType.heal);
@@ -591,10 +624,10 @@ class CombatSystem {
     }
   }
 
-  // ─── BLITZER abilities ────────────────────────────────────────────────────
+  // ─── CORSAIR abilities ─────────────────────────────────────────────────────
   // Aggressive disruptor. Balanced stats (105 HP, 8.5 m/s). Mixed mana.
 
-  static void _blitzerAbility(GameState gs, UltraballPlayer p, int slot) {
+  static void _corsairAbility(GameState gs, UltraballPlayer p, int slot) {
     if (slot == 1) {
       // Blitz Strike — 18 dmg, 0.7s CD
       if (p.tackleCooldown > 0) return;
@@ -612,7 +645,7 @@ class CombatSystem {
       final t = _resolveTarget(gs, p, 3.0);
       if (t == null) return;
       p.redMana -= 25;
-      p.slamCooldown = 5.0;
+      p.slamCooldown = 20.0;
       gs.dataCollector?.onSlam(p.team == Team.opponent ? 'opponent' : 'player');
       final hadBall = gs.ball.holderId == t.id;
       applyDamage(gs, t, 25.0, p);
@@ -633,7 +666,8 @@ class CombatSystem {
       if (p.blueMana < 15) return;
       p.blueMana -= 15;
       p.speedBoostTimer = 3.0;
-      p.sprintCooldown = 1.5;
+      p.speedBoostMax = 3.0;
+      p.sprintCooldown = 5.0;
 
     } else if (slot == 4) {
       // Aggressive Rush — dash 5m + snare enemy at landing (2s, 50% slow), 8s CD, 20 red
@@ -641,8 +675,8 @@ class CombatSystem {
       if (p.redMana < 20) return;
       p.redMana -= 20;
       p.ability4Cooldown = 5.0;
-      p.x = (p.x + math.cos(p.facing) * 5.0).clamp(0.0, 140.0);
-      p.y = (p.y + math.sin(p.facing) * 5.0).clamp(0.0, 40.0);
+      p.x = (p.x + math.cos(p.facing) * 5.0).clamp(0.0, GameState.fieldWidth);
+      p.y = (p.y + math.sin(p.facing) * 5.0).clamp(0.0, GameState.fieldHeight);
       for (final enemy in gs.fieldPlayers) {
         if (enemy.team == p.team || !enemy.isAlive) continue;
         final dx = enemy.x - p.x, dy = enemy.y - p.y;
@@ -658,9 +692,10 @@ class CombatSystem {
       if (p.ability5Cooldown > 0) return;
       if (p.blueMana < 20) return;
       p.blueMana -= 20;
-      p.ability5Cooldown = 10.0;
+      p.ability5Cooldown = 1.5;
       p.damageBoostFactor = math.max(p.damageBoostFactor, 1.20);
       p.damageBoostTimer = 4.0;
+      p.damageBoostMax = 4.0;
       addIndicator(gs, p.x, p.y - 2, '+DMG!', IndicatorType.kill);
 
     } else if (slot == 6) {
@@ -676,8 +711,8 @@ class CombatSystem {
         final dx = t.x - p.x, dy = t.y - p.y;
         final dist = math.sqrt(dx * dx + dy * dy);
         if (dist > 0) {
-          t.x = (t.x + (dx / dist) * 4.0).clamp(0.0, 140.0);
-          t.y = (t.y + (dy / dist) * 4.0).clamp(0.0, 40.0);
+          t.x = (t.x + (dx / dist) * 4.0).clamp(0.0, GameState.fieldWidth);
+          t.y = (t.y + (dy / dist) * 4.0).clamp(0.0, GameState.fieldHeight);
         }
         t.applySnare(1.5, 0.5);
         addIndicator(gs, t.x, t.y - 1, 'SNARE!', IndicatorType.event);
@@ -699,15 +734,15 @@ class CombatSystem {
       if (p.ability8Cooldown > 0) return;
       if (p.blueMana < 25) return;
       p.blueMana -= 25;
-      p.ability8Cooldown = 20.0;
+      p.ability8Cooldown = 10.0;
       int hit = 0;
       for (final enemy in gs.fieldPlayers) {
         if (enemy.team == p.team || !enemy.isAlive) continue;
         final dx = enemy.x - p.x, dy = enemy.y - p.y;
         final dist = math.sqrt(dx * dx + dy * dy);
         if (dist <= 4.0 && dist > 0) {
-          enemy.x = (enemy.x + (dx / dist) * 3.0).clamp(0.0, 140.0);
-          enemy.y = (enemy.y + (dy / dist) * 3.0).clamp(0.0, 40.0);
+          enemy.x = (enemy.x + (dx / dist) * 3.0).clamp(0.0, GameState.fieldWidth);
+          enemy.y = (enemy.y + (dy / dist) * 3.0).clamp(0.0, GameState.fieldHeight);
           hit++;
         }
       }
@@ -726,8 +761,8 @@ class CombatSystem {
       final dy = creature.y - t.y;
       final dist = math.sqrt(dx * dx + dy * dy);
       if (dist > 0) {
-        t.x = (t.x + (dx / dist) * 4.0).clamp(0.0, 140.0);
-        t.y = (t.y + (dy / dist) * 4.0).clamp(0.0, 40.0);
+        t.x = (t.x + (dx / dist) * 4.0).clamp(0.0, GameState.fieldWidth);
+        t.y = (t.y + (dy / dist) * 4.0).clamp(0.0, GameState.fieldHeight);
       }
       t.applyMark(5.0);
       addIndicator(gs, t.x, t.y - 1, 'BAIT!', IndicatorType.kill);
@@ -738,12 +773,16 @@ class CombatSystem {
       p.ultraMana -= 5;
       p.speedMultiplierOverride = 2.0;
       p.speedMultiplierTimer = 7.0;
+      p.speedMultiplierMax = 7.0;
       p.damageBoostFactor = 1.35;
       p.damageBoostTimer = 7.0;
+      p.damageBoostMax = 7.0;
       p.stunImmune = true;
       p.stunImmuneTimer = 7.0;
+      p.stunImmuneMax = 7.0;
       p.attacksApplySnare = true;
       p.attacksApplySnareTimer = 7.0;
+      p.attacksApplySnareMax = 7.0;
       addIndicator(gs, p.x, p.y - 2, 'APEX!', IndicatorType.kill);
       gs.showEvent('APEX! ${p.name} is a wrecking machine for 7 seconds!');
     }
@@ -763,9 +802,35 @@ class CombatSystem {
       final dx = tabTarget.x - attacker.x;
       final dy = tabTarget.y - attacker.y;
       final dist = math.sqrt(dx * dx + dy * dy);
-      if (dist <= range + 4.0) return tabTarget;
+      if (dist <= range + 4.0) {
+        attacker.currentTargetId = tabTarget.id;
+        return tabTarget;
+      }
     }
-    return _findNearestEnemy(gs, attacker, range);
+    final nearest = _findNearestEnemy(gs, attacker, range);
+    if (nearest != null) attacker.currentTargetId = nearest.id;
+    return nearest;
+  }
+
+  /// Drain the ability queue for a player — called each tick for the selected player.
+  static void drainAbilityQueue(GameState gs, UltraballPlayer player) {
+    if (player.abilityQueue.isEmpty) return;
+    if (player.gcdRemaining > 0) return;
+
+    final slot = player.abilityQueue.first;
+    if (player.getSlotCooldown(slot) > 0) return; // not ready yet, wait
+
+    player.abilityQueue.removeAt(0);
+    useClassAbility(gs, player, slot);
+
+    // Set GCD and combat text
+    player.gcdRemaining = 1.0;
+    player.gcdMax = 1.0;
+    final names = player.playerClass.abilityNames;
+    if (slot >= 1 && slot <= names.length) {
+      player.lastExecutedAbility = names[slot - 1];
+      player.lastExecutedTimer = 1.2;
+    }
   }
 
   static UltraballPlayer? _findNearestEnemy(
@@ -843,6 +908,7 @@ class CombatSystem {
 
     victim.health -= finalDmg;
     attacker?.gainRedMana(5.0);
+    attacker?.totalDamageDealt += finalDmg;
 
     // Blood Rush: attacks apply snare
     if (attacker != null && attacker.attacksApplySnare && victim.isAlive) {
@@ -880,45 +946,19 @@ class CombatSystem {
   }
 
   static void handlePlayerDeath(GameState gs, UltraballPlayer victim) {
-    final roster = gs.getTeamRoster(victim.team);
-    final onField = roster.where((p) => p.isOnField && p.isAlive).length;
-    final teamId = victim.team == Team.player ? 'player' : 'opponent';
+    ActSystem.notifyPlayerDeath(gs, victim);
+  }
 
-    final allDead = roster.every((p) => !p.isAlive);
-    if (allDead) {
-      if (victim.team == Team.player) {
-        gs.actState.playerForfeit = true;
-        gs.showEvent('PLAYER TEAM FORFEIT!');
-      } else {
-        gs.actState.opponentForfeit = true;
-        gs.showEvent('OPPONENT TEAM FORFEIT!');
-      }
-      return;
-    }
-
-    final subUsed = teamId == 'player'
-        ? gs.actState.playerSubUsed
-        : gs.actState.opponentSubUsed;
-    if (!subUsed && onField < 7) {
-      final sub = roster.firstWhere(
-        (p) => !p.isOnField && p.isAlive,
-        orElse: () => roster[0],
-      );
-      if (!sub.isOnField && sub.isAlive) {
-        sub.isOnField = true;
-        sub.x = victim.team == Team.player ? 90.0 : 50.0;
-        sub.y = 20.0;
-        sub.health = sub.maxHealth;
-        sub.blueMana = 100;
-        sub.redMana = 0;
-        if (teamId == 'player') {
-          gs.actState.playerSubUsed = true;
-        } else {
-          gs.actState.opponentSubUsed = true;
-        }
-        gs.showEvent('SUB IN: ${sub.name}!');
-      }
-    }
+  static void _applyHealing(
+    GameState gs,
+    UltraballPlayer target,
+    double amount,
+    UltraballPlayer caster,
+  ) {
+    final actual = math.min(target.maxHealth - target.health, amount);
+    if (actual <= 0) return;
+    target.health += actual;
+    caster.totalHealingDone += actual;
   }
 
   static void checkCombo(GameState gs, UltraballPlayer attacker) {
@@ -989,10 +1029,10 @@ class CombatSystem {
       if (p.slamCooldown > 0) return;
       if (p.blueMana < 20) return;
       p.blueMana -= 20;
-      p.slamCooldown = 10.0;
+      p.slamCooldown = 5.0;
       final trapX = p.x, trapY = p.y;
-      p.x = (p.x + math.cos(p.facing) * 7.0).clamp(0.0, 140.0);
-      p.y = (p.y + math.sin(p.facing) * 7.0).clamp(0.0, 40.0);
+      p.x = (p.x + math.cos(p.facing) * 7.0).clamp(0.0, GameState.fieldWidth);
+      p.y = (p.y + math.sin(p.facing) * 7.0).clamp(0.0, GameState.fieldHeight);
       gs.tricksterTraps.add(TricksterTrap(
         worldX: trapX, worldY: trapY, ownerTeam: p.team,
         radius: 2.5, timer: 8.0, snareDuration: 2.0, snareMultiplier: 0.5,
@@ -1005,6 +1045,7 @@ class CombatSystem {
       if (p.blueMana < 15) return;
       p.blueMana -= 15;
       p.speedBoostTimer = 3.0;
+      p.speedBoostMax = 3.0;
       p.sprintCooldown = 5.0;
 
     } else if (slot == 4) {
@@ -1031,7 +1072,7 @@ class CombatSystem {
       if (p.ability5Cooldown > 0) return;
       if (p.redMana < 40) return;
       p.redMana -= 40;
-      p.ability5Cooldown = 20.0;
+      p.ability5Cooldown = 10.0;
       gs.creature.reverseDirection(5.0);
       int pushed = 0;
       for (final enemy in gs.fieldPlayers) {
@@ -1039,8 +1080,8 @@ class CombatSystem {
         final dx = enemy.x - gs.creature.x, dy = enemy.y - gs.creature.y;
         final dist = math.sqrt(dx * dx + dy * dy);
         if (dist <= 8.0 && dist > 0) {
-          enemy.x = (enemy.x + (dx / dist) * 5.0).clamp(0.0, 140.0);
-          enemy.y = (enemy.y + (dy / dist) * 5.0).clamp(0.0, 40.0);
+          enemy.x = (enemy.x + (dx / dist) * 5.0).clamp(0.0, GameState.fieldWidth);
+          enemy.y = (enemy.y + (dy / dist) * 5.0).clamp(0.0, GameState.fieldHeight);
           pushed++;
         }
       }
@@ -1095,7 +1136,7 @@ class CombatSystem {
       final t = _resolveTarget(gs, p, 5.0);
       if (t == null) return;
       p.blueMana -= 20;
-      p.ability8Cooldown = 5.0;
+      p.ability8Cooldown = 1.5;
       if (t.hexedTimer > 0) {
         // Spread phase: erupt the hex outward from the target
         int spread = 0;
@@ -1133,7 +1174,7 @@ class CombatSystem {
       final t = _resolveTarget(gs, p, 3.5);
       if (t == null) return;
       p.redMana -= 30;
-      p.ability9Cooldown = 1.5;
+      p.ability9Cooldown = 20.0;
       if (gs.ball.holderId == t.id) {
         gs.ball.holderId = null;
         gs.ball.isInFlight = false;
@@ -1166,6 +1207,208 @@ class CombatSystem {
       gs.creature.reverseDirection(6.0);
       addIndicator(gs, p.x, p.y - 2, 'PANDEMONIUM!', IndicatorType.kill);
       gs.showEvent('PANDEMONIUM! $confused enemies confused, creature reverses!');
+    }
+  }
+
+  // ─── WRECKER abilities ────────────────────────────────────────────────────
+  // Pure damage and kill specialist. 110 HP, 8 m/s. Red mana offense engine.
+
+  static void _wreckerAbility(GameState gs, UltraballPlayer p, int slot) {
+    if (slot == 1) {
+      // Iron Fist — 20 dmg, 1.5s CD
+      if (p.tackleCooldown > 0) return;
+      final t = _resolveTarget(gs, p, 2.5);
+      if (t == null) return;
+      p.tackleCooldown = 1.5;
+      gs.dataCollector?.onTackle(p.team == Team.opponent ? 'opponent' : 'player');
+      applyDamage(gs, t, 20.0, p);
+      checkCombo(gs, p);
+
+    } else if (slot == 2) {
+      // Sledge — 25 dmg + 1s stun, 5s CD, 20 red
+      if (p.slamCooldown > 0) return;
+      if (p.redMana < 20) return;
+      final t = _resolveTarget(gs, p, 2.5);
+      if (t == null) return;
+      p.redMana -= 20;
+      p.slamCooldown = 5.0;
+      gs.dataCollector?.onSlam(p.team == Team.opponent ? 'opponent' : 'player');
+      applyDamage(gs, t, 25.0, p);
+      if (t.isAlive) {
+        t.stun(1.0);
+        addIndicator(gs, t.x, t.y - 1, 'SLEDGE!', IndicatorType.kill);
+      }
+      checkCombo(gs, p);
+
+    } else if (slot == 3) {
+      // Bull Rush — dash 5m forward; 20 dmg + 2m knockback to first enemy hit, 5s CD, 25 red
+      if (p.sprintCooldown > 0) return;
+      if (p.redMana < 25) return;
+      p.redMana -= 25;
+      p.sprintCooldown = 5.0;
+      final destX = (p.x + math.cos(p.facing) * 5.0).clamp(0.0, GameState.fieldWidth);
+      final destY = (p.y + math.sin(p.facing) * 5.0).clamp(0.0, GameState.fieldHeight);
+      // Check for enemies along the dash path
+      UltraballPlayer? hit;
+      double bestDist = double.infinity;
+      for (final enemy in gs.fieldPlayers) {
+        if (enemy.team == p.team || !enemy.isAlive) continue;
+        final dx = enemy.x - p.x, dy = enemy.y - p.y;
+        final dist = math.sqrt(dx * dx + dy * dy);
+        if (dist <= 5.5 && dist < bestDist) {
+          bestDist = dist;
+          hit = enemy;
+        }
+      }
+      p.x = destX;
+      p.y = destY;
+      if (hit != null) {
+        applyDamage(gs, hit, 20.0, p);
+        if (hit.isAlive) {
+          hit.x = (hit.x + math.cos(p.facing) * 2.0).clamp(0.0, GameState.fieldWidth);
+          hit.y = (hit.y + math.sin(p.facing) * 2.0).clamp(0.0, GameState.fieldHeight);
+          addIndicator(gs, hit.x, hit.y - 1, 'BULL RUSH!', IndicatorType.kill);
+        }
+      } else {
+        addIndicator(gs, p.x, p.y - 1, 'RUSH!', IndicatorType.event);
+      }
+
+    } else if (slot == 4) {
+      // Crumple — 30 dmg + 2s snare (50% slow), 10s CD, 25 red
+      if (p.ability4Cooldown > 0) return;
+      if (p.redMana < 25) return;
+      final t = _resolveTarget(gs, p, 3.0);
+      if (t == null) return;
+      p.redMana -= 25;
+      p.ability4Cooldown = 10.0;
+      applyDamage(gs, t, 30.0, p);
+      if (t.isAlive) {
+        t.applySnare(2.0, 0.5);
+        addIndicator(gs, t.x, t.y - 1, 'CRUMPLE!', IndicatorType.kill);
+      }
+
+    } else if (slot == 5) {
+      // Shockwave — 10 dmg + 1m knockback to all enemies in 4m AoE, 1.5s CD, 15 red
+      if (p.ability5Cooldown > 0) return;
+      if (p.redMana < 15) return;
+      p.redMana -= 15;
+      p.ability5Cooldown = 1.5;
+      int hit = 0;
+      for (final enemy in gs.fieldPlayers) {
+        if (enemy.team == p.team || !enemy.isAlive) continue;
+        final dx = enemy.x - p.x, dy = enemy.y - p.y;
+        final dist = math.sqrt(dx * dx + dy * dy);
+        if (dist <= 4.0) {
+          applyDamage(gs, enemy, 10.0, p);
+          if (enemy.isAlive && dist > 0) {
+            enemy.x = (enemy.x + (dx / dist) * 1.0).clamp(0.0, GameState.fieldWidth);
+            enemy.y = (enemy.y + (dy / dist) * 1.0).clamp(0.0, GameState.fieldHeight);
+          }
+          hit++;
+        }
+      }
+      addIndicator(gs, p.x, p.y - 1, hit > 0 ? 'SHOCKWAVE! ×$hit' : 'SHOCKWAVE!', IndicatorType.kill);
+
+    } else if (slot == 6) {
+      // Spine Breaker — 30 dmg + 1.5s stun, 10s CD, 25 red
+      if (p.ability6Cooldown > 0) return;
+      if (p.redMana < 25) return;
+      final t = _resolveTarget(gs, p, 2.5);
+      if (t == null) return;
+      p.redMana -= 25;
+      p.ability6Cooldown = 10.0;
+      applyDamage(gs, t, 30.0, p);
+      if (t.isAlive) {
+        t.stun(1.5);
+        addIndicator(gs, t.x, t.y - 1, 'BROKEN!', IndicatorType.kill);
+      }
+
+    } else if (slot == 7) {
+      // Wrecking Ball — dash 6m; 20 dmg + 2m knockback to all enemies hit along path, 10s CD, 25 red
+      if (p.ability7Cooldown > 0) return;
+      if (p.redMana < 25) return;
+      p.redMana -= 25;
+      p.ability7Cooldown = 10.0;
+      final destX = (p.x + math.cos(p.facing) * 6.0).clamp(0.0, GameState.fieldWidth);
+      final destY = (p.y + math.sin(p.facing) * 6.0).clamp(0.0, GameState.fieldHeight);
+      int hit = 0;
+      for (final enemy in gs.fieldPlayers) {
+        if (enemy.team == p.team || !enemy.isAlive) continue;
+        final dx = enemy.x - p.x, dy = enemy.y - p.y;
+        final dist = math.sqrt(dx * dx + dy * dy);
+        if (dist <= 6.5) {
+          applyDamage(gs, enemy, 20.0, p);
+          if (enemy.isAlive && dist > 0) {
+            enemy.x = (enemy.x + (dx / dist) * 2.0).clamp(0.0, GameState.fieldWidth);
+            enemy.y = (enemy.y + (dy / dist) * 2.0).clamp(0.0, GameState.fieldHeight);
+          }
+          addIndicator(gs, enemy.x, enemy.y - 1, 'WRECKED!', IndicatorType.kill);
+          hit++;
+        }
+      }
+      p.x = destX;
+      p.y = destY;
+      if (hit == 0) addIndicator(gs, p.x, p.y - 1, 'WRECKING BALL!', IndicatorType.event);
+
+    } else if (slot == 8) {
+      // Ground Pound — 30 dmg + 1.5s stun to all enemies in 3m AoE, 20s CD, 30 red
+      if (p.ability8Cooldown > 0) return;
+      if (p.redMana < 30) return;
+      p.redMana -= 30;
+      p.ability8Cooldown = 20.0;
+      int hit = 0;
+      for (final enemy in gs.fieldPlayers) {
+        if (enemy.team == p.team || !enemy.isAlive) continue;
+        final dx = enemy.x - p.x, dy = enemy.y - p.y;
+        if (math.sqrt(dx * dx + dy * dy) <= 3.0) {
+          applyDamage(gs, enemy, 30.0, p);
+          if (enemy.isAlive) {
+            enemy.stun(1.5);
+            addIndicator(gs, enemy.x, enemy.y - 1, 'STUNNED!', IndicatorType.kill);
+          }
+          hit++;
+        }
+      }
+      addIndicator(gs, p.x, p.y - 2, hit > 0 ? 'GROUND POUND! ×$hit' : 'GROUND POUND!', IndicatorType.kill);
+      gs.showEvent('GROUND POUND! ${p.name} slams the earth — $hit stunned!');
+
+    } else if (slot == 9) {
+      // Death Blow — 55 dmg + 3s stun, 20s CD, 35 red
+      if (p.ability9Cooldown > 0) return;
+      if (p.redMana < 35) return;
+      final t = _resolveTarget(gs, p, 2.5);
+      if (t == null) return;
+      p.redMana -= 35;
+      p.ability9Cooldown = 20.0;
+      applyDamage(gs, t, 55.0, p);
+      if (t.isAlive) {
+        t.stun(3.0);
+        addIndicator(gs, t.x, t.y - 1, 'DEATH BLOW!', IndicatorType.kill);
+        gs.showEvent('DEATH BLOW! ${t.name} hit for 55 — stunned for 3 seconds!');
+      }
+
+    } else if (slot == 10) {
+      // DEMOLISH — 35 dmg + 1.5s stun to all in 6m; self gains +40% dmg for 5s, 5 ultra
+      if (p.ultraMana < 5) return;
+      p.ultraMana -= 5;
+      int stunned = 0;
+      for (final enemy in gs.fieldPlayers) {
+        if (enemy.team == p.team || !enemy.isAlive) continue;
+        final dx = enemy.x - p.x, dy = enemy.y - p.y;
+        if (math.sqrt(dx * dx + dy * dy) <= 6.0) {
+          applyDamage(gs, enemy, 35.0, p);
+          if (enemy.isAlive) {
+            enemy.stun(1.5);
+            addIndicator(gs, enemy.x, enemy.y - 1, 'DEMOLISHED!', IndicatorType.kill);
+          }
+          stunned++;
+        }
+      }
+      p.damageBoostFactor = math.max(p.damageBoostFactor, 1.40);
+      p.damageBoostTimer = 5.0;
+      p.damageBoostMax = 5.0;
+      addIndicator(gs, p.x, p.y - 2, 'DEMOLISH!', IndicatorType.kill);
+      gs.showEvent('DEMOLISH! ${p.name} demolishes $stunned enemies — +40% dmg for 5s!');
     }
   }
 }

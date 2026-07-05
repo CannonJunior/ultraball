@@ -12,6 +12,7 @@ import '../models/terrain_event.dart';
 import '../ai/ai_policy.dart';
 import '../ai/ai_strategy.dart';
 import '../ai/game_data_sink.dart';
+import 'ability_stats_collector.dart';
 
 class TricksterTrap {
   final double worldX;
@@ -64,6 +65,7 @@ class GameState {
   bool gameStarted = false;
   AiPolicy? activePolicy;
   GameDataSink? dataCollector;
+  AbilityStatsCollector? abilityStats;
 
   // Tab-targeting
   String? currentTargetId;      // id of targeted enemy (opponent player)
@@ -88,6 +90,11 @@ class GameState {
   bool isAimingTerrain = false;
   TerrainEventType? terrainAimEventType;
   static const double terrainAimRange = 10.0;
+  static const double fieldWidth  = 140.0;
+  static const double fieldHeight =  40.0;
+
+  // Accumulated match clock — incremented every active game tick; used for DPS calculation.
+  double matchTimeElapsed = 0.0;
 
   // Act transition state
   bool showingActTransition = false;
@@ -187,73 +194,111 @@ class GameState {
   void initialize() {
     final rand = math.Random();
 
-    // Create player roster (15 players, home team)
-    playerRoster = [];
-    final playerNames = settings.homePlayerNames;
-    for (int i = 0; i < 15; i++) {
-      final cls = const [
-        PlayerClass.runner, PlayerClass.blitzer, PlayerClass.geomancer,
-        PlayerClass.warden, PlayerClass.handler, PlayerClass.trickster,
-      ][i % 6];
-      final startX = 80.0 + rand.nextDouble() * 20.0;
-      final startY = 5.0 + rand.nextDouble() * 30.0;
+    if (settings.testMode) {
+      // Test mode: one player character vs one passive dummy enemy
+      const cls = PlayerClass.spectre;
       final p = UltraballPlayer(
-        id: 'p_$i',
-        name: playerNames[i],
+        id: 'p_0',
+        name: settings.homePlayerNames[0],
         team: Team.player,
-        rosterIndex: i,
-        x: startX,
-        y: startY,
+        rosterIndex: 0,
+        x: 80.0,
+        y: 17.5,
       );
       p.playerClass = cls;
       p.baseSpeed = cls.baseSpeed;
       p.maxHealth = cls.maxHealth;
       p.health = cls.maxHealth;
-      playerRoster.add(p);
-    }
+      p.deploySlot = 0;
+      p.isOnField = true;
+      playerRoster = [p];
 
-    // Create opponent roster (15 players, away team)
-    opponentRoster = [];
-    final opponentNames = settings.awayPlayerNames;
-    for (int i = 0; i < 15; i++) {
-      final cls = const [
-        PlayerClass.runner, PlayerClass.blitzer, PlayerClass.geomancer,
-        PlayerClass.warden, PlayerClass.handler, PlayerClass.trickster,
-      ][i % 6];
-      final startX = 40.0 + rand.nextDouble() * 20.0;
-      final startY = 5.0 + rand.nextDouble() * 30.0;
-      final p = UltraballPlayer(
-        id: 'o_$i',
-        name: opponentNames[i],
+      final dummy = UltraballPlayer(
+        id: 'o_0',
+        name: 'Dummy',
         team: Team.opponent,
-        rosterIndex: i,
-        x: startX,
-        y: startY,
+        rosterIndex: 0,
+        x: 55.0,
+        y: 17.5,
       );
-      p.playerClass = cls;
-      p.baseSpeed = cls.baseSpeed;
-      p.maxHealth = cls.maxHealth;
-      p.health = cls.maxHealth;
-      opponentRoster.add(p);
+      dummy.playerClass = PlayerClass.wrecker;
+      dummy.baseSpeed = 0.0;
+      dummy.maxHealth = 999.0;
+      dummy.health = 999.0;
+      dummy.deploySlot = 0;
+      dummy.isOnField = true;
+      opponentRoster = [dummy];
+    } else {
+      // Create player roster (15 players, home team)
+      playerRoster = [];
+      final playerNames = settings.homePlayerNames;
+      for (int i = 0; i < 15; i++) {
+        final cls = const [
+          PlayerClass.spectre, PlayerClass.corsair, PlayerClass.geomancer,
+          PlayerClass.archon, PlayerClass.warden, PlayerClass.trickster,
+          PlayerClass.wrecker,
+        ][i % 7];
+        final startX = 80.0 + rand.nextDouble() * 20.0;
+        final startY = 5.0 + rand.nextDouble() * 30.0;
+        final p = UltraballPlayer(
+          id: 'p_$i',
+          name: playerNames[i],
+          team: Team.player,
+          rosterIndex: i,
+          x: startX,
+          y: startY,
+        );
+        p.playerClass = cls;
+        p.baseSpeed = cls.baseSpeed;
+        p.maxHealth = cls.maxHealth;
+        p.health = cls.maxHealth;
+        playerRoster.add(p);
+      }
+
+      // Create opponent roster (15 players, away team)
+      opponentRoster = [];
+      final opponentNames = settings.awayPlayerNames;
+      for (int i = 0; i < 15; i++) {
+        final cls = const [
+          PlayerClass.spectre, PlayerClass.corsair, PlayerClass.geomancer,
+          PlayerClass.archon, PlayerClass.warden, PlayerClass.trickster,
+          PlayerClass.wrecker,
+        ][i % 7];
+        final startX = 40.0 + rand.nextDouble() * 20.0;
+        final startY = 5.0 + rand.nextDouble() * 30.0;
+        final p = UltraballPlayer(
+          id: 'o_$i',
+          name: opponentNames[i],
+          team: Team.opponent,
+          rosterIndex: i,
+          x: startX,
+          y: startY,
+        );
+        p.playerClass = cls;
+        p.baseSpeed = cls.baseSpeed;
+        p.maxHealth = cls.maxHealth;
+        p.health = cls.maxHealth;
+        opponentRoster.add(p);
+      }
+
+      // Apply home roster order: first 7 slots go on field, rest are reserves
+      for (int slot = 0; slot < 15; slot++) {
+        final playerIdx = settings.homeRosterOrder[slot];
+        playerRoster[playerIdx].deploySlot = slot;
+        playerRoster[playerIdx].isOnField = slot < 7;
+      }
+      // Apply away roster order
+      for (int slot = 0; slot < 15; slot++) {
+        final oppIdx = settings.awayRosterOrder[slot];
+        opponentRoster[oppIdx].deploySlot = slot;
+        opponentRoster[oppIdx].isOnField = slot < 7;
+      }
     }
 
     // Build O(1) player lookup map
     _playerById.clear();
     for (final p in playerRoster)  { _playerById[p.id] = p; }
     for (final p in opponentRoster) { _playerById[p.id] = p; }
-
-    // Apply home roster order: first 7 slots go on field, rest are reserves
-    for (int slot = 0; slot < 15; slot++) {
-      final playerIdx = settings.homeRosterOrder[slot];
-      playerRoster[playerIdx].deploySlot = slot;
-      playerRoster[playerIdx].isOnField = slot < 7;
-    }
-    // Apply away roster order
-    for (int slot = 0; slot < 15; slot++) {
-      final oppIdx = settings.awayRosterOrder[slot];
-      opponentRoster[oppIdx].deploySlot = slot;
-      opponentRoster[oppIdx].isOnField = slot < 7;
-    }
 
     // Select first player
     selectedPlayer = playerRoster[0];
@@ -272,6 +317,8 @@ class GameState {
     actState.isActive = true;
     actState.actEnded = false;
     actState.timerSeconds = settings.fastMode ? 60.0 : 180.0;
+
+    abilityStats = AbilityStatsCollector();
 
     gameStarted = true;
     markRosterDirty();
