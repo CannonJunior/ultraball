@@ -97,7 +97,7 @@ class CombatSystem {
       if (p.ability4Cooldown > 0) return;
       if (p.blueMana < 20) return;
       p.blueMana -= 20;
-      p.ability4Cooldown = 1.5;
+      p.ability4Cooldown = 7.0;
       p.x = (p.x + math.cos(p.facing) * 6.0).clamp(0.0, GameState.fieldWidth);
       p.y = (p.y + math.sin(p.facing) * 6.0).clamp(0.0, GameState.fieldHeight);
       addIndicator(gs, p.x, p.y - 1, 'PHASE!', IndicatorType.event);
@@ -220,7 +220,7 @@ class CombatSystem {
       final t = _resolveTarget(gs, p, 3.0);
       if (t == null) return;
       p.redMana -= 15;
-      p.sprintCooldown = 1.5;
+      p.sprintCooldown = 5.0;
       applyDamage(gs, t, 12.0, p);
       if (t.isAlive) {
         final dx = t.x - p.x, dy = t.y - p.y;
@@ -410,7 +410,7 @@ class CombatSystem {
       final t = _findNearestAlly(gs, p, 5.0);
       if (t == null) return;
       p.blueMana -= 20;
-      p.ability6Cooldown = 1.5;
+      p.ability6Cooldown = 12.0;
       t.cleanse();
       addIndicator(gs, t.x, t.y - 2, 'ABSOLVED!', IndicatorType.event);
 
@@ -536,7 +536,7 @@ class CombatSystem {
       final t = _findNearestAlly(gs, p, 5.0);
       if (t == null) return;
       p.blueMana -= 25;
-      p.ability5Cooldown = 1.5;
+      p.ability5Cooldown = 12.0;
       t.blueMana = math.min(100, t.blueMana + 35.0);
       addIndicator(gs, t.x, t.y - 1, '+35 BLU', IndicatorType.combo);
 
@@ -692,7 +692,7 @@ class CombatSystem {
       if (p.ability5Cooldown > 0) return;
       if (p.blueMana < 20) return;
       p.blueMana -= 20;
-      p.ability5Cooldown = 1.5;
+      p.ability5Cooldown = 8.0;
       p.damageBoostFactor = math.max(p.damageBoostFactor, 1.20);
       p.damageBoostTimer = 4.0;
       p.damageBoostMax = 4.0;
@@ -1136,7 +1136,7 @@ class CombatSystem {
       final t = _resolveTarget(gs, p, 5.0);
       if (t == null) return;
       p.blueMana -= 20;
-      p.ability8Cooldown = 1.5;
+      p.ability8Cooldown = 10.0;
       if (t.hexedTimer > 0) {
         // Spread phase: erupt the hex outward from the target
         int spread = 0;

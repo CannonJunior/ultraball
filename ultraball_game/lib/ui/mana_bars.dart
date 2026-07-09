@@ -64,16 +64,15 @@ class ManaBars extends StatelessWidget {
     return Container(
       width: 310,
       decoration: BoxDecoration(
-        color: const Color(0xFF1a1a2e),
-        borderRadius: BorderRadius.circular(4),
+        color: const Color(0xFF1a1a2e).withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFF4cc9f0), width: 2),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF4cc9f0).withValues(alpha: 0.18),
-            blurRadius: 10,
-            spreadRadius: 1,
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
-          const BoxShadow(color: Colors.black54, blurRadius: 6, offset: Offset(0, 2)),
         ],
       ),
       child: Column(
@@ -156,8 +155,7 @@ class ManaBars extends StatelessWidget {
                     _AbilityIcon(keyLabel: '[5]', label: _abbrev(names[4]), cooldown: player.ability5Cooldown, maxCooldown: maxCDs[4], color: const Color(0xFFAA44FF), available: player.ability5Cooldown <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax),
                   ],
                 ),
-                const SizedBox(height: 4),
-                // Ability row 2: slots 6–9
+                // Ability row 2: slots 6–9 + ultra (no gap between rows)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
@@ -165,15 +163,7 @@ class ManaBars extends StatelessWidget {
                     _AbilityIcon(keyLabel: '[7]', label: _abbrev(names[6]), cooldown: player.ability7Cooldown, maxCooldown: maxCDs[6], color: const Color(0xFF88DDFF), available: player.ability7Cooldown <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax),
                     _AbilityIcon(keyLabel: '[8]', label: _abbrev(names[7]), cooldown: player.ability8Cooldown, maxCooldown: maxCDs[7], color: const Color(0xFFFFAA44), available: player.ability8Cooldown <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax),
                     _AbilityIcon(keyLabel: '[9]', label: _abbrev(names[8]), cooldown: player.ability9Cooldown, maxCooldown: maxCDs[8], color: const Color(0xFFFF6688), available: player.ability9Cooldown <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                // Ability row 3: ultra + pass
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
                     _AbilityIcon(keyLabel: '[0]', label: _abbrev(names[9]), cooldown: 0, maxCooldown: 0, color: const Color(0xFFFFCC00), available: player.ultraMana >= 5, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax),
-                    _AbilityIcon(keyLabel: '[F]', label: 'Pass', cooldown: player.passCooldown, maxCooldown: 4.0, color: const Color(0xFFFFDD44), available: player.passCooldown <= 0 && gs.ball.holderId == player.id, gcdRemaining: 0, gcdMax: 1.0),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -242,16 +232,15 @@ class TargetFrame extends StatelessWidget {
     return Container(
       width: 260,
       decoration: BoxDecoration(
-        color: const Color(0xFF1a1a2e),
-        borderRadius: BorderRadius.circular(4),
+        color: const Color(0xFF1a1a2e).withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFFF6B6B), width: 2),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFFF6B6B).withValues(alpha: 0.18),
-            blurRadius: 10,
-            spreadRadius: 1,
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
-          const BoxShadow(color: Colors.black54, blurRadius: 6, offset: Offset(0, 2)),
         ],
       ),
       child: IntrinsicHeight(
@@ -333,11 +322,15 @@ class TargetOfTargetFrame extends StatelessWidget {
     return Container(
       width: 180,
       decoration: BoxDecoration(
-        color: const Color(0xFF1a1a2e),
-        borderRadius: BorderRadius.circular(4),
+        color: const Color(0xFF1a1a2e).withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: borderColor.withValues(alpha: 0.7), width: 1.5),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 6, offset: const Offset(0, 2)),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: IntrinsicHeight(
@@ -677,9 +670,13 @@ class _QueueDisplay extends StatelessWidget {
   final UltraballPlayer player;
   const _QueueDisplay({required this.player});
 
+  // Dissolve-upward progress for the executing label (0 = just fired, 1 = gone).
+  double get _execProgress =>
+      (1.0 - (player.lastExecutedTimer / 1.2)).clamp(0.0, 1.0);
+
   @override
   Widget build(BuildContext context) {
-    final queue    = player.abilityQueue;
+    final queue     = player.abilityQueue;
     final executing = player.lastExecutedAbility;
 
     if (queue.isEmpty && executing == null) return const SizedBox.shrink();
@@ -690,35 +687,49 @@ class _QueueDisplay extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Executing ability (gold, fading)
+        // Executing ability: gold, dissolves upward as it fades — mirrors the
+        // Warchief QueuedAbilityLabelOverlay executing-label treatment.
         if (executing != null)
-          AnimatedOpacity(
-            opacity: (player.lastExecutedTimer / 1.2).clamp(0.0, 1.0),
-            duration: const Duration(milliseconds: 50),
-            child: Text(
-              executing.toUpperCase(),
-              style: const TextStyle(
-                color: Color(0xFFFFDD00),
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-                shadows: [Shadow(color: Colors.black, blurRadius: 2)],
+          Transform.translate(
+            offset: Offset(0, -_execProgress * 12.0),
+            child: Opacity(
+              opacity: (1.0 - _execProgress).clamp(0.0, 1.0),
+              child: Text(
+                executing.toUpperCase(),
+                style: const TextStyle(
+                  color: Color(0xFFFFDD00),
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                  shadows: [
+                    Shadow(color: Colors.black, blurRadius: 3, offset: Offset(1, 1)),
+                    Shadow(color: Colors.black, blurRadius: 6),
+                  ],
+                ),
               ),
             ),
           ),
-        // Queue line: "Slot1Name > Slot2Name > ..."
+        // Queue line: "Slot1Name > Slot2Name > ..." matching Warchief RichText style.
         if (queue.isNotEmpty)
           RichText(
             text: TextSpan(
-              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                shadows: [
+                  Shadow(color: Color(0xB3000000), blurRadius: 2, offset: Offset(1, 1)),
+                ],
+              ),
               children: [
                 for (int i = 0; i < queue.length; i++) ...[
-                  if (i > 0) const TextSpan(text: ' > ', style: TextStyle(color: Color(0xFF888888))),
+                  if (i > 0) const TextSpan(text: ' > ', style: TextStyle(color: Colors.white70)),
                   TextSpan(
                     text: queue[i] >= 1 && queue[i] <= names.length
                         ? names[queue[i] - 1]
                         : 'Slot ${queue[i]}',
                     style: TextStyle(
+                      // Dimmed when on cooldown — mirrors Colors.white38 used on
+                      // ability buttons during their cooldown sweep (Warchief convention).
                       color: player.getSlotCooldown(queue[i]) > 0
                           ? Colors.white38
                           : Colors.white70,
@@ -746,7 +757,7 @@ class _AbilityIcon extends StatelessWidget {
   final double gcdRemaining;
   final double gcdMax;
 
-  static const double size = 30;
+  static const double size = 50;
 
   const _AbilityIcon({
     required this.keyLabel,
@@ -797,7 +808,7 @@ class _AbilityIcon extends StatelessWidget {
                   CustomPaint(size: Size(size, size), painter: _ClockSweepPainter(cdFrac, sweepColor)),
                 Text(
                   keyLabel,
-                  style: TextStyle(color: available ? color : Colors.grey, fontSize: 7, fontWeight: FontWeight.bold),
+                  style: TextStyle(color: available ? color : Colors.grey, fontSize: 12, fontWeight: FontWeight.bold),
                 ),
                 if (cdFrac > 0)
                   Positioned(
@@ -805,7 +816,7 @@ class _AbilityIcon extends StatelessWidget {
                     left: 2,
                     child: Text(
                       effectiveCd >= 10 ? '${effectiveCd.toInt()}s' : '${effectiveCd.toStringAsFixed(1)}s',
-                      style: const TextStyle(color: Colors.white, fontSize: 6, fontWeight: FontWeight.bold, shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
+                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold, shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
                     ),
                   ),
               ],
@@ -817,7 +828,7 @@ class _AbilityIcon extends StatelessWidget {
           width: size + 4,
           child: Text(
             label,
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 6.5),
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11),
             textAlign: TextAlign.center,
             overflow: TextOverflow.ellipsis,
             maxLines: 1,

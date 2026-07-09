@@ -4,6 +4,7 @@ import '../models/game_settings.dart';
 import '../models/player_class.dart';
 import '../game/game_widget.dart';
 import '../ai/ai_strategy.dart';
+import 'ui_assets.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -18,7 +19,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isNeutralSite = false;
   CreatureType _neutralCreatureType = CreatureType.chaos;
   bool _fastMode = false;
-  ViewMode _viewMode = ViewMode.flat;
+  ViewMode _viewMode = ViewMode.full3D;
   bool _useCubeModels = true;
   AiStrategy _homeStrategy = AiStrategy.numericalEdge;
   AiTactics  _homeTactics  = AiTactics.heroBall;
@@ -1310,8 +1311,6 @@ class _EditableTeamRosterState extends State<_EditableTeamRoster> {
     _ => const Color(0xFFFF7700),
   };
 
-  static String _classBadge(int playerIdx) => _playerClass(playerIdx).displayName;
-
   static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 7) {
     0 => PlayerClass.spectre,
     1 => PlayerClass.corsair,
@@ -1440,7 +1439,6 @@ class _EditableTeamRosterState extends State<_EditableTeamRoster> {
               final playerIdx = widget.order[slot];
               final isField   = slot < 7;
               final clsColor  = _classColor(playerIdx);
-              final clsBadge  = _classBadge(playerIdx);
               final slotColor = isField ? const Color(0xFF44FF88) : Colors.white.withValues(alpha: 0.3);
               final slotText  = isField ? 'FIELD ${slot + 1}' : 'RES ${slot - 6}';
               final isExpanded = _expanded.contains(slot);
@@ -1485,16 +1483,14 @@ class _EditableTeamRosterState extends State<_EditableTeamRoster> {
                               fontWeight: FontWeight.bold,
                             ))),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                          width: 22,
+                          height: 22,
                           decoration: BoxDecoration(
                             color: clsColor.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(2),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: clsColor.withValues(alpha: 0.35), width: 0.5),
                           ),
-                          child: Text(clsBadge,
-                            style: TextStyle(
-                              color: clsColor, fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            )),
+                          child: Center(child: UiAssets.classIcon(_playerClass(playerIdx), size: 13, color: clsColor)),
                         ),
                         const SizedBox(width: 4),
                         Expanded(child: Text(widget.names[playerIdx],
@@ -1560,8 +1556,6 @@ class _ReadonlyTeamRosterState extends State<_ReadonlyTeamRoster> {
     5 => const Color(0xFFAA44FF),
     _ => const Color(0xFFFF7700),
   };
-
-  static String _classBadge(int playerIdx) => _playerClass(playerIdx).displayName;
 
   static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 7) {
     0 => PlayerClass.spectre,
@@ -1695,7 +1689,6 @@ class _ReadonlyTeamRosterState extends State<_ReadonlyTeamRoster> {
           Builder(builder: (context) {
             final isField   = slot < 7;
             final clsColor  = _classColor(slot);
-            final clsBadge  = _classBadge(slot);
             final slotColor = isField ? const Color(0xFF44FF88) : Colors.white.withValues(alpha: 0.3);
             final slotText  = isField ? 'FIELD ${slot + 1}' : 'RES ${slot - 6}';
             final isExpanded = _expanded.contains(slot);
@@ -1725,16 +1718,14 @@ class _ReadonlyTeamRosterState extends State<_ReadonlyTeamRoster> {
                             fontWeight: FontWeight.bold,
                           ))),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                        width: 22,
+                        height: 22,
                         decoration: BoxDecoration(
                           color: clsColor.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(2),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: clsColor.withValues(alpha: 0.35), width: 0.5),
                         ),
-                        child: Text(clsBadge,
-                          style: TextStyle(
-                            color: clsColor, fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          )),
+                        child: Center(child: UiAssets.classIcon(_playerClass(slot), size: 13, color: clsColor)),
                       ),
                       const SizedBox(width: 4),
                       Expanded(child: Text(widget.names[slot],
@@ -1844,6 +1835,8 @@ class _ClassCard extends StatelessWidget {
             ),
             child: Row(
               children: [
+                UiAssets.classIcon(cls, size: 20, color: color),
+                const SizedBox(width: 10),
                 Text(
                   cls.displayName,
                   style: TextStyle(

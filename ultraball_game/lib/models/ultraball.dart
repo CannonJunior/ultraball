@@ -25,6 +25,9 @@ class Ultraball {
   // Phase line state (5 lines, indexed 0–4 at x=30,50,70,90,110 in field coords)
   List<bool> phaseLineActive = [true, true, true, true, true];
 
+  // UI explosion flash: set to 1.0 on explosion, decremented by game loop over ~0.6s
+  double explosionFlash = 0.0;
+
   Ultraball({required this.x, required this.y});
 
   double get effectiveMaxCharge => maxCharge + cooldownBonus;

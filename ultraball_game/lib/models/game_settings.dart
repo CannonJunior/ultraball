@@ -64,7 +64,7 @@ class GameSettings {
     List<String>? awayPlayerNames,
     required this.creatureType,
     required this.fastMode,
-    this.viewMode = ViewMode.flat,
+    this.viewMode = ViewMode.full3D,
     this.useCubeModels = true,
     this.homeStrategy = AiStrategy.numericalEdge,
     this.homeTactics  = AiTactics.heroBall,

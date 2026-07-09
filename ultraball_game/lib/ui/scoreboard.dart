@@ -1,331 +1,406 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../game/game_state.dart';
-import '../models/act_state.dart';
 import '../models/player.dart';
 import '../models/ultraball.dart';
-import 'ui_theme.dart';
-import 'ui_assets.dart';
 
-class Scoreboard extends StatelessWidget {
+// ── Design palette ────────────────────────────────────────────────────────────
+const _kRed   = Color(0xFFFF3B53);
+const _kBlue  = Color(0xFF2F83FF);
+const _kGold  = Color(0xFFFFCB3D);
+const _kCyan  = Color(0xFF19E3E3);
+const _kBg    = Color(0xFF04050A);
+
+// ── Ball color (matches field_painter charge color logic) ─────────────────────
+Color _ballColor(double chargePercent) {
+  if (chargePercent < 0.5) {
+    return Color.lerp(const Color(0xFF88FF88), const Color(0xFFFFFF00), chargePercent * 2)!;
+  }
+  if (chargePercent < 0.75) {
+    return Color.lerp(const Color(0xFFFFFF00), const Color(0xFFFF8800), (chargePercent - 0.5) * 4)!;
+  }
+  if (chargePercent < 0.9) {
+    return Color.lerp(const Color(0xFFFF8800), const Color(0xFFFF2200), (chargePercent - 0.75) * 6.67)!;
+  }
+  return const Color(0xFFFF0000);
+}
+
+// ── Public widget ─────────────────────────────────────────────────────────────
+
+class Scoreboard extends StatefulWidget {
   final GameState gs;
   const Scoreboard({super.key, required this.gs});
 
   @override
-  Widget build(BuildContext context) {
-    final act = gs.actState;
-    final t   = UiTheme.instance;
-
-    final isAct5     = act.isAct5;
-    final bgOpacity  = t.scoreboardBackgroundOpacity;
-    final brdOpacity = t.scoreboardBorderOpacity;
-
-    // Act 5 gets an animated pulsing orange border via a regular Container +
-    // AnimatedContainer. Since this is a StatelessWidget we use a constant
-    // high-contrast border instead — the _Act5Border wrapper below handles it.
-    Widget content = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.black.withValues(alpha: bgOpacity),
-            Colors.black.withValues(alpha: (bgOpacity - 0.2).clamp(0.0, 1.0)),
-          ],
-        ),
-        border: Border(
-          bottom: BorderSide(
-            color: Colors.white.withValues(alpha: brdOpacity),
-            width: 1,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          // Away team (left)
-          Expanded(
-            child: _TeamColumn(
-              teamName:    gs.settings.awayTeamName,
-              score:       act.opponentScore,
-              kills:       act.opponentKills,
-              roster:      gs.opponentRoster,
-              actResults:  act.actResults,
-              isHome:      false,
-              gs:          gs,
-            ),
-          ),
-
-          // Center: act + timer + phase lines
-          Expanded(
-            flex: 2,
-            child: _CenterColumn(gs: gs),
-          ),
-
-          // Home team (right)
-          Expanded(
-            child: _TeamColumn(
-              teamName:    gs.settings.homeTeamName,
-              score:       act.playerScore,
-              kills:       act.playerKills,
-              roster:      gs.playerRoster,
-              actResults:  act.actResults,
-              isHome:      true,
-              gs:          gs,
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (isAct5) {
-      content = _Act5Border(child: content);
-    }
-
-    return content;
-  }
+  State<Scoreboard> createState() => _ScoreboardState();
 }
 
-// ── Act 5 animated border ─────────────────────────────────────────────────────
-
-class _Act5Border extends StatefulWidget {
-  final Widget child;
-  const _Act5Border({required this.child});
-
-  @override
-  State<_Act5Border> createState() => _Act5BorderState();
-}
-
-class _Act5BorderState extends State<_Act5Border>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _pulse;
+class _ScoreboardState extends State<Scoreboard>
+    with TickerProviderStateMixin {
+  late final AnimationController _pipCtrl;
+  late final AnimationController _blinkCtrl;
+  late final Animation<double>   _pipGlow;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    )..repeat(reverse: true);
-    _pulse = Tween<double>(begin: 0.4, end: 1.0).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
-    );
+    _pipCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))
+      ..repeat(reverse: true);
+    _pipGlow = Tween<double>(begin: 0.25, end: 1.0)
+        .animate(CurvedAnimation(parent: _pipCtrl, curve: Curves.easeInOut));
+    _blinkCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1000))
+      ..repeat();
   }
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _pipCtrl.dispose();
+    _blinkCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _pulse,
-      builder: (_, child) => DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border(
-            top:    BorderSide(color: const Color(0xFFFF6600).withValues(alpha: _pulse.value), width: 2),
-            bottom: BorderSide(color: const Color(0xFFFF6600).withValues(alpha: _pulse.value), width: 2),
+    final gs  = widget.gs;
+    final act = gs.actState;
+
+    // Show all field-slot players (deploySlot < 7); dead ones will be greyed
+    final awayPlayers = gs.opponentRoster.where((p) => p.deploySlot < 7).toList();
+    final homePlayers = gs.playerRoster.where((p) => p.deploySlot < 7).toList();
+
+    final actLabel = act.isAct5 ? 'FINAL ACT' : 'ACT ${act.currentAct}';
+
+    return Container(
+      color: _kBg,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _MainBar(
+            awayName:   gs.settings.awayTeamName,
+            homeName:   gs.settings.homeTeamName,
+            awayScore:  act.opponentScore,
+            homeScore:  act.playerScore,
+            actLabel:   actLabel,
+            act:        act.currentAct,
+            actResults: act.actResults.length,
+            timerSecs:  act.timerSeconds,
+            timerText:  act.timerDisplay,
+            isAct5:     act.isAct5,
+            pipGlow:    _pipGlow,
+            blinkCtrl:  _blinkCtrl,
           ),
-        ),
-        child: child,
+          _BallDivider(ball: gs.ball),
+          _PlayerCardsRow(
+            awayPlayers: awayPlayers,
+            homePlayers: homePlayers,
+            targetId:    gs.currentTargetId,
+          ),
+        ],
       ),
-      child: widget.child,
     );
   }
 }
 
-// ── Team column (left or right) ────────────────────────────────────────────────
+// ── Main bar (team names + scores + center timer) ─────────────────────────────
 
-class _TeamColumn extends StatelessWidget {
-  final String teamName;
-  final int score;
-  final int kills;
-  final List<UltraballPlayer> roster;
-  final List<ActResult> actResults;
-  final bool isHome;
-  final GameState gs;
+class _MainBar extends StatelessWidget {
+  final String awayName, homeName;
+  final int awayScore, homeScore, act, actResults;
+  final String actLabel, timerText;
+  final double timerSecs;
+  final bool isAct5;
+  final Animation<double> pipGlow;
+  final AnimationController blinkCtrl;
 
-  const _TeamColumn({
-    required this.teamName,
-    required this.score,
-    required this.kills,
-    required this.roster,
+  const _MainBar({
+    required this.awayName,
+    required this.homeName,
+    required this.awayScore,
+    required this.homeScore,
+    required this.actLabel,
+    required this.act,
     required this.actResults,
-    required this.isHome,
-    required this.gs,
+    required this.timerText,
+    required this.timerSecs,
+    required this.isAct5,
+    required this.pipGlow,
+    required this.blinkCtrl,
   });
 
   @override
   Widget build(BuildContext context) {
-    final t     = UiTheme.instance;
-    final color = isHome ? t.homeTeamColor : t.awayTeamColor;
-    final align = isHome ? CrossAxisAlignment.end : CrossAxisAlignment.start;
+    return Container(
+      height: 110,
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: Color(0xFF111122), width: 1)),
+      ),
+      child: Stack(
+        children: [
+          // Ambient team-color glow
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    _kRed.withValues(alpha: 0.18),
+                    Colors.transparent,
+                    Colors.transparent,
+                    _kBlue.withValues(alpha: 0.18),
+                  ],
+                  stops: const [0, 0.36, 0.64, 1],
+                ),
+              ),
+            ),
+          ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Away (left) panel
+              Expanded(
+                child: ClipPath(
+                  clipper: _LeftPanelClipper(),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [_kRed.withValues(alpha: 0.28), _kRed.withValues(alpha: 0.04)],
+                      ),
+                    ),
+                    child: _TeamPanel(
+                      name:   awayName,
+                      score:  awayScore,
+                      color:  _kRed,
+                      isHome: false,
+                    ),
+                  ),
+                ),
+              ),
+              // Center panel
+              SizedBox(
+                width: 150,
+                child: ClipPath(
+                  clipper: _CenterClipper(),
+                  child: ColoredBox(
+                    color: Colors.black,
+                    child: _CenterPanel(
+                      actLabel:   actLabel,
+                      act:        act,
+                      actResults: actResults,
+                      timerText:  timerText,
+                      timerSecs:  timerSecs,
+                      isAct5:     isAct5,
+                      pipGlow:    pipGlow,
+                      blinkCtrl:  blinkCtrl,
+                    ),
+                  ),
+                ),
+              ),
+              // Home (right) panel
+              Expanded(
+                child: ClipPath(
+                  clipper: _RightPanelClipper(),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerRight,
+                        end: Alignment.centerLeft,
+                        colors: [_kBlue.withValues(alpha: 0.28), _kBlue.withValues(alpha: 0.04)],
+                      ),
+                    ),
+                    child: _TeamPanel(
+                      name:   homeName,
+                      score:  homeScore,
+                      color:  _kBlue,
+                      isHome: true,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-    // Alive / dead counts
-    final alive = roster.where((p) => p.isAlive && p.isOnField).length;
-    final dead  = roster.where((p) => !p.isAlive).length;
+// ── Team panel (name + score) ─────────────────────────────────────────────────
 
-    final killaCount = kills;
+class _TeamPanel extends StatelessWidget {
+  final String name;
+  final int    score;
+  final Color  color;
+  final bool   isHome;
+
+  const _TeamPanel({required this.name, required this.score, required this.color, required this.isHome});
+
+  @override
+  Widget build(BuildContext context) {
+    final nameW = Text(
+      name,
+      style: GoogleFonts.barlowCondensed(
+        fontSize:   26,
+        fontWeight: FontWeight.w700,
+        fontStyle:  FontStyle.italic,
+        color:      Colors.white,
+        letterSpacing: 0.5,
+        shadows: [Shadow(color: color.withValues(alpha: 0.6), blurRadius: 0, offset: const Offset(0, 2))],
+      ),
+      overflow: TextOverflow.ellipsis,
+    );
+    final scoreW = Text(
+      '$score',
+      style: GoogleFonts.barlowCondensed(
+        fontSize:   36,
+        fontWeight: FontWeight.w700,
+        color:      Colors.white,
+        height:     0.85,
+      ),
+    );
 
     return Padding(
-      padding: EdgeInsets.only(
-        left:  isHome ? 16 : 0,
-        right: isHome ? 0  : 16,
-      ),
-      child: Column(
-        mainAxisSize:    MainAxisSize.min,
-        crossAxisAlignment: align,
-        children: [
-          // Team name
-          Text(
-            teamName,
-            style: TextStyle(
-              color:        color,
-              fontSize:     t.scoreboardTeamNameSize,
-              fontWeight:   FontWeight.bold,
-              letterSpacing: 1.2,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
-
-          // Score (dominant numeral)
-          Text(
-            '$score',
-            style: TextStyle(
-              color:       Colors.white,
-              fontSize:    t.scoreboardScoreSize,
-              fontWeight:  FontWeight.w900,
-              height:      1.0,
-            ),
-          ),
-
-          // Score breakdown + act history pips
-          if (t.scoreboardShowScoreBreakdown || t.scoreboardShowActHistory)
-            _ScoreSubline(
-              kills:      killaCount,
-              actResults: actResults,
-              isHome:     isHome,
-              color:      color,
-            ),
-
-          // Alive / dead count
-          if (t.scoreboardShowAliveCount)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (!isHome) ...[
-                  Text(
-                    '$alive',
-                    style: TextStyle(color: t.aliveColor, fontSize: t.scoreboardSubInfoSize, fontWeight: FontWeight.bold),
-                  ),
-                  Text(' alive  ', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: t.scoreboardSubInfoSize)),
-                  Text(
-                    '$dead',
-                    style: TextStyle(color: t.deadColor, fontSize: t.scoreboardSubInfoSize, fontWeight: FontWeight.bold),
-                  ),
-                  Text(' dead', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: t.scoreboardSubInfoSize)),
-                ] else ...[
-                  Text('dead ', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: t.scoreboardSubInfoSize)),
-                  Text(
-                    '$dead',
-                    style: TextStyle(color: t.deadColor, fontSize: t.scoreboardSubInfoSize, fontWeight: FontWeight.bold),
-                  ),
-                  Text('  alive ', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: t.scoreboardSubInfoSize)),
-                  Text(
-                    '$alive',
-                    style: TextStyle(color: t.aliveColor, fontSize: t.scoreboardSubInfoSize, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ],
-            ),
-        ],
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: isHome
+          ? [scoreW, const SizedBox(width: 10), nameW]
+          : [nameW, const SizedBox(width: 10), scoreW],
       ),
     );
   }
 }
 
-class _ScoreSubline extends StatelessWidget {
-  final int kills;
-  final List<ActResult> actResults;
-  final bool isHome;
-  final Color color;
+// ── Center panel (act label + timer + pips) ───────────────────────────────────
 
-  const _ScoreSubline({
-    required this.kills,
+class _CenterPanel extends StatelessWidget {
+  final String actLabel, timerText;
+  final double timerSecs;
+  final int    act, actResults;
+  final bool   isAct5;
+  final Animation<double> pipGlow;
+  final AnimationController blinkCtrl;
+
+  const _CenterPanel({
+    required this.actLabel,
+    required this.act,
     required this.actResults,
-    required this.isHome,
-    required this.color,
+    required this.timerText,
+    required this.timerSecs,
+    required this.isAct5,
+    required this.pipGlow,
+    required this.blinkCtrl,
   });
 
   @override
   Widget build(BuildContext context) {
-    final t = UiTheme.instance;
+    final parts = timerText.split(':');
+    final mins  = parts[0];
+    final secs  = parts.length > 1 ? parts[1] : '00';
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    final timerColor = isAct5
+      ? const Color(0xFFFF8800)
+      : timerSecs <= 30 ? const Color(0xFFFF4444)
+      : timerSecs <= 60 ? const Color(0xFFFFAA00)
+      : _kCyan;
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Killa count with skull icon
-        if (t.scoreboardShowScoreBreakdown) ...[
-          UiAssets.scoreIcon('killa', size: 10, color: t.scoreKillaColor),
-          const SizedBox(width: 2),
-          Text(
-            '$kills',
-            style: TextStyle(color: t.scoreKillaColor, fontSize: t.scoreboardSubInfoSize, fontWeight: FontWeight.bold),
+        Text(
+          actLabel,
+          style: GoogleFonts.chakraPetch(
+            fontSize:   9,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 3,
+            color:      _kGold,
           ),
-          const SizedBox(width: 8),
-        ],
-
-        // Act history pips
-        if (t.scoreboardShowActHistory)
-          _ActHistoryPips(actResults: actResults, isHome: isHome),
+        ),
+        const SizedBox(height: 2),
+        AnimatedBuilder(
+          animation: blinkCtrl,
+          builder: (_, __) {
+            final colonVisible = blinkCtrl.value < 0.5;
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(mins,
+                  style: GoogleFonts.barlowCondensed(
+                    fontSize:   38,
+                    fontWeight: FontWeight.w700,
+                    fontStyle:  FontStyle.italic,
+                    color:      timerColor,
+                    letterSpacing: 1,
+                    shadows: [Shadow(color: timerColor.withValues(alpha: 0.55), blurRadius: 16)],
+                  )),
+                Text(':',
+                  style: GoogleFonts.barlowCondensed(
+                    fontSize:   38,
+                    fontWeight: FontWeight.w700,
+                    fontStyle:  FontStyle.italic,
+                    color:      timerColor.withValues(alpha: colonVisible ? 1.0 : 0.0),
+                  )),
+                Text(secs,
+                  style: GoogleFonts.barlowCondensed(
+                    fontSize:   38,
+                    fontWeight: FontWeight.w700,
+                    fontStyle:  FontStyle.italic,
+                    color:      timerColor,
+                    letterSpacing: 1,
+                  )),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 4),
+        AnimatedBuilder(
+          animation: pipGlow,
+          builder: (_, __) => _ActPips(
+            currentAct: act, completedActs: actResults, glowAlpha: pipGlow.value),
+        ),
+        const SizedBox(height: 6),
       ],
     );
   }
 }
 
-class _ActHistoryPips extends StatelessWidget {
-  final List<ActResult> actResults;
-  final bool isHome;
+// ── Act pips ──────────────────────────────────────────────────────────────────
 
-  const _ActHistoryPips({required this.actResults, required this.isHome});
+class _ActPips extends StatelessWidget {
+  final int    currentAct, completedActs;
+  final double glowAlpha;
+  const _ActPips({required this.currentAct, required this.completedActs, required this.glowAlpha});
 
   @override
   Widget build(BuildContext context) {
-    final t = UiTheme.instance;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(5, (i) {
-        if (i >= actResults.length) {
-          // Not yet played
-          return Container(
-            width: 8, height: 8,
-            margin: const EdgeInsets.symmetric(horizontal: 1.5),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xFF1A1A2E),
-              border: Border.all(color: const Color(0xFF333355), width: 1),
-            ),
-          );
-        }
-        final r = actResults[i];
-        final homeWon = r.playerScore > r.opponentScore;
-        final awayWon = r.opponentScore > r.playerScore;
-        // For this team's pip: green if won this act, red if lost, gray if tied
-        Color pipColor;
-        if (isHome) {
-          pipColor = homeWon ? t.homeTeamColor : awayWon ? t.deadColor : Colors.grey;
+        final actNum   = i + 1;
+        final isCurrent = actNum == currentAct;
+
+        Color bg;
+        List<BoxShadow>? shadow;
+        if (actNum < currentAct) {
+          bg = _kCyan;
+          shadow = null;
+        } else if (isCurrent) {
+          bg = _kCyan.withValues(alpha: 0.4 + glowAlpha * 0.6);
+          shadow = [BoxShadow(color: _kCyan.withValues(alpha: glowAlpha * 0.7), blurRadius: 8)];
         } else {
-          pipColor = awayWon ? t.awayTeamColor : homeWon ? t.deadColor : Colors.grey;
+          bg = Colors.white.withValues(alpha: 0.14);
+          shadow = null;
         }
+
         return Container(
-          width: 8, height: 8,
-          margin: const EdgeInsets.symmetric(horizontal: 1.5),
+          width:  18,
+          height: 4,
+          margin: const EdgeInsets.symmetric(horizontal: 2),
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: pipColor.withValues(alpha: 0.85),
-            boxShadow: [BoxShadow(color: pipColor.withValues(alpha: 0.5), blurRadius: 3)],
+            color:        bg,
+            borderRadius: BorderRadius.circular(2),
+            boxShadow:    shadow,
           ),
         );
       }),
@@ -333,216 +408,358 @@ class _ActHistoryPips extends StatelessWidget {
   }
 }
 
-// ── Center column ─────────────────────────────────────────────────────────────
+// ── Ball divider (replaces old charge bar) ────────────────────────────────────
 
-class _CenterColumn extends StatelessWidget {
-  final GameState gs;
-  const _CenterColumn({required this.gs});
+class _BallDivider extends StatelessWidget {
+  final Ultraball ball;
+  const _BallDivider({required this.ball});
 
   @override
   Widget build(BuildContext context) {
-    final act = gs.actState;
-    final t   = UiTheme.instance;
+    final charge  = ball.chargePercent;
+    final flash   = ball.explosionFlash;
+    final bColor  = flash > 0
+        ? Color.lerp(_ballColor(charge), const Color(0xFFFF4400), flash)!
+        : _ballColor(charge);
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Act label
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              act.isAct5 ? 'FINAL ACT' : 'ACT ${act.currentAct}',
-              style: TextStyle(
-                color:         act.isAct5 ? const Color(0xFFFF6600) : t.accentColor,
-                fontSize:      11,
-                fontWeight:    FontWeight.bold,
-                letterSpacing: 1.5,
+    const divH    = 32.0;
+    const iconSz  = 32.0;
+
+    final glowRadius = flash > 0 ? 12.0 + flash * 24.0 : 8.0;
+    final glowAlpha  = flash > 0 ? 0.35 + flash * 0.55 : 0.28;
+    final iconScale  = flash > 0 ? 1.0 + flash * 0.45 : 1.0;
+
+    return SizedBox(
+      height: divH,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Full-width colored divider line with charge fill
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _DividerLinePainter(ballColor: bColor, chargeFrac: charge),
+            ),
+          ),
+          // Ultraball icon floating on the divider
+          Transform.scale(
+            scale: iconScale,
+            child: Container(
+              width:  iconSz,
+              height: iconSz,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _kBg,
+                border: Border.all(
+                  color: bColor,
+                  width: flash > 0 ? 2.5 : 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: bColor.withValues(alpha: glowAlpha),
+                    blurRadius: glowRadius,
+                  ),
+                ],
+              ),
+              child: Center(
+                child: CustomPaint(
+                  size: Size(iconSz * 0.62, iconSz * 0.62),
+                  painter: _UltraballPainter(explosionFlash: flash),
+                ),
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 2),
-
-        // Timer / Act5 prompt
-        if (act.isAct5)
-          const Text(
-            'SCORE AN ULTRA',
-            style: TextStyle(
-              color:         Color(0xFFFF8800),
-              fontSize:      13,
-              fontWeight:    FontWeight.w900,
-              letterSpacing: 2,
-            ),
           ),
-        if (!act.isAct5)
-          Text(
-            act.timerDisplay,
-            style: TextStyle(
-              color:      _timerColor(act.timerSeconds, act.isAct5),
-              fontSize:   t.scoreboardTimerSize,
-              fontWeight: FontWeight.w900,
-              fontFamily: 'monospace',
-            ),
-          ),
-        const SizedBox(height: 4),
-
-        // Phase line mini-field indicator
-        _PhaseFieldIndicator(ball: gs.ball),
-      ],
-    );
-  }
-
-  Color _timerColor(double seconds, bool isAct5) {
-    if (isAct5) return const Color(0xFFFF8800);
-    if (seconds <= 30) return const Color(0xFFFF3333);
-    if (seconds <= 60) return const Color(0xFFFFAA00);
-    return Colors.white;
-  }
-}
-
-// ── Phase field indicator ─────────────────────────────────────────────────────
-
-class _PhaseFieldIndicator extends StatelessWidget {
-  final Ultraball ball;
-  const _PhaseFieldIndicator({required this.ball});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = UiTheme.instance;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          'PHASE',
-          style: TextStyle(
-            color:         Colors.white.withValues(alpha: 0.35),
-            fontSize:      7,
-            letterSpacing: 2,
-          ),
-        ),
-        const SizedBox(height: 2),
-        SizedBox(
-          width: 120,
-          height: 16,
-          child: CustomPaint(
-            painter: _PhaseFieldPainter(
-              ball:            ball,
-              activeColor:     t.phaseActiveColor,
-              inactiveColor:   t.phaseInactiveColor,
-              showBallPos:     t.phaseLineShowBallPosition,
-              awayEndzoneColor: t.awayTeamColor,
-              homeEndzoneColor: t.homeTeamColor,
-            ),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-class _PhaseFieldPainter extends CustomPainter {
-  final double ballX;
-  final List<bool> phaseSnapshot;
-  final Color activeColor;
-  final Color inactiveColor;
-  final bool showBallPos;
-  final Color awayEndzoneColor;
-  final Color homeEndzoneColor;
+// ── Divider line painter ──────────────────────────────────────────────────────
 
-  _PhaseFieldPainter({
-    required Ultraball ball,
-    required this.activeColor,
-    required this.inactiveColor,
-    required this.showBallPos,
-    this.awayEndzoneColor = const Color(0xFFE53935),
-    this.homeEndzoneColor = const Color(0xFF1E88E5),
-  })  : ballX = ball.x,
-        phaseSnapshot = List.of(ball.phaseLineActive);
+class _DividerLinePainter extends CustomPainter {
+  final Color  ballColor;
+  final double chargeFrac;
+
+  const _DividerLinePainter({required this.ballColor, required this.chargeFrac});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
+    final cy = size.height / 2;
 
-    // Field background strip (endzone + main + endzone, 20m : 100m : 20m = 140m total)
-    final bgPaint = Paint()..color = const Color(0xFF111122);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, w, h), const Radius.circular(3)),
-      bgPaint,
+    // Background track
+    canvas.drawLine(
+      Offset(0, cy),
+      Offset(size.width, cy),
+      Paint()..color = Colors.white.withValues(alpha: 0.09)..strokeWidth = 2,
     );
 
-    // Endzone tints (left = away attacks, right = home attacks)
-    final leftEndW  = w * (20 / 140);
-    final rightEndW = w * (20 / 140);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, leftEndW, h), const Radius.circular(3)),
-      Paint()..color = awayEndzoneColor.withValues(alpha: 0.15),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(w - rightEndW, 0, rightEndW, h), const Radius.circular(3)),
-      Paint()..color = homeEndzoneColor.withValues(alpha: 0.15),
-    );
-
-    // Phase lines at authoritative world positions — normalize to [0,140]
-    for (int i = 0; i < 5; i++) {
-      final px    = Ultraball.phaseLineXPositions[i] / 140.0 * w;
-      final color = phaseSnapshot[i] ? activeColor : inactiveColor;
-      final paint = Paint()
-        ..color       = color
-        ..strokeWidth = 1.0;
-
-      // Glow for active lines
-      if (phaseSnapshot[i]) {
-        canvas.drawLine(
-          Offset(px, 0), Offset(px, h),
-          Paint()
-            ..color       = color.withValues(alpha: 0.3)
-            ..strokeWidth = 3.0,
-        );
-      }
-      canvas.drawLine(Offset(px, 0), Offset(px, h), paint);
-
-      // Line number
-      final tp = TextPainter(
-        text: TextSpan(
-          text: '${i + 1}',
-          style: TextStyle(
-            color:    color.withValues(alpha: 0.7),
-            fontSize: 6,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(canvas, Offset(px - tp.width / 2, h - tp.height - 1));
-    }
-
-    // Ball position dot
-    if (showBallPos) {
-      final bx = (ballX.clamp(0.0, 140.0) / 140.0 * w);
-      canvas.drawCircle(
-        Offset(bx, h / 2),
-        3,
-        Paint()..color = const Color(0xFFFFCC00),
-      );
-      canvas.drawCircle(
-        Offset(bx, h / 2),
-        3,
-        Paint()
-          ..color   = const Color(0xFFFFCC00).withValues(alpha: 0.4)
-          ..strokeWidth = 2
-          ..style   = PaintingStyle.stroke,
+    // Charge fill (left side)
+    if (chargeFrac > 0) {
+      canvas.drawLine(
+        Offset(0, cy),
+        Offset(size.width * chargeFrac, cy),
+        Paint()..color = ballColor..strokeWidth = 2,
       );
     }
   }
 
   @override
-  bool shouldRepaint(_PhaseFieldPainter old) {
-    if (old.ballX != ballX) return true;
-    for (int i = 0; i < 5; i++) {
-      if (old.phaseSnapshot[i] != phaseSnapshot[i]) return true;
+  bool shouldRepaint(_DividerLinePainter old) =>
+      old.ballColor != ballColor || old.chargeFrac != chargeFrac;
+}
+
+// ── Ultraball icon painter (with explosion burst) ─────────────────────────────
+
+class _UltraballPainter extends CustomPainter {
+  final double explosionFlash;
+  const _UltraballPainter({this.explosionFlash = 0});
+
+  @override
+  void paint(Canvas canvas, Size sz) {
+    final r  = sz.width / 2;
+    final cx = r, cy = r;
+
+    // Explosion burst spikes
+    if (explosionFlash > 0) {
+      const numSpikes = 8;
+      final spikePaint = Paint()
+        ..color = const Color(0xFFFF4400).withValues(alpha: explosionFlash * 0.9)
+        ..strokeWidth = 1.8
+        ..strokeCap = StrokeCap.round;
+      for (int i = 0; i < numSpikes; i++) {
+        final angle  = (i / numSpikes) * math.pi * 2 + math.pi / numSpikes;
+        final innerR = r * 1.15;
+        final outerR = r * (1.6 + explosionFlash * 2.2);
+        canvas.drawLine(
+          Offset(cx + math.cos(angle) * innerR, cy + math.sin(angle) * innerR),
+          Offset(cx + math.cos(angle) * outerR, cy + math.sin(angle) * outerR),
+          spikePaint,
+        );
+      }
     }
-    return false;
+
+    // Gold top segment
+    canvas.drawArc(Rect.fromCircle(center: Offset(cx, cy), radius: r),
+        -math.pi, math.pi * 0.42, true,
+        Paint()..color = _kGold);
+    // White middle band
+    canvas.drawArc(Rect.fromCircle(center: Offset(cx, cy), radius: r),
+        -math.pi + math.pi * 0.42, math.pi * 0.16, true,
+        Paint()..color = Colors.white);
+    // Dark bottom segment
+    canvas.drawArc(Rect.fromCircle(center: Offset(cx, cy), radius: r),
+        -math.pi + math.pi * 0.58, math.pi * 1.42, true,
+        Paint()..color = const Color(0xFF1A1C22));
+    // Border
+    canvas.drawCircle(Offset(cx, cy), r,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.3)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1);
   }
+
+  @override
+  bool shouldRepaint(_UltraballPainter old) => old.explosionFlash != explosionFlash;
+}
+
+// ── Player cards row ──────────────────────────────────────────────────────────
+
+class _PlayerCardsRow extends StatelessWidget {
+  final List<UltraballPlayer> awayPlayers, homePlayers;
+  final String? targetId;
+  const _PlayerCardsRow({
+    required this.awayPlayers,
+    required this.homePlayers,
+    required this.targetId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: _kBg,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Away team cards
+          Expanded(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: awayPlayers.map((p) =>
+                _PlayerCard(
+                  player:           p,
+                  teamColor:        _kRed,
+                  killBadgeOnRight: true,
+                  isTargeted:       p.id == targetId,
+                )
+              ).toList(),
+            ),
+          ),
+          const SizedBox(width: 18),
+          // Home team cards
+          Expanded(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: homePlayers.map((p) =>
+                _PlayerCard(
+                  player:           p,
+                  teamColor:        _kBlue,
+                  killBadgeOnRight: false,
+                  isTargeted:       p.id == targetId || p.isSelected,
+                )
+              ).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlayerCard extends StatelessWidget {
+  final UltraballPlayer player;
+  final Color teamColor;
+  final bool  killBadgeOnRight;
+  final bool  isTargeted;
+
+  const _PlayerCard({
+    required this.player,
+    required this.teamColor,
+    required this.killBadgeOnRight,
+    required this.isTargeted,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hpPct  = (player.health / player.maxHealth.clamp(1, double.infinity)).clamp(0.0, 1.0);
+    final isDead = !player.isAlive;
+    final badge  = player.name.isNotEmpty ? player.name[0] : '?';
+    final kills  = player.killsThisMatch;
+
+    final textAlpha   = isDead ? 0.35 : 1.0;
+    final hpBarColor  = isDead ? Colors.grey.shade700 : teamColor;
+
+    final borderColor = isTargeted
+        ? _kGold
+        : Colors.white.withValues(alpha: isDead ? 0.07 : 0.14);
+    final borderWidth = isTargeted ? 1.5 : 1.0;
+    final glowShadow  = isTargeted
+        ? [BoxShadow(color: _kGold.withValues(alpha: 0.55), blurRadius: 6)]
+        : null;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Avatar
+          SizedBox(
+            width: 30,
+            height: 30,
+            child: Stack(
+              children: [
+                Container(
+                  width: 29,
+                  height: 29,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(6),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: isDead
+                        ? [Colors.grey.shade800, Colors.grey.shade900]
+                        : [teamColor, teamColor.withValues(alpha: 0.3)],
+                    ),
+                    border: Border.all(color: borderColor, width: borderWidth),
+                    boxShadow: glowShadow,
+                  ),
+                  child: Center(
+                    child: Text(
+                      badge,
+                      style: GoogleFonts.barlowCondensed(
+                        fontSize:   14,
+                        fontWeight: FontWeight.w700,
+                        color:      Colors.white.withValues(alpha: textAlpha)),
+                    ),
+                  ),
+                ),
+                if (kills > 0)
+                  Positioned(
+                    bottom: 0,
+                    right: killBadgeOnRight ? 0 : null,
+                    left:  killBadgeOnRight ? null : 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text('$kills',
+                        style: const TextStyle(
+                          fontFamily: 'monospace', fontSize: 7,
+                          fontWeight: FontWeight.w700, color: _kGold)),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 3),
+          // HP bar
+          Container(
+            width:  26,
+            height: 4,
+            decoration: BoxDecoration(
+              color:        Colors.white.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(2),
+            ),
+            child: FractionallySizedBox(
+              widthFactor: hpPct,
+              alignment: Alignment.centerLeft,
+              child: Container(
+                decoration: BoxDecoration(
+                  color:        hpBarColor,
+                  borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Clippers ──────────────────────────────────────────────────────────────────
+
+const _kCut = 26.0;
+
+class _LeftPanelClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size s) => Path()
+    ..moveTo(0, 0)
+    ..lineTo(s.width, 0)
+    ..lineTo(s.width - _kCut, s.height)
+    ..lineTo(0, s.height)
+    ..close();
+  @override bool shouldReclip(_) => false;
+}
+
+class _CenterClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size s) => Path()
+    ..moveTo(_kCut, 0)
+    ..lineTo(s.width - _kCut, 0)
+    ..lineTo(s.width, s.height)
+    ..lineTo(0, s.height)
+    ..close();
+  @override bool shouldReclip(_) => false;
+}
+
+class _RightPanelClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size s) => Path()
+    ..moveTo(_kCut, 0)
+    ..lineTo(s.width, 0)
+    ..lineTo(s.width, s.height)
+    ..lineTo(0, s.height)
+    ..close();
+  @override bool shouldReclip(_) => false;
 }

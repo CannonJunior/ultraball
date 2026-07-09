@@ -16,6 +16,10 @@ class BallSystem {
   static void update(GameState gs, double dt) {
     final ball = gs.ball;
 
+    if (ball.explosionFlash > 0) {
+      ball.explosionFlash = math.max(0, ball.explosionFlash - dt / 0.6);
+    }
+
     if (ball.isInFlight) {
       _updateFlight(gs, dt);
     } else if (ball.isHeld) {
@@ -286,6 +290,7 @@ class BallSystem {
     final holderTeam = gs.getPlayerById(gs.ball.holderId!)?.team == Team.player ? 'player' : 'opponent';
     gs.dataCollector?.onExplosion(holderTeam);
     final ball = gs.ball;
+    ball.explosionFlash = 1.0;
     final holder = gs.getPlayerById(ball.holderId!);
 
     if (holder == null) return;

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'ui/settings_screen.dart';
 import 'ui/ui_theme.dart';
+import 'debug/hit_test_logger.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  HitTestLogger.install();
   await UiTheme.loadFromAsset();
   runApp(const UltraballApp());
 }

@@ -345,6 +345,14 @@ class GameState {
     selectedPlayer!.isPlayerControlled = true;
   }
 
+  void selectPlayer(UltraballPlayer target) {
+    selectedPlayer?.isSelected = false;
+    selectedPlayer?.isPlayerControlled = false;
+    selectedPlayer = target;
+    target.isSelected = true;
+    target.isPlayerControlled = true;
+  }
+
   /// Cycle Tab-targeting to the next living enemy on field.
   ///
   /// Enemies are sorted: those in the frontal 180° arc of the selected player

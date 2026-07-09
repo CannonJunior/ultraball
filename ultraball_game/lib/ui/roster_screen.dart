@@ -1,8 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../models/player.dart';
 import '../models/act_state.dart';
 import '../game/game_state.dart';
 import 'ui_assets.dart';
+import 'stat_table.dart';
+
+// ── Design palette ────────────────────────────────────────────────────────────
+const _kRed  = Color(0xFFFF3B53);
+const _kBlue = Color(0xFF2F83FF);
+const _kGold = Color(0xFFFFCB3D);
+const _kSurf = Color(0xFF0A0C14);
+const _kDark = Color(0xFF06070D);
 
 class RosterScreen extends StatefulWidget {
   final GameState gs;
@@ -29,246 +38,319 @@ class _RosterScreenState extends State<RosterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final gs = widget.gs;
+    final gs  = widget.gs;
     final act = gs.actState;
-    final dead = gs.playerRoster.where((p) => !p.isAlive).toList();
-    final aliveCount = _ordered.length;
-    final fieldCount = aliveCount < 7 ? aliveCount : 7;
+    final dead       = gs.playerRoster.where((p) => !p.isAlive).toList();
+    final fieldCount = _ordered.length < 7 ? _ordered.length : 7;
 
     return Container(
       color: Colors.black.withValues(alpha: 0.96),
       child: SafeArea(
         child: Column(
           children: [
-            _buildHeader(act, gs),
-            const Divider(color: Color(0xFF222244), height: 1),
+            _IntermissionHeader(gs: gs, act: act),
             Expanded(
               child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Field label
-                      _sectionLabel('ON FIELD  ($fieldCount/7)', const Color(0xFF44FF88)),
-                      const SizedBox(height: 6),
-                      SizedBox(
-                        height: (_ordered.length * 56.0).clamp(100.0, 520.0) + _expanded.length * 110.0,
-                        child: ReorderableListView.builder(
-                          buildDefaultDragHandles: false,
-                          onReorder: (oldIdx, newIdx) {
-                            setState(() {
-                              if (newIdx > oldIdx) newIdx--;
-                              final p = _ordered.removeAt(oldIdx);
-                              _ordered.insert(newIdx, p);
-                            });
-                          },
-                          itemCount: _ordered.length,
-                          itemBuilder: (ctx, i) => _buildAliveRow(i, fieldCount),
-                        ),
-                      ),
-                      if (dead.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        _sectionLabel('ELIMINATED', const Color(0xFFFF4444)),
-                        const SizedBox(height: 6),
-                        for (final p in dead) _buildDeadRow(p),
-                      ],
-                    ],
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Stat table (standings)
+                    StatTable(gs: gs),
+
+                    // Lineup management section
+                    _LineupSection(
+                      ordered:    _ordered,
+                      expanded:   _expanded,
+                      dead:       dead,
+                      fieldCount: fieldCount,
+                      onReorder: (oldIdx, newIdx) {
+                        setState(() {
+                          if (newIdx > oldIdx) newIdx--;
+                          final p = _ordered.removeAt(oldIdx);
+                          _ordered.insert(newIdx, p);
+                        });
+                      },
+                      onToggleExpand: (id) {
+                        setState(() {
+                          if (_expanded.contains(id)) {
+                            _expanded.remove(id);
+                          } else {
+                            _expanded.add(id);
+                          }
+                        });
+                      },
+                    ),
+                  ],
                 ),
               ),
             ),
-            _buildConfirmBar(act),
+            _ConfirmBar(act: act, onConfirm: () => widget.onConfirm(_ordered)),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildHeader(ActState act, GameState gs) {
-    final homeScore = act.playerScore;
-    final awayScore = act.opponentScore;
-    final homeColor = const Color(0xFF1E88E5);
-    final awayColor = const Color(0xFFE53935);
+// ── Intermission header ───────────────────────────────────────────────────────
 
+class _IntermissionHeader extends StatelessWidget {
+  final GameState gs;
+  final ActState  act;
+
+  const _IntermissionHeader({required this.gs, required this.act});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
-      color: const Color(0xFF050510),
-      child: Column(
+      decoration: BoxDecoration(
+        color: _kDark,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end:   Alignment.bottomRight,
+          colors: [_kGold.withValues(alpha: 0.10), Colors.transparent],
+        ),
+        border: const Border(
+          bottom: BorderSide(color: Color(0xFF1A1A2A)),
+        ),
+      ),
+      child: Row(
         children: [
-          Text(
-            'ACT ${act.currentAct} COMPLETE',
-            style: const TextStyle(
-              color: Color(0xFFFFCC00),
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 2,
+          // Act + subtitle
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'ACT ${act.currentAct} — INTERMISSION',
+                  style: GoogleFonts.barlowCondensed(
+                    fontSize: 22, fontWeight: FontWeight.w700,
+                    color: Colors.white, letterSpacing: 0.5),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'LIVE STANDINGS  ·  SET LINEUP FOR ACT ${act.currentAct + 1}',
+                  style: GoogleFonts.chakraPetch(
+                    fontSize: 22, fontWeight: FontWeight.w600,
+                    letterSpacing: 2.4, color: _kGold),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
+          // Score
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(gs.settings.homeTeamName,
-                style: TextStyle(color: homeColor, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1)),
-              const SizedBox(width: 12),
-              Text('$homeScore — $awayScore',
-                style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-              const SizedBox(width: 12),
               Text(gs.settings.awayTeamName,
-                style: TextStyle(color: awayColor, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1)),
+                style: GoogleFonts.barlowCondensed(
+                  fontSize: 22, fontWeight: FontWeight.w700, color: _kRed)),
+              const SizedBox(width: 12),
+              Text(
+                '${act.opponentScore}  –  ${act.playerScore}',
+                style: GoogleFonts.barlowCondensed(
+                  fontSize: 32, fontWeight: FontWeight.w700, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              Text(gs.settings.homeTeamName,
+                style: GoogleFonts.barlowCondensed(
+                  fontSize: 22, fontWeight: FontWeight.w700, color: _kBlue)),
             ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'SET YOUR LINEUP FOR ACT ${act.currentAct + 1}',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.5),
-              fontSize: 11,
-              letterSpacing: 1.5,
-            ),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _sectionLabel(String text, Color color) {
+// ── Lineup section (reorderable list + dead list) ─────────────────────────────
+
+class _LineupSection extends StatelessWidget {
+  final List<UltraballPlayer> ordered;
+  final Set<String>           expanded;
+  final List<UltraballPlayer> dead;
+  final int                   fieldCount;
+  final void Function(int, int) onReorder;
+  final void Function(String)   onToggleExpand;
+
+  const _LineupSection({
+    required this.ordered,
+    required this.expanded,
+    required this.dead,
+    required this.fieldCount,
+    required this.onReorder,
+    required this.onToggleExpand,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: _kSurf,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionLabel('LINEUP  ($fieldCount / 7 ON FIELD)', const Color(0xFF44FF88)),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: (ordered.length * 56.0).clamp(100.0, 480.0) +
+                expanded.length * 110.0,
+            child: ReorderableListView.builder(
+              buildDefaultDragHandles: false,
+              onReorder: onReorder,
+              itemCount: ordered.length,
+              itemBuilder: (ctx, i) => _AliveRow(
+                key: ValueKey(ordered[i].id),
+                index:      i,
+                player:     ordered[i],
+                fieldCount: fieldCount,
+                isExpanded: expanded.contains(ordered[i].id),
+                onToggle:   () => onToggleExpand(ordered[i].id),
+              ),
+            ),
+          ),
+          if (dead.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _sectionLabel('ELIMINATED', _kRed),
+            const SizedBox(height: 6),
+            for (final p in dead) _DeadRow(player: p),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static Widget _sectionLabel(String text, Color color) {
     return Row(
       children: [
         Container(width: 3, height: 14, color: color),
         const SizedBox(width: 8),
         Text(text,
-          style: TextStyle(
-            color: color,
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.5,
-          )),
+          style: GoogleFonts.chakraPetch(
+            color: color, fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
       ],
     );
   }
+}
 
-  static Color _classColor(PlayerClass cls) => UiAssets.classColor(cls);
+// ── Single alive player row ───────────────────────────────────────────────────
 
-  Widget _buildAliveRow(int index, int fieldCount) {
-    final player = _ordered[index];
-    final isField = index < 7;
-    final isFirstReserve = index == 7;
-    final slotLabel = isField
-        ? 'FIELD ${index + 1}'
-        : 'RES ${index - 6}';
-    final slotColor = isField ? const Color(0xFF44FF88) : Colors.white.withValues(alpha: 0.35);
-    final classEmoji = _classBadge(player.playerClass);
-    final classBadgeColor = _classBadgeColor(player.playerClass);
-    final isExpanded = _expanded.contains(player.id);
+class _AliveRow extends StatelessWidget {
+  final int              index;
+  final UltraballPlayer  player;
+  final int              fieldCount;
+  final bool             isExpanded;
+  final VoidCallback     onToggle;
+
+  const _AliveRow({
+    super.key,
+    required this.index,
+    required this.player,
+    required this.fieldCount,
+    required this.isExpanded,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isField       = index < 7;
+    final isFirstRes    = index == 7;
+    final slotLabel     = isField ? 'FIELD ${index + 1}' : 'RES ${index - 6}';
+    final slotColor     = isField ? const Color(0xFF44FF88) : Colors.white.withValues(alpha: 0.35);
+    final clsColor      = UiAssets.classColor(player.playerClass);
 
     return Column(
-      key: ValueKey(player.id),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (isFirstReserve)
+        if (isFirstRes)
           Padding(
-            padding: const EdgeInsets.only(top: 12, bottom: 8),
-            child: _sectionLabel('RESERVE  (${_ordered.length - 7} available)', Colors.white.withValues(alpha: 0.4)),
+            padding: const EdgeInsets.only(top: 10, bottom: 6),
+            child: Row(children: [
+              Container(width: 3, height: 14, color: Colors.white.withValues(alpha: 0.25)),
+              const SizedBox(width: 8),
+              Text('RESERVE', style: GoogleFonts.chakraPetch(
+                color: Colors.white.withValues(alpha: 0.4),
+                fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+            ]),
           ),
         ReorderableDragStartListener(
           index: index,
           child: Container(
-            margin: const EdgeInsets.only(bottom: 4),
+            margin: const EdgeInsets.only(bottom: 3),
             decoration: BoxDecoration(
-              color: isField
-                  ? const Color(0xFF0A1A0A)
-                  : const Color(0xFF0A0A14),
+              color: isField ? const Color(0xFF0A1A0A) : const Color(0xFF0A0A14),
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
                 color: isField
-                    ? const Color(0xFF44FF88).withValues(alpha: 0.25)
-                    : const Color(0xFF222244),
+                    ? const Color(0xFF44FF88).withValues(alpha: 0.22)
+                    : const Color(0xFF1A1A2E),
               ),
             ),
             child: Row(
               children: [
-                const SizedBox(width: 8),
-                // Slot label
+                const SizedBox(width: 10),
                 SizedBox(
-                  width: 56,
-                  child: Text(slotLabel,
-                    style: TextStyle(
-                      color: slotColor,
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    )),
+                  width: 58,
+                  child: Text(slotLabel, style: GoogleFonts.chakraPetch(
+                    color: slotColor, fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
                 ),
-                // Class badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
-                    color: classBadgeColor.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(3),
-                    border: Border.all(color: classBadgeColor.withValues(alpha: 0.5)),
+                    color: clsColor.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: clsColor.withValues(alpha: 0.45)),
                   ),
-                  child: Text(classEmoji,
-                    style: const TextStyle(fontSize: 10)),
+                  child: Center(child: UiAssets.classIcon(player.playerClass, size: 22, color: clsColor)),
                 ),
-                const SizedBox(width: 8),
-                // Name
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(player.name,
                     style: TextStyle(
-                      color: isField
-                          ? Colors.white
-                          : Colors.white.withValues(alpha: 0.55),
-                      fontSize: 13,
-                      fontWeight: isField ? FontWeight.w600 : FontWeight.normal,
-                    )),
+                      color: isField ? Colors.white : Colors.white.withValues(alpha: 0.55),
+                      fontSize: 22,
+                      fontWeight: isField ? FontWeight.w600 : FontWeight.normal)),
                 ),
-                // Ultra mana indicator
                 if (player.ultraMana > 0)
                   Padding(
                     padding: const EdgeInsets.only(right: 6),
-                    child: Text(
-                      '★' * player.ultraMana.floor(),
-                      style: const TextStyle(color: Color(0xFFFFCC00), fontSize: 10),
-                    ),
+                    child: Text('★' * player.ultraMana.floor(),
+                      style: const TextStyle(color: _kGold, fontSize: 22)),
                   ),
-                // Caret to toggle expansion
                 GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      if (isExpanded) {
-                        _expanded.remove(player.id);
-                      } else {
-                        _expanded.add(player.id);
-                      }
-                    });
-                  },
+                  onTap: onToggle,
                   child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: Icon(
                       isExpanded ? Icons.expand_less : Icons.expand_more,
-                      color: const Color(0xFF444466),
-                      size: 18,
-                    ),
+                      color: const Color(0xFF444466), size: 18),
                   ),
                 ),
               ],
             ),
           ),
         ),
-        if (isExpanded) _buildPlayerInfoPanel(player),
+        if (isExpanded) _PlayerInfoPanel(player: player),
       ],
     );
   }
+}
 
-  Widget _buildPlayerInfoPanel(UltraballPlayer player) {
-    final cls = player.playerClass;
-    final clsColor = _classColor(cls);
+// ── Expanded player info panel ────────────────────────────────────────────────
+
+class _PlayerInfoPanel extends StatelessWidget {
+  final UltraballPlayer player;
+  const _PlayerInfoPanel({required this.player});
+
+  @override
+  Widget build(BuildContext context) {
+    final cls      = player.playerClass;
+    final clsColor = UiAssets.classColor(cls);
     final abilities = cls.abilityNames;
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 4),
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+      margin: const EdgeInsets.only(bottom: 3),
+      padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
       decoration: BoxDecoration(
         color: const Color(0xFF0A0A1A),
         borderRadius: BorderRadius.circular(4),
@@ -277,61 +359,40 @@ class _RosterScreenState extends State<RosterScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Stats row
           Row(
             children: [
               Text(
                 '${cls.baseSpeed} m/s  •  ${player.health.toInt()} / ${cls.maxHealth.toInt()} HP',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.6),
-                  fontSize: 8,
-                ),
-              ),
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 22)),
               const Spacer(),
-              Text(
-                cls.description,
-                style: TextStyle(
-                  color: clsColor.withValues(alpha: 0.7),
-                  fontSize: 7,
-                ),
-              ),
+              Text(cls.description,
+                style: TextStyle(color: clsColor.withValues(alpha: 0.7), fontSize: 22)),
             ],
           ),
           const SizedBox(height: 4),
-          // 3×3 ability grid (slots 1–9)
           for (int row = 0; row < 3; row++)
             Padding(
               padding: const EdgeInsets.only(bottom: 2),
               child: Row(
                 children: [
                   for (int col = 0; col < 3; col++)
-                    _abilityChip(row * 3 + col + 1, abilities[row * 3 + col]),
+                    _AbilityChip(slot: row * 3 + col + 1, name: abilities[row * 3 + col]),
                 ],
               ),
             ),
-          // ULTRA line
           const SizedBox(height: 3),
           Row(
             children: [
-              Text(
-                '⚡ ULTRA (4 Ultra Mana)',
+              Text('⚡ ULTRA (4 Ultra Mana)',
                 style: TextStyle(
-                  color: const Color(0xFFFFCC00).withValues(alpha: 0.9),
-                  fontSize: 7,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+                  color: _kGold.withValues(alpha: 0.9),
+                  fontSize: 22, fontWeight: FontWeight.bold)),
               const SizedBox(width: 6),
               Expanded(
-                child: Text(
-                  abilities[9],
+                child: Text(abilities[9],
                   style: const TextStyle(
-                    color: Color(0xFFFFCC00),
-                    fontSize: 8,
-                    fontWeight: FontWeight.bold,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+                    color: _kGold, fontSize: 22, fontWeight: FontWeight.bold,
+                    overflow: TextOverflow.ellipsis)),
               ),
             ],
           ),
@@ -339,8 +400,15 @@ class _RosterScreenState extends State<RosterScreen> {
       ),
     );
   }
+}
 
-  Widget _abilityChip(int slot, String name) {
+class _AbilityChip extends StatelessWidget {
+  final int    slot;
+  final String name;
+  const _AbilityChip({required this.slot, required this.name});
+
+  @override
+  Widget build(BuildContext context) {
     return Expanded(
       child: Container(
         margin: const EdgeInsets.only(right: 2),
@@ -352,94 +420,94 @@ class _RosterScreenState extends State<RosterScreen> {
         ),
         child: Row(
           children: [
-            Text(
-              '$slot.',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.3),
-                fontSize: 7,
-              ),
-            ),
+            Text('$slot.', style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.3), fontSize: 22)),
             const SizedBox(width: 2),
             Expanded(
-              child: Text(
-                name,
+              child: Text(name,
                 style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 8,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
+                  color: Colors.white70, fontSize: 22, overflow: TextOverflow.ellipsis)),
             ),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildDeadRow(UltraballPlayer player) {
-    final classEmoji = _classBadge(player.playerClass);
+// ── Dead player row ───────────────────────────────────────────────────────────
+
+class _DeadRow extends StatelessWidget {
+  final UltraballPlayer player;
+  const _DeadRow({required this.player});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 4),
+      margin: const EdgeInsets.only(bottom: 3),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF080808),
+        color: const Color(0xFF080810),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFF1A1A1A)),
+        border: Border.all(color: const Color(0xFF1A1A24)),
       ),
       child: Row(
         children: [
           SizedBox(
-            width: 56,
+            width: 58,
             child: Text('DEAD',
-              style: TextStyle(
-                color: const Color(0xFFFF4444).withValues(alpha: 0.6),
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-              )),
-          ),
-          Text(classEmoji, style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.3))),
+              style: GoogleFonts.chakraPetch(
+                color: _kRed.withValues(alpha: 0.6),
+                fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: 0.5))),
+          Text(player.playerClass.displayName,
+            style: TextStyle(fontSize: 22, color: Colors.white.withValues(alpha: 0.3))),
           const SizedBox(width: 8),
           Text(player.name,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.25),
-              fontSize: 13,
+              fontSize: 22,
               decoration: TextDecoration.lineThrough,
-              decorationColor: Colors.white.withValues(alpha: 0.15),
-            )),
+              decorationColor: Colors.white.withValues(alpha: 0.15))),
         ],
       ),
     );
   }
+}
 
-  Widget _buildConfirmBar(ActState act) {
+// ── Confirm bar ───────────────────────────────────────────────────────────────
+
+class _ConfirmBar extends StatelessWidget {
+  final ActState    act;
+  final VoidCallback onConfirm;
+
+  const _ConfirmBar({required this.act, required this.onConfirm});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-      color: const Color(0xFF050510),
+      decoration: const BoxDecoration(
+        color: _kDark,
+        border: Border(top: BorderSide(color: Color(0xFF1A1A2A))),
+      ),
       child: SizedBox(
         width: double.infinity,
         child: TextButton(
-          onPressed: () => widget.onConfirm(_ordered),
+          onPressed: onConfirm,
           style: TextButton.styleFrom(
-            backgroundColor: const Color(0xFFFFCC00),
+            backgroundColor: _kGold,
             foregroundColor: Colors.black,
             padding: const EdgeInsets.symmetric(vertical: 14),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
           ),
           child: Text(
             'CONFIRM LINEUP — BEGIN ACT ${act.currentAct + 1}',
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-              letterSpacing: 1.5,
-            ),
+            style: GoogleFonts.chakraPetch(
+              fontWeight: FontWeight.w700, fontSize: 22, letterSpacing: 1.5,
+              color: Colors.black),
           ),
         ),
       ),
     );
   }
-
-  String _classBadge(PlayerClass cls) => cls.displayName;
-
-  Color _classBadgeColor(PlayerClass cls) => UiAssets.classColor(cls);
 }

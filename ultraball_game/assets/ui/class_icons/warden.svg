@@ -1,6 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <!-- Person with healing cross — support / restoration -->
-  <circle fill="currentColor" cx="12" cy="7" r="3"/>
-  <path fill="currentColor" d="M12 12c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"/>
-  <path fill="currentColor" d="M15 5h-1.5V3.5a.5.5 0 0 0-1 0V5H11a.5.5 0 0 0 0 1h1.5v1.5a.5.5 0 0 0 1 0V6H15a.5.5 0 0 0 0-1z"/>
+  <!-- Solid circle with cross cutout — support / field control / restoration -->
+  <path fill="currentColor" fill-rule="evenodd" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 4h-2v5H6v2h5v5h2v-5h5v-2h-5z"/>
 </svg>

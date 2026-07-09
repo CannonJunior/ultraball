@@ -15,6 +15,7 @@ import 'systems/ai_system.dart';
 import 'systems/terrain_system.dart';
 import '../models/terrain_event.dart';
 import '../ui/scoreboard.dart';
+import '../ui/scoreboard_row.dart';
 import '../ui/combo_display.dart';
 import '../ui/mana_bars.dart';
 import '../ui/throw_charge_bar.dart';
@@ -83,6 +84,7 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     _gs.dataCollector = _dataCollector;
     _focusNode.addListener(_onFocusChange);
     WidgetsBinding.instance.addObserver(this);
+
     _startGameLoop();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
@@ -397,11 +399,11 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       if (player != null) {
         if (player.playerClass == PlayerClass.geomancer) {
           // Hold-to-aim: start aiming terrain placement (Geomancer special case)
-          if (player.slamCooldown <= 0 && player.redMana >= 25) {
+          if (player.slamCooldown <= 0 && player.redMana >= 25 && player.gcdRemaining <= 0) {
             _gs.isAimingTerrain = true;
             _gs.terrainAimEventType = TerrainEventType.riseMountain;
           } else {
-            // On CD or no mana: enqueue via normal path
+            // On CD, no mana, or GCD active: enqueue via normal path
             _tryFireAbility(player, 2);
           }
         } else {
@@ -418,11 +420,11 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       if (player != null) {
         if (player.playerClass == PlayerClass.geomancer) {
           // Hold-to-aim: start aiming terrain placement (Geomancer special case)
-          if (player.ability4Cooldown <= 0 && player.redMana >= 35) {
+          if (player.ability4Cooldown <= 0 && player.redMana >= 35 && player.gcdRemaining <= 0) {
             _gs.isAimingTerrain = true;
             _gs.terrainAimEventType = TerrainEventType.openPit;
           } else {
-            // On CD or no mana: enqueue via normal path
+            // On CD, no mana, or GCD active: enqueue via normal path
             _tryFireAbility(player, 4);
           }
         } else {
@@ -531,11 +533,53 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
         if (player != null && player.playerClass == PlayerClass.geomancer) {
           final slot = event.logicalKey == LogicalKeyboardKey.digit2 ? 2 : 4;
           CombatSystem.useClassAbility(_gs, player, slot);
+          player.gcdRemaining = 1.0;
+          player.gcdMax = 1.0;
+          final names = player.playerClass.abilityNames;
+          if (slot >= 1 && slot <= names.length) {
+            player.lastExecutedAbility = names[slot - 1];
+            player.lastExecutedTimer = 1.2;
+          }
         }
         _gs.isAimingTerrain = false;
         _gs.terrainAimEventType = null;
       }
     }
+  }
+
+  void _handleCanvasTap(Offset localPos, Size canvasSize) {
+    if (_gs.paused || _gs.actState.gameOver) return;
+
+    const double selectionRadius = 24.0;
+    UltraballPlayer? closest;
+    double closestDist = double.infinity;
+
+    for (final p in _gs.fieldPlayers) {
+      if (!p.isAlive) continue;
+      final screenPos = _fieldPainter.projectPlayer(p, canvasSize);
+      if (screenPos == null) continue;
+      final dx = screenPos.dx - localPos.dx;
+      final dy = screenPos.dy - localPos.dy;
+      final dist = math.sqrt(dx * dx + dy * dy);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closest = p;
+      }
+    }
+
+    if (closest == null || closestDist > selectionRadius) {
+      if (_gs.currentTargetId != null) setState(() => _gs.clearTarget());
+      return;
+    }
+
+    if (closest.team == Team.player) {
+      _gs.isAimingTerrain = false;
+      _gs.terrainAimEventType = null;
+      setState(() => _gs.selectPlayer(closest!));
+    } else {
+      setState(() => _gs.currentTargetId = closest!.id);
+    }
+    _focusNode.requestFocus();
   }
 
   /// Fire an ability immediately if ready, or enqueue it (max 5, no duplicates).
@@ -627,10 +671,14 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
         },
         child: Column(
           children: [
-            // Scoreboard — rebuilds with canvas ticks via ValueListenableBuilder
-            ValueListenableBuilder<int>(
-              valueListenable: _canvasRepaint,
-              builder: (_, __, ___) => Scoreboard(gs: _gs),
+            // Scoreboard row: side panels + centered 1/3-width scoreboard.
+            // SizedBox(height:110) gives the LayoutBuilder inside ScoreboardRow
+            // a bounded maxHeight so its Row(CrossAxisAlignment.stretch) never
+            // receives tight-infinite height constraints.  110 matches the
+            // Container(height:110) that Scoreboard declares as its outer shell.
+            SizedBox(
+              height: 110,
+              child: ScoreboardRow(gs: _gs, repaint: _canvasRepaint),
             ),
 
             // Game canvas
@@ -639,12 +687,31 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
                 builder: (context, constraints) {
                   _computeLayout(Size(constraints.maxWidth, constraints.maxHeight));
 
+                  final canvasSize = Size(constraints.maxWidth, constraints.maxHeight);
                   return Stack(
                     children: [
-                      // Main game canvas — reuses the long-lived _fieldPainter
-                      CustomPaint(
-                        painter: _fieldPainter,
-                        size: Size(constraints.maxWidth, constraints.maxHeight),
+                      // Main game canvas — wrapped in IgnorePointer so
+                      // RenderCustomPaint.hitTest() is never called (avoids
+                      // assert(hasSize) on unlaid-out render objects).
+                      IgnorePointer(
+                        child: CustomPaint(
+                          painter: _fieldPainter,
+                          size: canvasSize,
+                        ),
+                      ),
+
+                      // Click-to-target: opaque Listener with no child.
+                      // opaque → hitTest() returns true even when hitTestSelf
+                      // and hitTestChildren both return false, so Stack stops
+                      // here and never descends to CustomPaint (no unlaid-out
+                      // render box is reached by updateAllDevices).
+                      // Positioned.fill gives it definite bounds from the Stack.
+                      Positioned.fill(
+                        child: Listener(
+                          behavior: HitTestBehavior.opaque,
+                          onPointerDown: (event) =>
+                              _handleCanvasTap(event.localPosition, canvasSize),
+                        ),
                       ),
 
                       // All dynamic overlays subscribe to _canvasRepaint so they

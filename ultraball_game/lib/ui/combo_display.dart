@@ -1,6 +1,10 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../game/game_state.dart';
 
+/// Floating combo-streak counter that mirrors the "x{n} COMBO" tracker shown
+/// in the Warchief QueuedAbilityLabelOverlay.  Renders as plain text — no box
+/// or border — so it feels like a world-space annotation rather than a HUD panel.
 class ComboDisplay extends StatelessWidget {
   final GameState gs;
 
@@ -12,64 +16,41 @@ class ComboDisplay extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
+    // progress: 1.0 = just appeared, 0.0 = about to disappear
     final progress = (gs.comboMessageTimer / 2.0).clamp(0.0, 1.0);
-    // Fade in then fade out
-    double opacity;
-    if (progress > 0.8) {
-      opacity = (1.0 - progress) / 0.2; // fade in at start (high progress = early in display)
+
+    // Fade in during first 10%, hold, fade out during last 20%.
+    final double opacity;
+    if (progress > 0.9) {
+      opacity = (1.0 - progress) / 0.1;
     } else if (progress < 0.2) {
-      opacity = progress / 0.2; // fade out at end
+      opacity = progress / 0.2;
     } else {
       opacity = 1.0;
     }
-    opacity = opacity.clamp(0.0, 1.0);
 
-    // Scale animation
-    final scale = 0.7 + 0.3 * (1.0 - (progress - 0.5).abs() * 2).clamp(0.0, 1.0);
+    // Slight scale pulse: rises from 0.85 at spawn, peaks at 1.0 mid-life,
+    // back to 0.85 at fade — matches Warchief's combo tracker emphasis.
+    final pulseCurve = math.sin(progress * math.pi); // 0→1→0
+    final scale = (0.85 + 0.15 * pulseCurve).clamp(0.85, 1.0);
 
-    return Align(
-      alignment: const Alignment(0.0, 0.5),
-      child: Opacity(
-        opacity: opacity,
-        child: Transform.scale(
-          scale: scale,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.6),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: const Color(0xFFFFAA00).withValues(alpha: 0.8),
-                width: 2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFFFAA00).withValues(alpha: 0.4),
-                  blurRadius: 20,
-                  spreadRadius: 5,
-                ),
+    return Center(
+      child: Transform.scale(
+        scale: scale,
+        child: Opacity(
+          opacity: opacity.clamp(0.0, 1.0),
+          child: Text(
+            gs.comboMessage!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFFFFAA00),
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.5,
+              shadows: [
+                Shadow(color: Colors.black, blurRadius: 3, offset: Offset(1, 1)),
+                Shadow(color: Color(0x66FF6600), blurRadius: 8),
               ],
-            ),
-            child: Text(
-              gs.comboMessage!,
-              style: const TextStyle(
-                color: Color(0xFFFFCC00),
-                fontSize: 36,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 3,
-                shadows: [
-                  Shadow(
-                    color: Color(0xFFFF6600),
-                    blurRadius: 12,
-                    offset: Offset(2, 2),
-                  ),
-                  Shadow(
-                    color: Colors.black,
-                    blurRadius: 4,
-                    offset: Offset(1, 1),
-                  ),
-                ],
-              ),
             ),
           ),
         ),

@@ -206,12 +206,12 @@ extension PlayerClassInfo on PlayerClass {
   // Max cooldowns for slots 1–10 (indices 0–9).
   // Ultra slot (index 9) has no cooldown — gated by ultra mana only.
   List<double> get slotMaxCooldowns => switch (this) {
-    PlayerClass.spectre   => [ 1.5,  5.0,  5.0,  1.5, 10.0, 20.0, 20.0, 10.0, 10.0, 0.0],
-    PlayerClass.geomancer => [ 1.5, 20.0,  1.5, 20.0, 10.0, 10.0, 10.0,  5.0,  5.0, 0.0],
-    PlayerClass.archon   => [ 1.5, 10.0,  5.0, 10.0,  5.0,  1.5, 10.0, 20.0, 20.0, 0.0],
-    PlayerClass.warden  => [ 1.5,  5.0,  5.0, 10.0,  1.5, 10.0, 20.0, 20.0, 10.0, 0.0],
-    PlayerClass.corsair  => [ 1.5, 20.0,  5.0,  5.0,  1.5, 10.0, 10.0, 10.0, 20.0, 0.0],
-    PlayerClass.trickster => [ 1.5,  5.0,  5.0, 10.0, 10.0, 20.0, 10.0,  1.5, 20.0, 0.0],
+    PlayerClass.spectre   => [ 1.5,  5.0,  5.0,  7.0, 10.0, 20.0, 20.0, 10.0, 10.0, 0.0],
+    PlayerClass.geomancer => [ 1.5, 20.0,  5.0, 20.0, 10.0, 10.0, 10.0,  5.0,  5.0, 0.0],
+    PlayerClass.archon   => [ 1.5, 10.0,  5.0, 10.0,  5.0, 12.0, 10.0, 20.0, 20.0, 0.0],
+    PlayerClass.warden  => [ 1.5,  5.0,  5.0, 10.0, 12.0, 10.0, 20.0, 20.0, 10.0, 0.0],
+    PlayerClass.corsair  => [ 1.5, 20.0,  5.0,  5.0,  8.0, 10.0, 10.0, 10.0, 20.0, 0.0],
+    PlayerClass.trickster => [ 1.5,  5.0,  5.0, 10.0, 10.0, 20.0, 10.0, 10.0, 20.0, 0.0],
     PlayerClass.wrecker  => [ 1.5,  5.0,  5.0, 10.0,  1.5, 10.0, 10.0, 20.0, 20.0, 0.0],
   };
 }

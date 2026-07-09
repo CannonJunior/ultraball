@@ -11,6 +11,9 @@ class DamageIndicator {
   final IndicatorType type;
   double age = 0;
   final double maxAge;
+
+  // Screen-pixel horizontal jitter so simultaneous indicators don't stack
+  // (matches the ±30 px convention used in the Warchief damage overlay).
   final double xJitter;
 
   DamageIndicator({
@@ -20,10 +23,10 @@ class DamageIndicator {
     required this.type,
     double? lifespan,
   }) : maxAge = lifespan ?? (type == IndicatorType.combo ? 2.0 : 1.5),
-       xJitter = (_rng.nextDouble() - 0.5) * 1.5;
+       xJitter = (_rng.nextDouble() - 0.5) * 30.0;
 
-  bool get isExpired => age >= maxAge;
-  double get progress => (age / maxAge).clamp(0.0, 1.0);
+  bool   get isExpired => age >= maxAge;
+  double get progress  => (age / maxAge).clamp(0.0, 1.0);
 
   void update(double dt) {
     age += dt;

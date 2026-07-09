@@ -39,6 +39,18 @@ class FieldPainter extends CustomPainter {
   double sm(double m) => m * scale;
   Offset toScreen(double x, double y) => Offset(sx(x), sy(y));
 
+  Offset? projectPlayer(UltraballPlayer p, Size canvasSize) {
+    switch (viewMode) {
+      case ViewMode.flat:
+        return Offset(sx(p.x), sy(p.y));
+      case ViewMode.threeQuarter:
+        _camera3D.update(canvasSize);
+        return _camera3D.project(p.x, p.y, p.zHeight * 1.2);
+      case ViewMode.full3D:
+        return renderSystem?.project(Vector3(p.x, p.zHeight, p.y), canvasSize);
+    }
+  }
+
   // ====================================================================
   // Static Paints — fixed colors, allocated once for the app lifetime
   // ====================================================================
@@ -401,11 +413,20 @@ class FieldPainter extends CustomPainter {
 
   // Returns the font size for a given indicator type — used for vertical centering.
   static double _indicatorFontSize(IndicatorType type) => switch (type) {
-    IndicatorType.damage => 14.0,
-    IndicatorType.kill   => 18.0,
-    IndicatorType.heal   => 14.0,
-    IndicatorType.combo  => 22.0,
-    IndicatorType.event  => 15.0,
+    IndicatorType.damage => 22.0,
+    IndicatorType.kill   => 26.0,
+    IndicatorType.heal   => 22.0,
+    IndicatorType.combo  => 28.0,
+    IndicatorType.event  => 18.0,
+  };
+
+  // Returns the rise distance in screen pixels for a given indicator type.
+  static double _indicatorRise(IndicatorType type) => switch (type) {
+    IndicatorType.damage => 60.0,
+    IndicatorType.kill   => 80.0,
+    IndicatorType.heal   => 60.0,
+    IndicatorType.combo  => 100.0,
+    IndicatorType.event  => 50.0,
   };
 
   // Builds and caches a full-opacity TextPainter for the indicator.
@@ -414,12 +435,12 @@ class FieldPainter extends CustomPainter {
     final existing = _indicatorTp[ind];
     if (existing != null) return existing;
 
-    final (Color baseColor, double fontSize, bool hasShadow) = switch (ind.type) {
-      IndicatorType.damage => (const Color(0xFFFFFF44), 14.0, false),
-      IndicatorType.kill   => (const Color(0xFFFF2222), 18.0, true),
-      IndicatorType.heal   => (const Color(0xFF44FF88), 14.0, false),
-      IndicatorType.combo  => (const Color(0xFFFFAA00), 22.0, true),
-      IndicatorType.event  => (const Color(0xFFFFFFFF), 15.0, true),
+    final (Color baseColor, double fontSize) = switch (ind.type) {
+      IndicatorType.damage => (const Color(0xFFFFDD00), 22.0),
+      IndicatorType.kill   => (const Color(0xFFFF2222), 26.0),
+      IndicatorType.heal   => (const Color(0xFF44FF88), 22.0),
+      IndicatorType.combo  => (const Color(0xFFFFAA00), 28.0),
+      IndicatorType.event  => (const Color(0xFFFFFFFF), 18.0),
     };
     final tp = TextPainter(
       text: TextSpan(
@@ -427,10 +448,11 @@ class FieldPainter extends CustomPainter {
         style: TextStyle(
           color: baseColor,
           fontSize: fontSize,
-          fontWeight: FontWeight.bold,
-          shadows: hasShadow
-              ? const [Shadow(color: Color(0x99000000), blurRadius: 4, offset: Offset(1, 1))]
-              : null,
+          fontWeight: FontWeight.w900,
+          shadows: const [
+            Shadow(color: Color(0xCC000000), blurRadius: 3, offset: Offset(1, 1)),
+            Shadow(color: Color(0x88000000), blurRadius: 6),
+          ],
         ),
       ),
       textDirection: TextDirection.ltr,
@@ -439,26 +461,100 @@ class FieldPainter extends CustomPainter {
     return tp;
   }
 
+  // Red/orange sparkle particles beneath killing-blow numbers — mirrors the
+  // _SparkleTrailPainter used in the Warchief damage overlay.
+  void _drawDamageSparkles(
+    Canvas canvas,
+    double cx,
+    double cy,
+    DamageIndicator ind,
+    double opacity,
+  ) {
+    const sparkleCount = 5;
+    // Seed from world position so sparkles are stable across frames.
+    final rng = math.Random(ind.worldX.round() * 31 + ind.worldY.round());
+    final paint = Paint()..style = PaintingStyle.fill;
+
+    for (int i = 0; i < sparkleCount; i++) {
+      final seedX     = rng.nextDouble();
+      final seedY     = rng.nextDouble();
+      final seedPhase = rng.nextDouble();
+      final seedSize  = rng.nextDouble();
+
+      final twinkle = (math.sin((ind.age * 8.0) + seedPhase * math.pi * 2) + 1.0) / 2.0;
+
+      final x = cx - 20 + seedX * 40;
+      final y = cy + seedY * 18;
+
+      final sparkleSize    = (1.5 + seedSize * 2.5) * twinkle;
+      final sparkleOpacity = (opacity * twinkle * 0.8).clamp(0.0, 1.0);
+
+      final red = Color.lerp(
+        const Color(0xFFFF4444),
+        const Color(0xFFFF8800),
+        seedPhase,
+      )!;
+
+      paint.color = red.withValues(alpha: sparkleOpacity);
+      canvas.drawCircle(Offset(x, y), sparkleSize, paint);
+
+      if (sparkleSize > 2.0) {
+        paint.color = red.withValues(alpha: sparkleOpacity * 0.3);
+        canvas.drawCircle(Offset(x, y), sparkleSize * 2.0, paint);
+      }
+    }
+  }
+
   void _drawDamageIndicators(Canvas canvas) {
     if (gs.indicators.isEmpty) return;
     for (final ind in gs.indicators) {
-      final screenX = ind.worldX * scale + offsetX + ind.xJitter * scale;
-      final screenY = ind.worldY * scale + offsetY - ind.progress * 60;
-      final opacity = (1.0 - ind.progress * ind.progress).clamp(0.0, 1.0);
+      // xJitter is now in screen pixels (no scale multiplication).
+      final screenX = ind.worldX * scale + offsetX + ind.xJitter;
 
-      final tp = _getOrBuildIndicatorTp(ind);
+      // Ease-out vertical rise: starts fast, decelerates — matches Warchief.
+      final easedProgress = 1.0 - math.pow(1.0 - ind.progress, 2.0) as double;
+      final screenY = ind.worldY * scale + offsetY - easedProgress * _indicatorRise(ind.type);
+
+      // Fade: opaque for the first 70% of lifetime, then linear fade out.
+      const fadeStart = 0.7;
+      final opacity = ind.progress > fadeStart
+          ? ((1.0 - (ind.progress - fadeStart) / (1.0 - fadeStart)).clamp(0.0, 1.0))
+          : 1.0;
+      if (opacity <= 0) continue;
+
+      // Sparkle trail beneath kill indicators.
+      if (ind.type == IndicatorType.kill && ind.progress > 0.05) {
+        _drawDamageSparkles(canvas, screenX, screenY, ind, opacity);
+      }
+
+      final tp       = _getOrBuildIndicatorTp(ind);
       final fontSize = _indicatorFontSize(ind.type);
+
+      // Brief scale-up at spawn for damage / kill / heal (pop effect).
+      final isScalable = ind.type == IndicatorType.damage ||
+                         ind.type == IndicatorType.kill   ||
+                         ind.type == IndicatorType.heal;
+      final scaleT = isScalable && ind.progress < 0.1
+          ? 1.0 + (0.1 - ind.progress) * 3.0
+          : 1.0;
 
       _indicatorLayerPaint.color = Color.fromRGBO(255, 255, 255, opacity);
       canvas.saveLayer(
         Rect.fromCenter(
           center: Offset(screenX, screenY),
-          width: tp.width + 20,
-          height: tp.height + 20,
+          width:  (tp.width  + 20) * scaleT,
+          height: (tp.height + 20) * scaleT,
         ),
         _indicatorLayerPaint,
       );
+      if (scaleT != 1.0) {
+        canvas.save();
+        canvas.translate(screenX, screenY);
+        canvas.scale(scaleT);
+        canvas.translate(-screenX, -screenY);
+      }
       tp.paint(canvas, Offset(screenX - tp.width / 2, screenY - fontSize / 2));
+      if (scaleT != 1.0) canvas.restore();
       canvas.restore();
     }
   }
@@ -652,39 +748,20 @@ class FieldPainter extends CustomPainter {
     final r = sm(1.2);
     final isTarget = p.id == gs.currentTargetId;
 
-    // Target halo — red glow ring (matches TargetFrame border color)
+    // Soft aura glows drawn BEFORE body so they appear as outer halos
     if (isTarget) {
       _gp
         ..color = const Color(0xFFFF3333).withValues(alpha: 0.32)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
       canvas.drawCircle(pos, r + sm(1.2), _gp);
       _gp.maskFilter = null;
-      _sp
-        ..color = const Color(0xFFFF6B6B).withValues(alpha: 0.92)
-        ..strokeWidth = sm(0.3);
-      canvas.drawCircle(pos, r + sm(0.9), _sp);
-      _sp
-        ..color = const Color(0xFFFF6B6B).withValues(alpha: 0.32)
-        ..strokeWidth = sm(0.14);
-      canvas.drawCircle(pos, r + sm(1.5), _sp);
-      _drawTargetTriangles(canvas, pos, r + sm(1.8));
     }
-
-    // Selection halo — cyan-blue glow (matches ManaBars frame border)
     if (p.isSelected) {
       _gp
         ..color = const Color(0xFF1E88E5).withValues(alpha: 0.38)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
       canvas.drawCircle(pos, r + sm(1.0), _gp);
       _gp.maskFilter = null;
-      _sp
-        ..color = const Color(0xFF4cc9f0).withValues(alpha: 0.95)
-        ..strokeWidth = sm(0.28);
-      canvas.drawCircle(pos, r + sm(0.6), _sp);
-      _sp
-        ..color = const Color(0xFF4cc9f0).withValues(alpha: 0.28)
-        ..strokeWidth = sm(0.12);
-      canvas.drawCircle(pos, r + sm(1.05), _sp);
     }
 
     // Ball holder glow
@@ -725,6 +802,30 @@ class FieldPainter extends CustomPainter {
 
     // Health bar
     if (gs.prefs.showHpBars) _drawHealthBar(canvas, p, pos, r);
+
+    // Crisp indicator rings drawn AFTER body so they show on top of the sprite
+    // (mirrors how _draw3DPlayer works; fixes visibility on same-colour bodies)
+    if (isTarget) {
+      _sp
+        ..color = const Color(0xFFFF6B6B).withValues(alpha: 0.92)
+        ..strokeWidth = sm(0.3);
+      canvas.drawCircle(pos, r + sm(0.9), _sp);
+      _sp
+        ..color = const Color(0xFFFF6B6B).withValues(alpha: 0.5)
+        ..strokeWidth = sm(0.14);
+      canvas.drawCircle(pos, r + sm(1.5), _sp);
+      _drawTargetTriangles(canvas, pos, r + sm(1.8));
+    }
+    if (p.isSelected) {
+      _sp
+        ..color = const Color(0xFF4cc9f0).withValues(alpha: 0.95)
+        ..strokeWidth = sm(0.28);
+      canvas.drawCircle(pos, r + sm(0.6), _sp);
+      _sp
+        ..color = const Color(0xFF4cc9f0).withValues(alpha: 0.28)
+        ..strokeWidth = sm(0.12);
+      canvas.drawCircle(pos, r + sm(1.05), _sp);
+    }
   }
 
   void _drawFacingIndicator(Canvas canvas, UltraballPlayer p, Offset center, double r) {
@@ -973,28 +1074,56 @@ class FieldPainter extends CustomPainter {
       Canvas canvas, Size size, UltraballRenderSystem rs) {
     if (gs.indicators.isEmpty) return;
     for (final ind in gs.indicators) {
-      // Rise 3 world units over indicator lifetime
-      final worldY    = ind.progress * 3.0;
+      // Ease-out rise: 3 world units total, decelerating.
+      final easedProgress = 1.0 - math.pow(1.0 - ind.progress, 2.0) as double;
+      // xJitter is in screen pixels — apply it after projection.
       final projected = rs.project(
-        Vector3(ind.worldX + ind.xJitter, worldY, ind.worldY),
+        Vector3(ind.worldX, easedProgress * 3.0, ind.worldY),
         size,
       );
       if (projected == null) continue;
 
-      final opacity  = (1.0 - ind.progress * ind.progress).clamp(0.0, 1.0);
+      final sx = projected.dx + ind.xJitter;
+      final sy = projected.dy;
+
+      // Fade: opaque for the first 70%, then linear fade out.
+      const fadeStart = 0.7;
+      final opacity = ind.progress > fadeStart
+          ? ((1.0 - (ind.progress - fadeStart) / (1.0 - fadeStart)).clamp(0.0, 1.0))
+          : 1.0;
+      if (opacity <= 0) continue;
+
+      if (ind.type == IndicatorType.kill && ind.progress > 0.05) {
+        _drawDamageSparkles(canvas, sx, sy, ind, opacity);
+      }
+
       final tp       = _getOrBuildIndicatorTp(ind);
       final fontSize = _indicatorFontSize(ind.type);
+
+      final isScalable = ind.type == IndicatorType.damage ||
+                         ind.type == IndicatorType.kill   ||
+                         ind.type == IndicatorType.heal;
+      final scaleT = isScalable && ind.progress < 0.1
+          ? 1.0 + (0.1 - ind.progress) * 3.0
+          : 1.0;
 
       _indicatorLayerPaint.color = Color.fromRGBO(255, 255, 255, opacity);
       canvas.saveLayer(
         Rect.fromCenter(
-          center: Offset(projected.dx, projected.dy),
-          width: tp.width + 20,
-          height: tp.height + 20,
+          center: Offset(sx, sy),
+          width:  (tp.width  + 20) * scaleT,
+          height: (tp.height + 20) * scaleT,
         ),
         _indicatorLayerPaint,
       );
-      tp.paint(canvas, Offset(projected.dx - tp.width / 2, projected.dy - fontSize / 2));
+      if (scaleT != 1.0) {
+        canvas.save();
+        canvas.translate(sx, sy);
+        canvas.scale(scaleT);
+        canvas.translate(-sx, -sy);
+      }
+      tp.paint(canvas, Offset(sx - tp.width / 2, sy - fontSize / 2));
+      if (scaleT != 1.0) canvas.restore();
       canvas.restore();
     }
   }
