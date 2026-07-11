@@ -216,6 +216,25 @@ class _InGameSettingsPanelState extends State<InGameSettingsPanel> {
             value: _gs.prefs.showPhaseLines,
             onChanged: (v) => setState(() => _gs.prefs.showPhaseLines = v),
           ),
+          _buildToggleTile(
+            label: 'Debug: Scoreboard Heights',
+            subtitle: 'Show live MainBar / BallDivider / Cards px values',
+            value: _gs.prefs.showScoreboardDebugHeights,
+            onChanged: (v) => setState(() => _gs.prefs.showScoreboardDebugHeights = v),
+          ),
+          const SizedBox(height: 20),
+          _SectionHeader(label: 'TARGET INDICATOR'),
+          const SizedBox(height: 10),
+          _buildSliderTile(
+            label: 'Indicator Size',
+            subtitle: 'Size of the rings and brackets drawn on targeted units',
+            value: _gs.prefs.targetIndicatorSize,
+            min: 0.5,
+            max: 4.0,
+            divisions: 14,
+            displayValue: '${_gs.prefs.targetIndicatorSize.toStringAsFixed(1)}×',
+            onChanged: (v) => setState(() => _gs.prefs.targetIndicatorSize = v),
+          ),
         ],
       ),
     );
@@ -290,6 +309,69 @@ class _InGameSettingsPanelState extends State<InGameSettingsPanel> {
               activeTrackColor: _kGoldDim,
               inactiveThumbColor: const Color(0xFF555566),
               inactiveTrackColor: const Color(0xFF222233),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSliderTile({
+    required String label,
+    required String subtitle,
+    required double value,
+    required double min,
+    required double max,
+    required int divisions,
+    required String displayValue,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+        decoration: BoxDecoration(
+          color: _kCard,
+          border: Border.all(color: _kBorder),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(label,
+                          style: const TextStyle(color: _kText, fontSize: 13, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(subtitle,
+                          style: const TextStyle(color: _kTextFaint, fontSize: 11)),
+                    ],
+                  ),
+                ),
+                Text(displayValue,
+                    style: const TextStyle(color: _kGold, fontSize: 13, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: _kGold,
+                inactiveTrackColor: _kBorder,
+                thumbColor: _kGold,
+                overlayColor: _kGoldDim.withValues(alpha: 0.3),
+                trackHeight: 2,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+              ),
+              child: Slider(
+                value: value,
+                min: min,
+                max: max,
+                divisions: divisions,
+                onChanged: onChanged,
+              ),
             ),
           ],
         ),

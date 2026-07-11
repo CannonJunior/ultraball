@@ -6,10 +6,12 @@ import 'game_settings.dart';
 /// separate wiring. All values start at their sensible defaults.
 class GameplayPreferences {
   // ── Display ──────────────────────────────────────────────────────────────
-  bool showHpBars           = true;
-  bool showPlayerNumbers    = true;
-  bool showDamageIndicators = true;
-  bool showPhaseLines       = true;
+  bool showHpBars              = true;
+  bool showPlayerNumbers       = true;
+  bool showDamageIndicators    = true;
+  bool showPhaseLines          = true;
+  bool showScoreboardDebugHeights = false;
+  double targetIndicatorSize   = 2.0;
 
   // null means "use the value from GameSettings" (the pre-match selection).
   ViewMode? viewModeOverride;

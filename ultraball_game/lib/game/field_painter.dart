@@ -10,6 +10,7 @@ import '../models/terrain_grid.dart';
 import 'game_state.dart';
 import 'camera_3d.dart';
 import '../game3d/ultraball_render_system.dart';
+import '../ui/ui_assets.dart';
 
 /// Long-lived CustomPainter — stored on _GameWidgetState and reused every
 /// frame.  All Paint, Path, and TextPainter instances live here; nothing is
@@ -1128,10 +1129,11 @@ class FieldPainter extends CustomPainter {
 
     // Soft aura glows drawn BEFORE body so they appear as outer halos
     if (isTarget) {
+      final ts = gs.prefs.targetIndicatorSize;
       _gp
         ..color = const Color(0xFFFF3333).withValues(alpha: 0.32)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
-      canvas.drawCircle(pos, r + sm(1.2), _gp);
+      canvas.drawCircle(pos, r + sm(1.2) * ts, _gp);
       _gp.maskFilter = null;
     }
     if (p.isSelected) {
@@ -1155,10 +1157,11 @@ class FieldPainter extends CustomPainter {
     final teamColor = p.team == Team.player
         ? const Color(0xFF1E88E5)
         : const Color(0xFFE53935);
+    final bodyColor = p.isSelected ? UiAssets.classColor(p.playerClass) : teamColor;
 
-    _fp.color = teamColor;
+    _fp.color = bodyColor;
     canvas.drawCircle(pos, r, _fp);
-    _fp.color = teamColor.withValues(alpha: 0.6);
+    _fp.color = bodyColor.withValues(alpha: 0.6);
     canvas.drawCircle(pos, r * 0.7, _fp);
 
     // Facing wedge
@@ -1184,15 +1187,16 @@ class FieldPainter extends CustomPainter {
     // Crisp indicator rings drawn AFTER body so they show on top of the sprite
     // (mirrors how _draw3DPlayer works; fixes visibility on same-colour bodies)
     if (isTarget) {
+      final ts = gs.prefs.targetIndicatorSize;
       _sp
         ..color = const Color(0xFFFF6B6B).withValues(alpha: 0.92)
-        ..strokeWidth = sm(0.3);
-      canvas.drawCircle(pos, r + sm(0.9), _sp);
+        ..strokeWidth = sm(0.3) * ts;
+      canvas.drawCircle(pos, r + sm(0.9) * ts, _sp);
       _sp
         ..color = const Color(0xFFFF6B6B).withValues(alpha: 0.5)
-        ..strokeWidth = sm(0.14);
-      canvas.drawCircle(pos, r + sm(1.5), _sp);
-      _drawTargetTriangles(canvas, pos, r + sm(1.8));
+        ..strokeWidth = sm(0.14) * ts;
+      canvas.drawCircle(pos, r + sm(1.5) * ts, _sp);
+      _drawTargetTriangles(canvas, pos, r + sm(1.8) * ts, ts);
     }
     if (p.isSelected) {
       _sp
@@ -1233,8 +1237,8 @@ class FieldPainter extends CustomPainter {
     canvas.drawPath(_path, _facingPaint);
   }
 
-  void _drawTargetTriangles(Canvas canvas, Offset center, double radius) {
-    const size = 5.0;
+  void _drawTargetTriangles(Canvas canvas, Offset center, double radius, [double scale = 1.0]) {
+    final size = 5.0 * scale;
     for (int i = 0; i < 4; i++) {
       final angle  = i * math.pi / 2;
       final tx     = center.dx + math.cos(angle) * radius;
@@ -1798,9 +1802,10 @@ class FieldPainter extends CustomPainter {
     final teamColor = p.team == Team.player
         ? const Color(0xFF1E88E5)
         : const Color(0xFFE53935);
-    _fp.color = teamColor;
+    final bodyColor = p.isSelected ? UiAssets.classColor(p.playerClass) : teamColor;
+    _fp.color = bodyColor;
     canvas.drawCircle(pos, r, _fp);
-    _fp.color = teamColor.withValues(alpha: 0.6);
+    _fp.color = bodyColor.withValues(alpha: 0.6);
     canvas.drawCircle(pos, r * 0.7, _fp);
 
     _draw3DFacingIndicator(canvas, p);

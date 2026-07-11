@@ -16,17 +16,67 @@ class HighlightClipList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<List<HighlightClip>>(
-      valueListenable: recorder.allClips,
-      builder: (_, clips, __) {
-        if (clips.isEmpty) return const SizedBox.shrink();
-        return _ClipListPanel(
-          clips:        clips.reversed.toList(),
-          recorder:     recorder,
-          homeTeamName: homeTeamName,
-          awayTeamName: awayTeamName,
-        );
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Recording indicator — visible only while R-key recording is active
+        ValueListenableBuilder<bool>(
+          valueListenable: recorder.isRecording,
+          builder: (_, recording, __) {
+            if (!recording) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF200008).withValues(alpha: 0.95),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: const Color(0xFFFF3B53).withValues(alpha: 0.65),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 7, height: 7,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFFFF3B53),
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    Text(
+                      'REC  6s',
+                      style: GoogleFonts.chakraPetch(
+                        fontSize:      9,
+                        fontWeight:    FontWeight.w700,
+                        letterSpacing: 2.5,
+                        color:         const Color(0xFFFF3B53),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+
+        // Clip list
+        ValueListenableBuilder<List<HighlightClip>>(
+          valueListenable: recorder.allClips,
+          builder: (_, clips, __) {
+            if (clips.isEmpty) return const SizedBox.shrink();
+            return _ClipListPanel(
+              clips:        clips.reversed.toList(),
+              recorder:     recorder,
+              homeTeamName: homeTeamName,
+              awayTeamName: awayTeamName,
+            );
+          },
+        ),
+      ],
     );
   }
 }
@@ -92,7 +142,7 @@ class _ClipListPanel extends StatelessWidget {
                 clip:         clips[i],
                 homeTeamName: homeTeamName,
                 awayTeamName: awayTeamName,
-                onTap:        () => recorder.selectedClip.value = clips[i],
+                onTap:        () => recorder.onPlayClipRequest?.call(clips[i]),
               ),
             ),
           ),
@@ -148,9 +198,9 @@ class _ClipItem extends StatelessWidget {
                 child: Text(
                   clip.scoreType.toUpperCase(),
                   style: TextStyle(
-                    color:       teamColor,
-                    fontSize:    8,
-                    fontWeight:  FontWeight.bold,
+                    color:         teamColor,
+                    fontSize:      8,
+                    fontWeight:    FontWeight.bold,
                     letterSpacing: 1,
                   ),
                 ),
@@ -166,9 +216,9 @@ class _ClipItem extends StatelessWidget {
                       clip.scorerName,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color:       Colors.white,
-                        fontSize:    10,
-                        fontWeight:  FontWeight.w600,
+                        color:      Colors.white,
+                        fontSize:   10,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     Text(
@@ -189,6 +239,16 @@ class _ClipItem extends StatelessWidget {
                   fontSize:   12,
                   fontWeight: FontWeight.w700,
                   color:      const Color(0xFFFFCB3D),
+                ),
+              ),
+              const SizedBox(width: 6),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => HighlightRecorder.downloadClip(clip),
+                child: Icon(
+                  Icons.download,
+                  size:  14,
+                  color: Colors.white.withValues(alpha: 0.35),
                 ),
               ),
             ],

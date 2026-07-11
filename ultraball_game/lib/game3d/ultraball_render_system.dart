@@ -60,6 +60,7 @@ class UltraballRenderSystem {
   double _targetIndicatorAnimStartTime = -1.0;
   double _targetAcquiredStartTime      = -1.0;
   String? _lastTargetIndicatorId;
+  double  _lastTargetIndicatorSize = 0.0;
   static const double _targetIndicatorAnimDuration = 0.30;
   static const double _targetAcquiredDuration       = 0.50;
 
@@ -345,22 +346,25 @@ class UltraballRenderSystem {
     }
     if (target == null || !target.isAlive) return;
 
-    const size      = 1.5;
-    const lineWidth = 0.10;
+    final prefSize  = gs.prefs.targetIndicatorSize;
+    final size      = 1.5 * prefSize;
+    final lineWidth = 0.10 * prefSize;
     // Red for enemy targets; green for player-team targets (e.g. pass targeting).
     final color = target.team == Team.opponent
         ? Vector3(1.0, 0.15, 0.15)
         : Vector3(0.15, 1.0, 0.35);
 
     final targetChanged = _lastTargetIndicatorId != gs.currentTargetId;
+    final sizeChanged   = _lastTargetIndicatorSize != prefSize;
 
-    if (_targetIndicatorMesh == null || targetChanged) {
+    if (_targetIndicatorMesh == null || targetChanged || sizeChanged) {
       if (targetChanged && _targetIndicatorTransform != null) {
         _targetIndicatorAnimFrom = _targetIndicatorTransform!.position.clone();
         _targetIndicatorAnimStartTime = _elapsedTime;
       }
       _targetIndicatorMesh = Mesh.targetIndicator(size: size, lineWidth: lineWidth, color: color);
-      _lastTargetIndicatorId = gs.currentTargetId;
+      _lastTargetIndicatorId   = gs.currentTargetId;
+      _lastTargetIndicatorSize = prefSize;
     }
 
     // "Target acquired" flash — yellow ring that briefly appears on target change.

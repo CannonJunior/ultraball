@@ -93,6 +93,48 @@ class _ScoreboardState extends State<Scoreboard>
 
     final actLabel = act.isAct5 ? 'FINAL ACT' : 'ACT ${act.currentAct}';
 
+    final showDebug = gs.prefs.showScoreboardDebugHeights;
+
+    final body = Container(
+      color: _kBg,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          KeyedSubtree(
+            key: _mainBarKey,
+            child: _MainBar(
+              awayName:   gs.settings.awayTeamName,
+              homeName:   gs.settings.homeTeamName,
+              awayScore:  act.opponentScore,
+              homeScore:  act.playerScore,
+              actLabel:   actLabel,
+              act:        act.currentAct,
+              actResults: act.actResults.length,
+              timerSecs:  act.timerSeconds,
+              timerText:  act.timerDisplay,
+              isAct5:     act.isAct5,
+              pipGlow:    _pipGlow,
+              blinkCtrl:  _blinkCtrl,
+            ),
+          ),
+          KeyedSubtree(
+            key: _ballDivKey,
+            child: _BallDivider(ball: gs.ball),
+          ),
+          KeyedSubtree(
+            key: _cardsKey,
+            child: _PlayerCardsRow(
+              awayPlayers: awayPlayers,
+              homePlayers: homePlayers,
+              targetId:    gs.currentTargetId,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (!showDebug) return body;
+
     final mb = _mainBarH?.toStringAsFixed(1) ?? '?';
     final bd = _ballDivH?.toStringAsFixed(1) ?? '?';
     final cr = _cardsH?.toStringAsFixed(1)   ?? '?';
@@ -102,43 +144,7 @@ class _ScoreboardState extends State<Scoreboard>
 
     return Stack(
       children: [
-        Container(
-          color: _kBg,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              KeyedSubtree(
-                key: _mainBarKey,
-                child: _MainBar(
-                  awayName:   gs.settings.awayTeamName,
-                  homeName:   gs.settings.homeTeamName,
-                  awayScore:  act.opponentScore,
-                  homeScore:  act.playerScore,
-                  actLabel:   actLabel,
-                  act:        act.currentAct,
-                  actResults: act.actResults.length,
-                  timerSecs:  act.timerSeconds,
-                  timerText:  act.timerDisplay,
-                  isAct5:     act.isAct5,
-                  pipGlow:    _pipGlow,
-                  blinkCtrl:  _blinkCtrl,
-                ),
-              ),
-              KeyedSubtree(
-                key: _ballDivKey,
-                child: _BallDivider(ball: gs.ball),
-              ),
-              KeyedSubtree(
-                key: _cardsKey,
-                child: _PlayerCardsRow(
-                  awayPlayers: awayPlayers,
-                  homePlayers: homePlayers,
-                  targetId:    gs.currentTargetId,
-                ),
-              ),
-            ],
-          ),
-        ),
+        body,
         Positioned(
           top: 4,
           right: 8,

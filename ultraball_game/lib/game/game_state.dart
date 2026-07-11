@@ -14,22 +14,6 @@ import '../ai/ai_strategy.dart';
 import '../ai/game_data_sink.dart';
 import 'ability_stats_collector.dart';
 
-class ScoreEvent {
-  final String teamId;
-  final String scoreType; // 'Ultra' or 'Meta'
-  final String? scorerName;
-  final int playerScore;
-  final int opponentScore;
-
-  const ScoreEvent({
-    required this.teamId,
-    required this.scoreType,
-    this.scorerName,
-    required this.playerScore,
-    required this.opponentScore,
-  });
-}
-
 class TricksterTrap {
   final double worldX;
   final double worldY;
@@ -111,10 +95,6 @@ class GameState {
 
   // Accumulated match clock — incremented every active game tick; used for DPS calculation.
   double matchTimeElapsed = 0.0;
-
-  /// Called by ActSystem whenever an Ultra or Meta is scored; wired to
-  /// HighlightRecorder.notifyScore() by GameWidget.
-  void Function(ScoreEvent)? highlightScoreCallback;
 
   // Act transition state
   bool showingActTransition = false;

@@ -59,13 +59,13 @@ class _ScoreboardRowState extends State<ScoreboardRow>
     _leftAnim  = CurvedAnimation(parent: _leftCtrl,  curve: Curves.easeOutQuart);
     _rightAnim = CurvedAnimation(parent: _rightCtrl, curve: Curves.easeOutQuart);
     widget.recorder?.clipVersion.addListener(_onNewClip);
-    widget.recorder?.selectedClip.addListener(_onSelectedClip);
+    widget.recorder?.onPlayClipRequest = _handlePlayClipRequest;
   }
 
   @override
   void dispose() {
     widget.recorder?.clipVersion.removeListener(_onNewClip);
-    widget.recorder?.selectedClip.removeListener(_onSelectedClip);
+    widget.recorder?.onPlayClipRequest = null;
     _leftCtrl.dispose();
     _rightCtrl.dispose();
     super.dispose();
@@ -89,10 +89,8 @@ class _ScoreboardRowState extends State<ScoreboardRow>
     }
   }
 
-  // Called when the user selects a clip from the list.
-  void _onSelectedClip() {
-    final clip = widget.recorder?.selectedClip.value;
-    if (clip == null) return;
+  // Called directly (synchronous callback) when the user taps a clip in the list.
+  void _handlePlayClipRequest(HighlightClip clip) {
     if (clip.teamId == 'opponent') {
       _playOnPanel(panelKey: _leftPanelKey, ctrl: _leftCtrl, url: clip.clipUrl);
     } else {

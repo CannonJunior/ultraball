@@ -61,14 +61,6 @@ class ActSystem {
       act.opponentScore += 7;
       gs.showEvent('ULTRA! +7pts for ${gs.settings.awayTeamName}!');
     }
-    gs.highlightScoreCallback?.call(ScoreEvent(
-      teamId: teamId,
-      scoreType: 'Ultra',
-      scorerName: scorer?.name,
-      playerScore: act.playerScore,
-      opponentScore: act.opponentScore,
-    ));
-
     // Check Act 5 end condition
     if (act.isAct5) {
       bool actEnds = false;
@@ -108,13 +100,6 @@ class ActSystem {
       gs.actState.opponentScore += 3;
       gs.showEvent('META! +3pts for ${gs.settings.awayTeamName}!');
     }
-    gs.highlightScoreCallback?.call(ScoreEvent(
-      teamId: teamId,
-      scoreType: 'Meta',
-      scorerName: scorer?.name,
-      playerScore: gs.actState.playerScore,
-      opponentScore: gs.actState.opponentScore,
-    ));
   }
 
   /// Handles forfeit/sub logic when a player dies — extracted from CombatSystem

@@ -89,9 +89,7 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     _focusNode.addListener(_onFocusChange);
     WidgetsBinding.instance.addObserver(this);
 
-    // Set up highlight recorder and wire score events
     _highlightRecorder = HighlightRecorder();
-    _gs.highlightScoreCallback = _highlightRecorder!.notifyScore;
 
     _startGameLoop();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -122,6 +120,7 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
         _renderSystem!.init(_webglCanvas!, widget.settings.creatureType, initialSize);
         _renderSystem!.initPlayers(_gs, useCubeModels: widget.settings.useCubeModels);
         _fieldPainter.renderSystem = _renderSystem;
+        _highlightRecorder?.setSourceCanvas(_webglCanvas);
       });
     }
   }
@@ -245,6 +244,12 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     ActSystem.update(_gs, dt);
     _gs.dataCollector?.tick(dt);
 
+    // Clear target if it died or left the field
+    if (_gs.currentTargetId != null) {
+      final t = _gs.getPlayerById(_gs.currentTargetId!);
+      if (t == null || !t.isAlive || !t.isOnField) _gs.clearTarget();
+    }
+
     // Update damage indicators in a single reverse pass (removes expired + ticks live)
     for (int i = _gs.indicators.length - 1; i >= 0; i--) {
       final ind = _gs.indicators[i];
@@ -256,9 +261,6 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     if (_renderSystem != null && _renderSystem!.ready) {
       _renderSystem!.update(_gs, dt);
     }
-
-    // Render ball-cam frame and advance highlight post-timer
-    _highlightRecorder?.update(_gs, dt);
 
     // Trigger canvas repaint (painter is long-lived; doesn't go through shouldRepaint).
     // ValueListenableBuilder widgets in build() subscribe to this and rebuild their
@@ -506,6 +508,12 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       return;
     }
 
+    // R: start a 6-second highlight recording
+    if (key == LogicalKeyboardKey.keyR) {
+      _highlightRecorder?.startRecording(_gs);
+      return;
+    }
+
     // Space: jump (first press) or double-jump (second press while airborne, costs 15 blue mana)
     if (key == LogicalKeyboardKey.space) {
       player?.tryJump();
@@ -580,7 +588,6 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     }
 
     if (closest == null || closestDist > selectionRadius) {
-      if (_gs.currentTargetId != null) setState(() => _gs.clearTarget());
       return;
     }
 
