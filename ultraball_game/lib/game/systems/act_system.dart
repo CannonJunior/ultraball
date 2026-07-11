@@ -61,6 +61,13 @@ class ActSystem {
       act.opponentScore += 7;
       gs.showEvent('ULTRA! +7pts for ${gs.settings.awayTeamName}!');
     }
+    gs.highlightScoreCallback?.call(ScoreEvent(
+      teamId: teamId,
+      scoreType: 'Ultra',
+      scorerName: scorer?.name,
+      playerScore: act.playerScore,
+      opponentScore: act.opponentScore,
+    ));
 
     // Check Act 5 end condition
     if (act.isAct5) {
@@ -101,6 +108,13 @@ class ActSystem {
       gs.actState.opponentScore += 3;
       gs.showEvent('META! +3pts for ${gs.settings.awayTeamName}!');
     }
+    gs.highlightScoreCallback?.call(ScoreEvent(
+      teamId: teamId,
+      scoreType: 'Meta',
+      scorerName: scorer?.name,
+      playerScore: gs.actState.playerScore,
+      opponentScore: gs.actState.opponentScore,
+    ));
   }
 
   /// Handles forfeit/sub logic when a player dies — extracted from CombatSystem
@@ -127,10 +141,10 @@ class ActSystem {
         : gs.actState.opponentSubUsed;
     if (!subUsed && onField < 7) {
       final sub = roster.firstWhere(
-        (p) => !p.isOnField && p.isAlive,
+        (p) => !p.isOnField && p.isAlive && !p.isInactive,
         orElse: () => roster[0],
       );
-      if (!sub.isOnField && sub.isAlive) {
+      if (!sub.isOnField && sub.isAlive && !sub.isInactive) {
         sub.isOnField = true;
         sub.x = victim.team == Team.player ? 90.0 : 50.0;
         sub.y = 20.0;
@@ -237,7 +251,7 @@ class ActSystem {
     int needed = 7 - onField;
 
     if (needed > 0) {
-      final available = roster.where((p) => !p.isOnField && p.isAlive).toList()
+      final available = roster.where((p) => !p.isOnField && p.isAlive && !p.isInactive).toList()
           ..sort((a, b) => a.deploySlot.compareTo(b.deploySlot));
       final toAdd = math.min(needed, available.length);
       for (int i = 0; i < toAdd; i++) {
@@ -261,7 +275,7 @@ class ActSystem {
     final roster = gs.playerRoster;
     final onField = roster.where((p) => p.isOnField && p.isAlive).length;
     if (onField < 7) {
-      final available = roster.where((p) => !p.isOnField && p.isAlive).toList()
+      final available = roster.where((p) => !p.isOnField && p.isAlive && !p.isInactive).toList()
           ..sort((a, b) => a.deploySlot.compareTo(b.deploySlot));
       final toAdd = math.min(7 - onField, available.length);
       for (int i = 0; i < toAdd; i++) {

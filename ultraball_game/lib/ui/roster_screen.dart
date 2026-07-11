@@ -31,7 +31,7 @@ class _RosterScreenState extends State<RosterScreen> {
   void initState() {
     super.initState();
     _ordered = widget.gs.playerRoster
-        .where((p) => p.isAlive)
+        .where((p) => p.isAlive && !p.isInactive)
         .toList()
       ..sort((a, b) => a.deploySlot.compareTo(b.deploySlot));
   }

@@ -32,6 +32,7 @@ class UltraballPlayer {
 
   bool isAlive = true;
   bool isOnField = false;
+  bool isInactive = false; // excluded from match by class toggle — never subbed in
   int deploySlot = 0; // position in deployment order: 0 = first on field, 14 = last reserve
   bool isSelected = false;
 

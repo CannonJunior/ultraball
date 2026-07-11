@@ -1,3 +1,6 @@
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/creature.dart';
 import '../models/game_settings.dart';
@@ -5,6 +8,8 @@ import '../models/player_class.dart';
 import '../game/game_widget.dart';
 import '../ai/ai_strategy.dart';
 import 'ui_assets.dart';
+
+const _kInactiveKey = 'ultraball_inactive_classes';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -26,7 +31,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
   AiStrategy _aiStrategy   = AiStrategy.tempoTrap;
   AiTactics  _aiTactics    = AiTactics.focusFire;
   List<int> _homeRosterOrder = List.generate(15, (i) => i);
+  Set<int> _inactiveClasses = {};
   bool _testMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInactiveClasses();
+  }
+
+  void _loadInactiveClasses() {
+    try {
+      final raw = html.window.localStorage[_kInactiveKey];
+      if (raw != null && raw.isNotEmpty) {
+        final list = (jsonDecode(raw) as List).cast<int>();
+        _inactiveClasses = list.toSet();
+        // Rebuild roster order: active classes first, inactive at the end
+        for (final classIdx in _inactiveClasses) {
+          final toSink = _homeRosterOrder.where((i) => i % 7 == classIdx).toList();
+          final rest   = _homeRosterOrder.where((i) => i % 7 != classIdx).toList();
+          _homeRosterOrder = [...rest, ...toSink];
+        }
+      }
+    } catch (_) {
+      // Ignore corrupt/missing storage — defaults are fine
+    }
+  }
+
+  void _saveInactiveClasses() {
+    html.window.localStorage[_kInactiveKey] =
+        jsonEncode(_inactiveClasses.toList());
+  }
+
+  void _toggleInactiveClass(int classIdx) {
+    setState(() {
+      if (_inactiveClasses.contains(classIdx)) {
+        _inactiveClasses = Set.from(_inactiveClasses)..remove(classIdx);
+        // Move reactivated indices to end of active reserves (before remaining inactive)
+        final reactivated = _homeRosterOrder.where((i) => i % 7 == classIdx).toList();
+        final rest        = _homeRosterOrder.where((i) => i % 7 != classIdx).toList();
+        _homeRosterOrder  = [...rest, ...reactivated];
+      } else {
+        _inactiveClasses = Set.from(_inactiveClasses)..add(classIdx);
+        // Sink deactivated indices to end of list
+        final toSink     = _homeRosterOrder.where((i) => i % 7 == classIdx).toList();
+        final rest       = _homeRosterOrder.where((i) => i % 7 != classIdx).toList();
+        _homeRosterOrder = [...rest, ...toSink];
+      }
+    });
+    _saveInactiveClasses();
+  }
 
   void _startMatch() {
     final home = TeamDefinition.teams[_homeTeamIdx];
@@ -48,6 +102,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       aiStrategy:   _aiStrategy,
       aiTactics:    _aiTactics,
       homeRosterOrder: List.from(_homeRosterOrder),
+      inactiveClasses: Set.from(_inactiveClasses),
       testMode: _testMode,
     );
 
@@ -672,6 +727,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             awayTeamIdx: _awayTeamIdx,
             homeRosterOrder: _homeRosterOrder,
             onHomeReorder: (newOrder) => setState(() => _homeRosterOrder = newOrder),
+            inactiveClasses: _inactiveClasses,
           ),
           const SizedBox(height: 12),
           _RuleSection(
@@ -751,7 +807,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'Highest score at end of Act 5 wins the match!',
             ],
           ),
-          const _ClassesSection(),
+          _ClassesSection(
+            inactiveClasses: _inactiveClasses,
+            onToggle: _toggleInactiveClass,
+          ),
         ],
       ),
     );
@@ -1209,13 +1268,92 @@ class _RosterEditor extends StatelessWidget {
   final int awayTeamIdx;
   final List<int> homeRosterOrder;
   final ValueChanged<List<int>> onHomeReorder;
+  final Set<int> inactiveClasses;
 
   const _RosterEditor({
     required this.homeTeamIdx,
     required this.awayTeamIdx,
     required this.homeRosterOrder,
     required this.onHomeReorder,
+    required this.inactiveClasses,
   });
+
+  static Color _classColor(int playerIdx) => switch (playerIdx % 7) {
+    0 => const Color(0xFF44FFCC),
+    1 => const Color(0xFFFF44AA),
+    2 => const Color(0xFFFF5544),
+    3 => const Color(0xFF4488FF),
+    4 => const Color(0xFFFFCC44),
+    5 => const Color(0xFFAA44FF),
+    _ => const Color(0xFFFF7700),
+  };
+
+  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 7) {
+    0 => PlayerClass.spectre,
+    1 => PlayerClass.corsair,
+    2 => PlayerClass.geomancer,
+    3 => PlayerClass.archon,
+    4 => PlayerClass.warden,
+    5 => PlayerClass.trickster,
+    _ => PlayerClass.wrecker,
+  };
+
+  // Builds a single inactive player row given a player index and their display name.
+  static Widget _inactiveRow(int playerIdx, String name) {
+    final clsColor = _classColor(playerIdx);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D0808),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: const Color(0xFF3A1A1A)),
+      ),
+      child: Row(children: [
+        const SizedBox(width: 4),
+        SizedBox(
+          width: 60,
+          child: Text('INACTIVE',
+            style: TextStyle(
+              color: const Color(0xFF994444).withValues(alpha: 0.7),
+              fontSize: 9, fontWeight: FontWeight.bold,
+            ))),
+        Container(
+          width: 22, height: 22,
+          decoration: BoxDecoration(
+            color: clsColor.withValues(alpha: 0.07),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: clsColor.withValues(alpha: 0.15), width: 0.5),
+          ),
+          child: Center(child: UiAssets.classIcon(_playerClass(playerIdx), size: 13,
+            color: clsColor.withValues(alpha: 0.35))),
+        ),
+        const SizedBox(width: 4),
+        Expanded(child: Text(name,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.2),
+            fontSize: 13,
+          ))),
+      ]),
+    );
+  }
+
+  static Widget _inactiveDivider() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        Expanded(child: Container(height: 1, color: const Color(0xFF334466))),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Text('INACTIVE',
+            style: TextStyle(
+              color: const Color(0xFF994444).withValues(alpha: 0.7),
+              fontSize: 9, letterSpacing: 1,
+            )),
+        ),
+        Expanded(child: Container(height: 1, color: const Color(0xFF334466))),
+      ]),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1223,6 +1361,11 @@ class _RosterEditor extends StatelessWidget {
     final homeTeamName = TeamDefinition.teams[homeTeamIdx].name;
     final awayNames    = TeamDefinition.teams[awayTeamIdx].playerNames;
     final awayTeamName = TeamDefinition.teams[awayTeamIdx].name;
+
+    // Inactive player indices for each team (home uses roster order, away uses 0-14)
+    final homeInactive = homeRosterOrder.where((i) => inactiveClasses.contains(i % 7)).toList();
+    final awayInactive = List.generate(15, (i) => i)
+        .where((i) => inactiveClasses.contains(i % 7)).toList();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 0),
@@ -1254,6 +1397,7 @@ class _RosterEditor extends StatelessWidget {
           iconColor: const Color(0xFFFFCC00),
           collapsedIconColor: const Color(0x66FFFFFF),
           children: [
+            // Active sections side-by-side
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1263,15 +1407,44 @@ class _RosterEditor extends StatelessWidget {
                   names: homeNames,
                   order: homeRosterOrder,
                   onReorder: onHomeReorder,
+                  inactiveClasses: inactiveClasses,
                 )),
                 const SizedBox(width: 12),
                 Expanded(child: _ReadonlyTeamRoster(
                   teamName: awayTeamName,
                   color: const Color(0xFFE53935),
                   names: awayNames,
+                  inactiveClasses: inactiveClasses,
                 )),
               ],
             ),
+            // Inactive sections side-by-side — rendered at the same level so
+            // they always share the same top edge regardless of active-section height.
+            if (inactiveClasses.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _inactiveDivider(),
+                      for (final idx in homeInactive)
+                        _inactiveRow(idx, homeNames[idx]),
+                    ],
+                  )),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _inactiveDivider(),
+                      for (final idx in awayInactive)
+                        _inactiveRow(idx, awayNames[idx]),
+                    ],
+                  )),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -1285,6 +1458,7 @@ class _EditableTeamRoster extends StatefulWidget {
   final List<String> names;
   final List<int> order;
   final ValueChanged<List<int>> onReorder;
+  final Set<int> inactiveClasses;
 
   const _EditableTeamRoster({
     required this.teamName,
@@ -1292,6 +1466,7 @@ class _EditableTeamRoster extends StatefulWidget {
     required this.names,
     required this.order,
     required this.onReorder,
+    required this.inactiveClasses,
   });
 
   @override
@@ -1410,8 +1585,26 @@ class _EditableTeamRosterState extends State<_EditableTeamRoster> {
     );
   }
 
+  Widget _sectionDivider(String label, Color labelColor) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        Expanded(child: Container(height: 1, color: const Color(0xFF334466))),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Text(label,
+            style: TextStyle(color: labelColor, fontSize: 9, letterSpacing: 1)),
+        ),
+        Expanded(child: Container(height: 1, color: const Color(0xFF334466))),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final activeOrder   = widget.order.where((i) => !widget.inactiveClasses.contains(i % 7)).toList();
+    final inactiveOrder = widget.order.where((i) =>  widget.inactiveClasses.contains(i % 7)).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1424,44 +1617,32 @@ class _EditableTeamRosterState extends State<_EditableTeamRoster> {
           style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 10)),
         const SizedBox(height: 6),
         SizedBox(
-          height: 700.0 + _expanded.length * 120.0,
+          height: activeOrder.length * 46.5
+              + (activeOrder.length > 7 ? 22.0 : 0.0)
+              + _expanded.length * 120.0,
           child: ReorderableListView.builder(
             padding: const EdgeInsets.only(right: 16),
             buildDefaultDragHandles: false,
             onReorder: (oldIdx, newIdx) {
               if (newIdx > oldIdx) newIdx--;
-              final newOrder = List<int>.from(widget.order);
-              newOrder.insert(newIdx, newOrder.removeAt(oldIdx));
-              widget.onReorder(newOrder);
+              final newActive = List<int>.from(activeOrder);
+              newActive.insert(newIdx, newActive.removeAt(oldIdx));
+              widget.onReorder([...newActive, ...inactiveOrder]);
             },
-            itemCount: 15,
+            itemCount: activeOrder.length,
             itemBuilder: (ctx, slot) {
-              final playerIdx = widget.order[slot];
-              final isField   = slot < 7;
-              final clsColor  = _classColor(playerIdx);
-              final slotColor = isField ? const Color(0xFF44FF88) : Colors.white.withValues(alpha: 0.3);
-              final slotText  = isField ? 'FIELD ${slot + 1}' : 'RES ${slot - 6}';
-              final isExpanded = _expanded.contains(slot);
+              final playerIdx  = activeOrder[slot];
+              final isField    = slot < 7;
+              final clsColor   = _classColor(playerIdx);
+              final slotColor  = isField ? const Color(0xFF44FF88) : Colors.white.withValues(alpha: 0.3);
+              final slotText   = isField ? 'FIELD ${slot + 1}' : 'RES ${slot - 6}';
+              final isExpanded = _expanded.contains(playerIdx);
 
               return Column(
-                key: ValueKey('h_$slot'),
+                key: ValueKey('h_$playerIdx'),
                 children: [
                   if (slot == 7)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 3),
-                      child: Row(children: [
-                        Expanded(child: Container(height: 1, color: const Color(0xFF334466))),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          child: Text('RESERVE',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.3),
-                              fontSize: 9, letterSpacing: 1,
-                            )),
-                        ),
-                        Expanded(child: Container(height: 1, color: const Color(0xFF334466))),
-                      ]),
-                    ),
+                    _sectionDivider('RESERVE', Colors.white.withValues(alpha: 0.3)),
                   ReorderableDragStartListener(
                     index: slot,
                     child: Container(
@@ -1503,8 +1684,8 @@ class _EditableTeamRosterState extends State<_EditableTeamRoster> {
                           ))),
                         GestureDetector(
                           onTap: () => setState(() {
-                            if (isExpanded) { _expanded.remove(slot); }
-                            else { _expanded.add(slot); }
+                            if (isExpanded) { _expanded.remove(playerIdx); }
+                            else { _expanded.add(playerIdx); }
                           }),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
@@ -1533,11 +1714,13 @@ class _ReadonlyTeamRoster extends StatefulWidget {
   final String teamName;
   final Color color;
   final List<String> names;
+  final Set<int> inactiveClasses;
 
   const _ReadonlyTeamRoster({
     required this.teamName,
     required this.color,
     required this.names,
+    required this.inactiveClasses,
   });
 
   @override
@@ -1656,8 +1839,31 @@ class _ReadonlyTeamRosterState extends State<_ReadonlyTeamRoster> {
     );
   }
 
+  Widget _sectionDivider(String label, Color labelColor) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        Expanded(child: Container(height: 1, color: const Color(0xFF334466))),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Text(label,
+            style: TextStyle(color: labelColor, fontSize: 9, letterSpacing: 1)),
+        ),
+        Expanded(child: Container(height: 1, color: const Color(0xFF334466))),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Pre-pair each active slot with its display position so divider logic is correct
+    final activeSlots = List.generate(15, (i) => i)
+        .where((i) => !widget.inactiveClasses.contains(i % 7)).toList();
+
+    final activeEntries = [
+      for (int pos = 0; pos < activeSlots.length; pos++) (pos, activeSlots[pos]),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1669,28 +1875,13 @@ class _ReadonlyTeamRosterState extends State<_ReadonlyTeamRoster> {
         Text('AWAY — AI controlled',
           style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 10)),
         const SizedBox(height: 6),
-        for (int slot = 0; slot < 15; slot++) ...[
-          if (slot == 7)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Row(children: [
-                Expanded(child: Container(height: 1, color: const Color(0xFF334466))),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Text('RESERVE',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.3),
-                      fontSize: 9, letterSpacing: 1,
-                    )),
-                ),
-                Expanded(child: Container(height: 1, color: const Color(0xFF334466))),
-              ]),
-            ),
+        for (final (displaySlot, slot) in activeEntries) ...[
+          if (displaySlot == 7) _sectionDivider('RESERVE', Colors.white.withValues(alpha: 0.3)),
           Builder(builder: (context) {
-            final isField   = slot < 7;
-            final clsColor  = _classColor(slot);
-            final slotColor = isField ? const Color(0xFF44FF88) : Colors.white.withValues(alpha: 0.3);
-            final slotText  = isField ? 'FIELD ${slot + 1}' : 'RES ${slot - 6}';
+            final isField    = displaySlot < 7;
+            final clsColor   = _classColor(slot);
+            final slotColor  = isField ? const Color(0xFF44FF88) : Colors.white.withValues(alpha: 0.3);
+            final slotText   = isField ? 'FIELD ${displaySlot + 1}' : 'RES ${displaySlot - 6}';
             final isExpanded = _expanded.contains(slot);
             return Column(
               children: [
@@ -1718,8 +1909,7 @@ class _ReadonlyTeamRosterState extends State<_ReadonlyTeamRoster> {
                             fontWeight: FontWeight.bold,
                           ))),
                       Container(
-                        width: 22,
-                        height: 22,
+                        width: 22, height: 22,
                         decoration: BoxDecoration(
                           color: clsColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
@@ -1761,7 +1951,13 @@ class _ReadonlyTeamRosterState extends State<_ReadonlyTeamRoster> {
 // ─── Classes Section ─────────────────────────────────────────────────────────
 
 class _ClassesSection extends StatelessWidget {
-  const _ClassesSection();
+  final Set<int> inactiveClasses;
+  final ValueChanged<int> onToggle;
+
+  const _ClassesSection({
+    required this.inactiveClasses,
+    required this.onToggle,
+  });
 
   static const _entries = [
     (PlayerClass.spectre,    Color(0xFF44FFCC)),
@@ -1800,9 +1996,16 @@ class _ClassesSection extends StatelessWidget {
           ),
           iconColor: const Color(0xFFFFCC00),
           collapsedIconColor: Color.fromRGBO(255, 255, 255, 0.4),
-          children: _entries
-              .map((e) => _ClassCard(cls: e.$1, color: e.$2))
-              .toList(),
+          children: [
+            for (int i = 0; i < _entries.length; i++)
+              _ClassCard(
+                cls:        _entries[i].$1,
+                color:      _entries[i].$2,
+                classIdx:   i,
+                isInactive: inactiveClasses.contains(i),
+                onToggle:   () => onToggle(i),
+              ),
+          ],
         ),
       ),
     );
@@ -1812,17 +2015,33 @@ class _ClassesSection extends StatelessWidget {
 class _ClassCard extends StatelessWidget {
   final PlayerClass cls;
   final Color color;
+  final int classIdx;
+  final bool isInactive;
+  final VoidCallback onToggle;
 
-  const _ClassCard({required this.cls, required this.color});
+  const _ClassCard({
+    required this.cls,
+    required this.color,
+    required this.classIdx,
+    required this.isInactive,
+    required this.onToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.4),
+        color: isInactive
+            ? Colors.black.withValues(alpha: 0.6)
+            : Colors.black.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withValues(alpha: 0.4), width: 1),
+        border: Border.all(
+          color: isInactive
+              ? const Color(0xFF994444).withValues(alpha: 0.5)
+              : color.withValues(alpha: 0.4),
+          width: 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1830,17 +2049,20 @@ class _ClassCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
+              color: isInactive
+                  ? const Color(0xFF994444).withValues(alpha: 0.08)
+                  : color.withValues(alpha: 0.12),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
             ),
             child: Row(
               children: [
-                UiAssets.classIcon(cls, size: 20, color: color),
+                UiAssets.classIcon(cls, size: 20,
+                    color: isInactive ? color.withValues(alpha: 0.35) : color),
                 const SizedBox(width: 10),
                 Text(
                   cls.displayName,
                   style: TextStyle(
-                    color: color,
+                    color: isInactive ? color.withValues(alpha: 0.35) : color,
                     fontWeight: FontWeight.bold,
                     fontSize: 13,
                     letterSpacing: 2,
@@ -1851,9 +2073,44 @@ class _ClassCard extends StatelessWidget {
                   child: Text(
                     cls.description,
                     style: TextStyle(
-                      color: color.withValues(alpha: 0.7),
+                      color: isInactive
+                          ? color.withValues(alpha: 0.25)
+                          : color.withValues(alpha: 0.7),
                       fontSize: 10,
                       letterSpacing: 1,
+                    ),
+                  ),
+                ),
+                // ── Inactive toggle ────────────────────────────────
+                GestureDetector(
+                  onTap: onToggle,
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isInactive
+                            ? const Color(0xFF994444).withValues(alpha: 0.25)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: isInactive
+                              ? const Color(0xFF994444).withValues(alpha: 0.7)
+                              : Colors.white.withValues(alpha: 0.2),
+                          width: 1,
+                        ),
+                      ),
+                      child: Text(
+                        isInactive ? 'INACTIVE' : 'ACTIVE',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                          color: isInactive
+                              ? const Color(0xFFFF6666)
+                              : Colors.white.withValues(alpha: 0.4),
+                        ),
+                      ),
                     ),
                   ),
                 ),

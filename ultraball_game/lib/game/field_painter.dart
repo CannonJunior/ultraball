@@ -314,38 +314,348 @@ class FieldPainter extends CustomPainter {
   }
 
   void _drawTerrainOverlay(Canvas canvas) {
+    final t       = gs.matchTimeElapsed;
+    final terrain = gs.terrain.cells;
+
     gs.terrain.forEach((col, row, cell) {
-      if (cell.surface == SurfaceType.normal && !cell.isPit && cell.height == 0.0) return;
+      if (cell.surface == SurfaceType.normal && !cell.isPit &&
+          cell.height.abs() < 0.05 && cell.targetHeight.abs() < 0.05) return;
 
-      final wx = col * kCellW;
-      final wy = row * kCellH;
+      final wx   = col * kCellW;
+      final wy   = row * kCellH;
       final rect = Rect.fromLTWH(sx(wx), sy(wy), sm(kCellW), sm(kCellH));
+      final cx   = rect.center.dx;
+      final cy   = rect.center.dy;
+      final cw   = rect.width;
+      final ch   = rect.height;
 
-      Color? fillColor;
       if (cell.isPit) {
-        fillColor = const Color(0xCC000000);
+        _drawPitCell(canvas, rect, cx, cy, cw, ch, cell, col, row, terrain, t);
       } else if (cell.surface == SurfaceType.lava) {
-        fillColor = const Color(0xBBFF4400);
+        _drawLavaCell(canvas, rect, cx, cy, cw, ch, t);
       } else if (cell.surface == SurfaceType.ice) {
-        fillColor = const Color(0x6688DDFF);
+        _drawIceCell(canvas, rect, cw, ch, col, row, t);
       } else if (cell.surface == SurfaceType.mud) {
-        fillColor = const Color(0x99664422);
+        _drawMudCell(canvas, rect, cx, cy, cw, ch, col, row, t);
       } else if (cell.height > 0.5) {
-        // Hill: shade by height
-        final t = (cell.height / 4.0).clamp(0.0, 1.0);
-        final alpha = (t * 180).toInt();
-        fillColor = Color.fromARGB(alpha, 100, 200, 80);
+        _drawHillCell(canvas, rect, cx, cy, cw, ch, cell);
       } else if (cell.height < -0.5) {
-        final t = (-cell.height / 3.0).clamp(0.0, 1.0);
-        final alpha = (t * 180).toInt();
-        fillColor = Color.fromARGB(alpha, 0, 0, 0);
-      }
-
-      if (fillColor != null) {
-        _fp.color = fillColor;
-        canvas.drawRect(rect, _fp);
+        _drawValleyCell(canvas, rect, cx, cy, cw, ch, cell);
       }
     });
+  }
+
+  void _drawTerrainOverlay3D(Canvas canvas) {
+    final t = gs.matchTimeElapsed;
+    gs.terrain.forEach((col, row, cell) {
+      if (cell.surface == SurfaceType.normal && !cell.isPit &&
+          cell.height.abs() < 0.05 && cell.targetHeight.abs() < 0.05) return;
+
+      final x0 = col * kCellW;
+      final y0 = row * kCellH;
+      final x1 = x0 + kCellW;
+      final y1 = y0 + kCellH;
+
+      if (cell.isPit) {
+        final depth = (-cell.height / 3.0).clamp(0.0, 1.0);
+        _fp.color = Color.fromARGB((185 * depth).toInt(), 30, 18, 38);
+        _draw3DQuad(canvas, x0, y0, x1, y1, _fp);
+        final ix = kCellW * 0.18; final iy = kCellH * 0.18;
+        _fp.color = Color.fromARGB((215 * depth).toInt(), 12, 6, 20);
+        _draw3DQuad(canvas, x0 + ix, y0 + iy, x1 - ix, y1 - iy, _fp);
+        final ix2 = kCellW * 0.38; final iy2 = kCellH * 0.38;
+        _fp.color = Color.fromARGB((245 * depth).toInt(), 3, 0, 8);
+        _draw3DQuad(canvas, x0 + ix2, y0 + iy2, x1 - ix2, y1 - iy2, _fp);
+        if (depth > 0.65) {
+          final pulse = (math.sin(t * 2.8) * 0.5 + 0.5) * ((depth - 0.65) / 0.35);
+          _fp.color = Color.fromARGB((50 * pulse).toInt(), 100, 0, 180);
+          _draw3DQuad(canvas, x0, y0, x1, y1, _fp);
+        }
+      } else if (cell.surface == SurfaceType.lava) {
+        _fp.color = const Color(0xD9FF3300);
+        _draw3DQuad(canvas, x0, y0, x1, y1, _fp);
+        final b1 = math.sin(t * 2.3 + x0 * 0.07 + y0 * 0.11) * 0.5 + 0.5;
+        _fp.color = Color.fromARGB((90 + (b1 * 70).toInt()), 255, 190, 0);
+        _draw3DQuad(canvas, x0 + kCellW * 0.2, y0 + kCellH * 0.2,
+                             x1 - kCellW * 0.2, y1 - kCellH * 0.2, _fp);
+      } else if (cell.surface == SurfaceType.ice) {
+        _fp.color = const Color(0x7788CCFF);
+        _draw3DQuad(canvas, x0, y0, x1, y1, _fp);
+      } else if (cell.surface == SurfaceType.mud) {
+        _fp.color = const Color(0xCC5C3A1A);
+        _draw3DQuad(canvas, x0, y0, x1, y1, _fp);
+      } else if (cell.height > 0.5) {
+        final h = cell.height;
+        _fp.color = Color.fromARGB(180, (30 + h * 8).toInt().clamp(0, 255), 100, 20);
+        _draw3DQuadAtZ(canvas, x0, y0, x1, y1, h, _fp);
+      }
+    });
+  }
+
+  // ── Pit / Sinkhole ─────────────────────────────────────────────────────────
+
+  void _drawPitCell(Canvas canvas, Rect rect, double cx, double cy,
+      double cw, double ch, TerrainCell cell, int col, int row,
+      List<List<TerrainCell>> terrain, double t) {
+    final depth = (-cell.height / 3.0).clamp(0.0, 1.0);
+
+    // Three concentric layers simulating depth: outer rim → mid ring → void core
+    _fp.color = Color.fromARGB((185 * depth).toInt(), 30, 18, 38);
+    canvas.drawRect(rect, _fp);
+
+    _fp.color = Color.fromARGB((215 * depth).toInt(), 12, 6, 20);
+    canvas.drawRect(Rect.fromLTRB(
+        rect.left + cw * 0.18, rect.top + ch * 0.18,
+        rect.right - cw * 0.18, rect.bottom - ch * 0.18), _fp);
+
+    _fp.color = Color.fromARGB((245 * depth).toInt(), 3, 0, 8);
+    canvas.drawRect(Rect.fromLTRB(
+        rect.left + cw * 0.38, rect.top + ch * 0.38,
+        rect.right - cw * 0.38, rect.bottom - ch * 0.38), _fp);
+
+    // Pulsing purple void glow on fully-open pits
+    if (depth > 0.65) {
+      final pulse = (math.sin(t * 2.8) * 0.5 + 0.5) * ((depth - 0.65) / 0.35);
+      _fp.color = Color.fromARGB((50 * pulse).toInt(), 100, 0, 180);
+      canvas.drawRect(rect, _fp);
+    }
+
+    // Edge cracks on outer faces (sides not adjacent to another pit cell)
+    final noLeft   = col == 0               || !terrain[col - 1][row].isPit;
+    final noRight  = col >= kTerrainCols - 1 || !terrain[col + 1][row].isPit;
+    final noTop    = row == 0               || !terrain[col][row - 1].isPit;
+    final noBottom = row >= kTerrainRows - 1 || !terrain[col][row + 1].isPit;
+
+    if (depth > 0.08) {
+      _sp.strokeWidth = (sm(0.22)).clamp(1.0, 3.5);
+      final seed = col * 53 + row * 97;
+
+      // Draws 2 cracks radiating inward from an edge segment [a → b]
+      void drawEdgeCracks(Offset a, Offset b, int kseed) {
+        for (int k = 0; k < 2; k++) {
+          final frac  = 0.28 + k * 0.44;
+          final ex    = a.dx + (b.dx - a.dx) * frac;
+          final ey    = a.dy + (b.dy - a.dy) * frac;
+          final angle = math.atan2(cy - ey, cx - ex) +
+              ((kseed + k * 7) % 9 - 4) * 0.18;
+          final len   = (cw * 0.14 + (kseed % 7) * cw * 0.028) * depth;
+          _sp.color = Color.fromARGB(
+              (190 * depth).toInt(),
+              130 + (kseed * 3 % 40), 80 + (kseed % 28), 40);
+          canvas.drawLine(
+              Offset(ex, ey),
+              Offset(ex + math.cos(angle) * len, ey + math.sin(angle) * len),
+              _sp);
+          // Secondary fork off the first crack
+          if (depth > 0.4 && k == 0) {
+            final angle2 = angle + 0.5;
+            final len2   = len * 0.55;
+            final midX   = ex + math.cos(angle) * len * 0.5;
+            final midY   = ey + math.sin(angle) * len * 0.5;
+            _sp.color = Color.fromARGB(
+                (130 * depth).toInt(), 110, 70, 35);
+            canvas.drawLine(Offset(midX, midY),
+                Offset(midX + math.cos(angle2) * len2,
+                       midY + math.sin(angle2) * len2), _sp);
+          }
+        }
+      }
+
+      if (noLeft)   drawEdgeCracks(rect.topLeft,    rect.bottomLeft,  seed);
+      if (noRight)  drawEdgeCracks(rect.topRight,   rect.bottomRight, seed + 20);
+      if (noTop)    drawEdgeCracks(rect.topLeft,     rect.topRight,   seed + 40);
+      if (noBottom) drawEdgeCracks(rect.bottomLeft, rect.bottomRight, seed + 60);
+    }
+  }
+
+  // ── Lava Pool ──────────────────────────────────────────────────────────────
+
+  void _drawLavaCell(Canvas canvas, Rect rect, double cx, double cy,
+      double cw, double ch, double t) {
+    // Base orange-red fill
+    _fp.color = const Color(0xD9FF3300);
+    canvas.drawRect(rect, _fp);
+
+    // Animated yellow/orange hot bubbles (2 per cell, offset by cell position)
+    final b1 = math.sin(t * 2.3 + cx * 0.07 + cy * 0.11) * 0.5 + 0.5;
+    _fp.color = Color.fromARGB((90 + (b1 * 70).toInt()), 255, 190, 0);
+    canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(cx - cw * 0.17, cy + ch * 0.10),
+            width: cw * 0.38, height: ch * 0.32),
+        _fp);
+
+    final b2 = math.sin(t * 1.7 + cx * 0.13 + cy * 0.08) * 0.5 + 0.5;
+    _fp.color = Color.fromARGB((70 + (b2 * 55).toInt()), 255, 230, 20);
+    canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(cx + cw * 0.16, cy - ch * 0.14),
+            width: cw * 0.28, height: ch * 0.24),
+        _fp);
+
+    // Dark red cooling-crust cracks (static, cell-position-based)
+    _sp.color = const Color(0x99880000);
+    _sp.strokeWidth = (sm(0.18)).clamp(1.0, 2.5);
+    final ang = (cx * 0.3 + cy * 0.17) % (math.pi);
+    canvas.drawLine(
+        Offset(rect.left + cw * 0.15, cy + ch * 0.1 * math.sin(ang)),
+        Offset(rect.right - cw * 0.15, cy - ch * 0.1 * math.sin(ang)),
+        _sp);
+    canvas.drawLine(
+        Offset(cx + cw * 0.08 * math.cos(ang), rect.top + ch * 0.2),
+        Offset(cx - cw * 0.08 * math.cos(ang), rect.bottom - ch * 0.2),
+        _sp);
+
+    // Bright edge glow
+    _sp.color = const Color(0x66FF8800);
+    _sp.strokeWidth = (sm(0.35)).clamp(1.5, 4.0);
+    canvas.drawRect(rect, _sp);
+  }
+
+  // ── Ice Patch ──────────────────────────────────────────────────────────────
+
+  void _drawIceCell(Canvas canvas, Rect rect, double cw, double ch,
+      int col, int row, double t) {
+    // Translucent blue base
+    _fp.color = const Color(0x7788CCFF);
+    canvas.drawRect(rect, _fp);
+
+    // Crystalline diagonal highlight lines (deterministic per cell)
+    _sp.color = const Color(0xAADDEEFF);
+    _sp.strokeWidth = (sm(0.12)).clamp(0.8, 2.0);
+    final seed = col * 41 + row * 71;
+    for (int i = 0; i < 3; i++) {
+      final frac = 0.15 + i * 0.35 + (seed % 7) * 0.02;
+      // Diagonal: top-left area to bottom-right
+      canvas.drawLine(
+          Offset(rect.left + cw * frac, rect.top),
+          Offset(rect.left, rect.top + ch * frac),
+          _sp);
+      // Cross-diagonal
+      canvas.drawLine(
+          Offset(rect.right - cw * frac, rect.top),
+          Offset(rect.right, rect.top + ch * frac),
+          _sp);
+    }
+
+    // Subtle shimmer — tiny bright spot that drifts
+    final shimX = rect.left + cw * (0.3 + math.sin(t * 1.9 + col * 0.8) * 0.25);
+    final shimY = rect.top  + ch * (0.3 + math.cos(t * 2.1 + row * 0.9) * 0.25);
+    _fp.color = const Color(0x44FFFFFF);
+    canvas.drawCircle(Offset(shimX, shimY), (cw * 0.12).clamp(2.0, 8.0), _fp);
+
+    // Light blue border
+    _sp.color = const Color(0x9999DDFF);
+    _sp.strokeWidth = (sm(0.20)).clamp(1.0, 3.0);
+    canvas.drawRect(rect, _sp);
+  }
+
+  // ── Mud Zone ───────────────────────────────────────────────────────────────
+
+  void _drawMudCell(Canvas canvas, Rect rect, double cx, double cy,
+      double cw, double ch, int col, int row, double t) {
+    // Dark brown base
+    _fp.color = const Color(0xCC5C3A1A);
+    canvas.drawRect(rect, _fp);
+
+    // Irregular darker mud patches (deterministic)
+    _fp.color = const Color(0x993D2410);
+    final seed = col * 67 + row * 43;
+    canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(cx + cw * ((seed % 7 - 3) * 0.08),
+                           cy + ch * ((seed % 5 - 2) * 0.10)),
+            width: cw * (0.45 + (seed % 5) * 0.05),
+            height: ch * (0.35 + (seed % 4) * 0.04)),
+        _fp);
+    canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(cx - cw * 0.20 + cw * ((seed % 3) * 0.06),
+                           cy + ch * 0.18 + ch * ((seed % 4 - 2) * 0.05)),
+            width: cw * 0.28, height: ch * 0.22),
+        _fp);
+
+    // Slow "bubble" rising once every ~3s per cell
+    final bubblePhase = (t * 0.33 + (seed % 10) * 0.1) % 1.0;
+    if (bubblePhase > 0.6) {
+      final bAlpha = ((bubblePhase - 0.6) / 0.4 * 180).toInt();
+      final bScale = (bubblePhase - 0.6) / 0.4;
+      final bx = cx + cw * ((seed % 9 - 4) * 0.06);
+      final by = cy - ch * 0.15 - bScale * ch * 0.20;
+      _sp.color = Color.fromARGB(bAlpha, 90, 60, 25);
+      _sp.strokeWidth = (sm(0.15)).clamp(0.8, 2.0);
+      canvas.drawCircle(Offset(bx, by), (cw * 0.06 * bScale).clamp(1.0, 6.0), _sp);
+    }
+
+    // Slightly lighter rim
+    _sp.color = const Color(0x66806040);
+    _sp.strokeWidth = (sm(0.18)).clamp(1.0, 2.5);
+    canvas.drawRect(rect, _sp);
+  }
+
+  // ── Hill / Raised Terrain ──────────────────────────────────────────────────
+
+  void _drawHillCell(Canvas canvas, Rect rect, double cx, double cy,
+      double cw, double ch, TerrainCell cell) {
+    final t = (cell.height / 4.0).clamp(0.0, 1.0);
+
+    // Base green fill (stronger with height)
+    _fp.color = Color.fromARGB((80 + (t * 140).toInt()), 60, 170, 50);
+    canvas.drawRect(rect, _fp);
+
+    // Highlight: lighter upper-left quadrant (light from top-left)
+    _fp.color = Color.fromARGB((50 + (t * 80).toInt()), 140, 230, 100);
+    canvas.drawRect(
+        Rect.fromLTRB(rect.left, rect.top,
+            rect.left + cw * 0.55, rect.top + ch * 0.55), _fp);
+
+    // Shadow: darker lower-right quadrant
+    _fp.color = Color.fromARGB((60 + (t * 70).toInt()), 20, 80, 15);
+    canvas.drawRect(
+        Rect.fromLTRB(rect.left + cw * 0.45, rect.top + ch * 0.45,
+            rect.right, rect.bottom), _fp);
+
+    // Contour lines (one per meter of height, max 3 visible)
+    _sp.color = Color.fromARGB((70 + (t * 60).toInt()), 30, 120, 20);
+    _sp.strokeWidth = (sm(0.15)).clamp(0.7, 2.0);
+    final levels = cell.height.floor().clamp(1, 3);
+    for (int i = 1; i <= levels; i++) {
+      final f = 1.0 - (i / 4.0);
+      canvas.drawRect(
+          Rect.fromLTRB(
+              rect.left + cw * f * 0.35, rect.top + ch * f * 0.35,
+              rect.right - cw * f * 0.35, rect.bottom - ch * f * 0.35),
+          _sp);
+    }
+  }
+
+  // ── Valley / Sinkhole Depression ───────────────────────────────────────────
+
+  void _drawValleyCell(Canvas canvas, Rect rect, double cx, double cy,
+      double cw, double ch, TerrainCell cell) {
+    final t = (-cell.height / 3.0).clamp(0.0, 1.0);
+
+    // Dark fill
+    _fp.color = Color.fromARGB((100 + (t * 120).toInt()), 10, 8, 18);
+    canvas.drawRect(rect, _fp);
+
+    // Slightly lighter shadow-rim (perimeter lighter than center)
+    _fp.color = Color.fromARGB((40 + (t * 50).toInt()), 40, 30, 55);
+    canvas.drawRect(Rect.fromLTRB(
+        rect.left + cw * 0.22, rect.top + ch * 0.22,
+        rect.right - cw * 0.22, rect.bottom - ch * 0.22), _fp);
+
+    // Dark center core
+    _fp.color = Color.fromARGB((150 + (t * 80).toInt()), 3, 2, 8);
+    canvas.drawOval(
+        Rect.fromCenter(center: Offset(cx, cy),
+            width: cw * 0.4, height: ch * 0.4),
+        _fp);
+
+    // Subtle rim outline
+    _sp.color = Color.fromARGB((80 + (t * 60).toInt()), 60, 45, 80);
+    _sp.strokeWidth = (sm(0.18)).clamp(0.8, 2.0);
+    canvas.drawRect(rect, _sp);
   }
 
   void _drawTricksterTraps(Canvas canvas) {
@@ -385,30 +695,98 @@ class FieldPainter extends CustomPainter {
     final player = gs.selectedPlayer;
     if (player == null) return;
 
-    final tx = (player.x + math.cos(player.facing) * GameState.terrainAimRange)
-        .clamp(0.0, 140.0);
-    final ty = (player.y + math.sin(player.facing) * GameState.terrainAimRange)
-        .clamp(0.0, 40.0);
+    final eventType = gs.terrainAimEventType;
+    final isPit      = eventType?.name == 'openPit';
+    final isFissure  = eventType?.name == 'fissure';
+    final isHill     = eventType?.name == 'riseMountain';
 
-    // Draw reticle circle
-    final isPit = gs.terrainAimEventType?.name == 'openPit';
-    final reticleColor = isPit ? const Color(0xAAFF0000) : const Color(0xAA44FF88);
-    final radius = sm(isPit ? 4.0 : 5.0);
+    final color = isPit || isFissure
+        ? const Color(0xCCFF2200)
+        : isHill
+            ? const Color(0xAA44FF88)
+            : const Color(0xAAFFCC00);
 
-    _sp.color = reticleColor;
-    _sp.strokeWidth = 2.0;
-    canvas.drawCircle(Offset(sx(tx), sy(ty)), radius, _sp);
+    final px = sx(player.x);
+    final py = sy(player.y);
 
-    // Cross-hair lines
-    canvas.drawLine(
-      Offset(sx(tx) - radius, sy(ty)), Offset(sx(tx) + radius, sy(ty)), _sp);
-    canvas.drawLine(
-      Offset(sx(tx), sy(ty) - radius), Offset(sx(tx), sy(ty) + radius), _sp);
+    if (isFissure) {
+      // Fissure: show a dash-path preview in the facing direction (5m)
+      final dashEndX = (player.x + math.cos(player.facing) * 5.0).clamp(0.0, 140.0);
+      final dashEndY = (player.y + math.sin(player.facing) * 5.0).clamp(0.0, 40.0);
+      final ex = sx(dashEndX), ey = sy(dashEndY);
 
-    // Range line from player to target
-    _sp.color = reticleColor.withValues(alpha: 0.4);
-    _sp.strokeWidth = 1.0;
-    canvas.drawLine(Offset(sx(player.x), sy(player.y)), Offset(sx(tx), sy(ty)), _sp);
+      // Dash arrow
+      _sp.color = color;
+      _sp.strokeWidth = 3.0;
+      canvas.drawLine(Offset(px, py), Offset(ex, ey), _sp);
+
+      // Arrow head
+      final ang   = math.atan2(ey - py, ex - px);
+      final aSize = sm(1.2);
+      _path.reset();
+      _path.moveTo(ex, ey);
+      _path.lineTo(ex - math.cos(ang - 0.45) * aSize,
+                   ey - math.sin(ang - 0.45) * aSize);
+      _path.lineTo(ex - math.cos(ang + 0.45) * aSize,
+                   ey - math.sin(ang + 0.45) * aSize);
+      _path.close();
+      _fp.color = color;
+      canvas.drawPath(_path, _fp);
+
+      // Pit zone at the midpoint of the dash path
+      final midX = (player.x + dashEndX) / 2;
+      final midY = (player.y + dashEndY) / 2;
+      _sp.color = color.withValues(alpha: 0.7);
+      _sp.strokeWidth = 1.5;
+      canvas.drawCircle(Offset(sx(midX), sy(midY)), sm(3.0), _sp);
+    } else {
+      final tx = (player.x + math.cos(player.facing) * GameState.terrainAimRange)
+          .clamp(0.0, 140.0);
+      final ty = (player.y + math.sin(player.facing) * GameState.terrainAimRange)
+          .clamp(0.0, 40.0);
+      final radius = sm(isPit ? 4.0 : 5.0);
+
+      // Outer reticle circle
+      _sp.color = color;
+      _sp.strokeWidth = 2.0;
+      canvas.drawCircle(Offset(sx(tx), sy(ty)), radius, _sp);
+
+      // Inner fill tint
+      _fp.color = color.withValues(alpha: 0.12);
+      canvas.drawCircle(Offset(sx(tx), sy(ty)), radius, _fp);
+
+      // Cross-hair
+      _sp.strokeWidth = 1.5;
+      canvas.drawLine(Offset(sx(tx) - radius, sy(ty)),
+                      Offset(sx(tx) + radius, sy(ty)), _sp);
+      canvas.drawLine(Offset(sx(tx), sy(ty) - radius),
+                      Offset(sx(tx), sy(ty) + radius), _sp);
+
+      // Pit: add rotating danger triangles
+      if (isPit) {
+        final t = gs.matchTimeElapsed;
+        final rot = t * 1.5;
+        _fp.color = color.withValues(alpha: 0.55);
+        for (int i = 0; i < 4; i++) {
+          final a    = rot + i * math.pi / 2;
+          final tipX = sx(tx) + math.cos(a) * (radius + sm(0.6));
+          final tipY = sy(ty) + math.sin(a) * (radius + sm(0.6));
+          _path.reset();
+          _path.moveTo(tipX, tipY);
+          _path.lineTo(tipX - math.cos(a - 0.5) * sm(0.8),
+                       tipY - math.sin(a - 0.5) * sm(0.8));
+          _path.lineTo(tipX - math.cos(a + 0.5) * sm(0.8),
+                       tipY - math.sin(a + 0.5) * sm(0.8));
+          _path.close();
+          canvas.drawPath(_path, _fp);
+        }
+      }
+
+      // Range line
+      _sp.color = color.withValues(alpha: 0.35);
+      _sp.strokeWidth = 1.0;
+      canvas.drawLine(Offset(px, py), Offset(sx(tx), sy(ty)), _sp);
+    }
   }
 
   // Returns the font size for a given indicator type — used for vertical centering.
@@ -1151,6 +1529,7 @@ class FieldPainter extends CustomPainter {
 
     _draw3DFieldOutline(canvas);
     if (gs.prefs.showPhaseLines) _draw3DPhaseLines(canvas);
+    _drawTerrainOverlay3D(canvas);
     _draw3DEntities(canvas);
     _draw3DThrowArcPreview(canvas);
     if (gs.prefs.showDamageIndicators) _drawDamageIndicators(canvas);
@@ -1233,6 +1612,23 @@ class FieldPainter extends CustomPainter {
     final p1 = _camera3D.project(x1, y0, 0);
     final p2 = _camera3D.project(x1, y1, 0);
     final p3 = _camera3D.project(x0, y1, 0);
+    if (p0 == null || p1 == null || p2 == null || p3 == null) return;
+    _path
+      ..reset()
+      ..moveTo(p0.dx, p0.dy)
+      ..lineTo(p1.dx, p1.dy)
+      ..lineTo(p2.dx, p2.dy)
+      ..lineTo(p3.dx, p3.dy)
+      ..close();
+    canvas.drawPath(_path, paint);
+  }
+
+  void _draw3DQuadAtZ(Canvas canvas, double x0, double y0, double x1, double y1,
+      double z, Paint paint) {
+    final p0 = _camera3D.project(x0, y0, z);
+    final p1 = _camera3D.project(x1, y0, z);
+    final p2 = _camera3D.project(x1, y1, z);
+    final p3 = _camera3D.project(x0, y1, z);
     if (p0 == null || p1 == null || p2 == null || p3 == null) return;
     _path
       ..reset()

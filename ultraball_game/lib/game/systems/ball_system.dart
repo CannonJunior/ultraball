@@ -65,13 +65,14 @@ class BallSystem {
       ball.zHeight += ball.zVelocity * dt;
 
       if (ball.zHeight <= 0) {
-        // Ball has landed — become loose, no stun penalty
+        // Ball has landed uncaught — become loose and stun the throwing team
         ball.zHeight = 0.0;
         ball.zVelocity = 0.0;
         ball.isInFlight = false;
         ball.isChargedThrow = false;
         ball.velX = 0;
         ball.velY = 0;
+        _handleFailedPass(gs);
         return;
       }
     }

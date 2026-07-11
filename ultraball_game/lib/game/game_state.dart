@@ -14,6 +14,22 @@ import '../ai/ai_strategy.dart';
 import '../ai/game_data_sink.dart';
 import 'ability_stats_collector.dart';
 
+class ScoreEvent {
+  final String teamId;
+  final String scoreType; // 'Ultra' or 'Meta'
+  final String? scorerName;
+  final int playerScore;
+  final int opponentScore;
+
+  const ScoreEvent({
+    required this.teamId,
+    required this.scoreType,
+    this.scorerName,
+    required this.playerScore,
+    required this.opponentScore,
+  });
+}
+
 class TricksterTrap {
   final double worldX;
   final double worldY;
@@ -95,6 +111,10 @@ class GameState {
 
   // Accumulated match clock — incremented every active game tick; used for DPS calculation.
   double matchTimeElapsed = 0.0;
+
+  /// Called by ActSystem whenever an Ultra or Meta is scored; wired to
+  /// HighlightRecorder.notifyScore() by GameWidget.
+  void Function(ScoreEvent)? highlightScoreCallback;
 
   // Act transition state
   bool showingActTransition = false;
@@ -281,17 +301,36 @@ class GameState {
         opponentRoster.add(p);
       }
 
-      // Apply home roster order: first 7 slots go on field, rest are reserves
+      // Apply home roster order: active classes fill slots 0-N consecutively;
+      // inactive-class players are marked isInactive and never deployed.
+      int homeActiveSlot = 0;
       for (int slot = 0; slot < 15; slot++) {
         final playerIdx = settings.homeRosterOrder[slot];
-        playerRoster[playerIdx].deploySlot = slot;
-        playerRoster[playerIdx].isOnField = slot < 7;
+        final p = playerRoster[playerIdx];
+        if (settings.inactiveClasses.contains(playerIdx % 7)) {
+          p.isInactive = true;
+          p.isOnField  = false;
+          p.deploySlot = 100 + slot; // beyond normal range so sort won't pick them
+        } else {
+          p.deploySlot = homeActiveSlot;
+          p.isOnField  = homeActiveSlot < 7;
+          homeActiveSlot++;
+        }
       }
-      // Apply away roster order
+      // Apply away roster order (same inactive-class exclusion)
+      int awayActiveSlot = 0;
       for (int slot = 0; slot < 15; slot++) {
         final oppIdx = settings.awayRosterOrder[slot];
-        opponentRoster[oppIdx].deploySlot = slot;
-        opponentRoster[oppIdx].isOnField = slot < 7;
+        final p = opponentRoster[oppIdx];
+        if (settings.inactiveClasses.contains(oppIdx % 7)) {
+          p.isInactive = true;
+          p.isOnField  = false;
+          p.deploySlot = 100 + slot;
+        } else {
+          p.deploySlot = awayActiveSlot;
+          p.isOnField  = awayActiveSlot < 7;
+          awayActiveSlot++;
+        }
       }
     }
 

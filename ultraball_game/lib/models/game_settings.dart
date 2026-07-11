@@ -50,6 +50,8 @@ class GameSettings {
   // Roster order: indices 0-14 into playerNames. First 7 go on field, rest are reserves in sub order.
   final List<int> homeRosterOrder;
   final List<int> awayRosterOrder;
+  // Class indices (0=Spectre … 6=Wrecker) excluded from the match entirely.
+  final Set<int> inactiveClasses;
   final bool testMode;
 
   static List<String> _namesFor(String teamName) {
@@ -72,9 +74,11 @@ class GameSettings {
     this.aiTactics    = AiTactics.focusFire,
     List<int>? homeRosterOrder,
     List<int>? awayRosterOrder,
+    Set<int>? inactiveClasses,
     this.testMode = false,
   })  : homePlayerNames = homePlayerNames ?? _namesFor(homeTeamName),
         awayPlayerNames = awayPlayerNames ?? _namesFor(awayTeamName),
         homeRosterOrder = homeRosterOrder ?? List.generate(15, (i) => i),
-        awayRosterOrder = awayRosterOrder ?? List.generate(15, (i) => i);
+        awayRosterOrder = awayRosterOrder ?? List.generate(15, (i) => i),
+        inactiveClasses = inactiveClasses ?? {};
 }

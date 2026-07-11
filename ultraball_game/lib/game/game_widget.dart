@@ -23,10 +23,12 @@ import '../ui/roster_screen.dart';
 import '../ui/in_game_settings_panel.dart';
 import '../ui/damage_meter.dart';
 import '../ui/game_summary_screen.dart';
+import '../ui/highlight_clip_list.dart';
 import '../ui/ui_theme.dart';
 import '../ai/learning_ai.dart';
 import '../ai/game_data_collector.dart';
 import '../game3d/ultraball_render_system.dart';
+import 'highlight_recorder.dart';
 
 class GameWidget extends StatefulWidget {
   final GameSettings settings;
@@ -53,6 +55,8 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
   // 3D WebGL render system (full3D view mode only)
   UltraballRenderSystem? _renderSystem;
   html.CanvasElement?    _webglCanvas;
+
+  HighlightRecorder? _highlightRecorder;
 
   // Long-lived painter — reused every frame so its cached Paints/TextPainters persist
   late FieldPainter _fieldPainter;
@@ -84,6 +88,10 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     _gs.dataCollector = _dataCollector;
     _focusNode.addListener(_onFocusChange);
     WidgetsBinding.instance.addObserver(this);
+
+    // Set up highlight recorder and wire score events
+    _highlightRecorder = HighlightRecorder();
+    _gs.highlightScoreCallback = _highlightRecorder!.notifyScore;
 
     _startGameLoop();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -127,6 +135,7 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     _canvasRepaint.dispose();
     _renderSystem?.dispose();
     _webglCanvas?.remove();
+    _highlightRecorder?.dispose();
     super.dispose();
   }
 
@@ -247,6 +256,9 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     if (_renderSystem != null && _renderSystem!.ready) {
       _renderSystem!.update(_gs, dt);
     }
+
+    // Render ball-cam frame and advance highlight post-timer
+    _highlightRecorder?.update(_gs, dt);
 
     // Trigger canvas repaint (painter is long-lived; doesn't go through shouldRepaint).
     // ValueListenableBuilder widgets in build() subscribe to this and rebuild their
@@ -671,14 +683,17 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
         },
         child: Column(
           children: [
-            // Scoreboard row: side panels + centered 1/3-width scoreboard.
-            // SizedBox(height:110) gives the LayoutBuilder inside ScoreboardRow
-            // a bounded maxHeight so its Row(CrossAxisAlignment.stretch) never
-            // receives tight-infinite height constraints.  110 matches the
-            // Container(height:110) that Scoreboard declares as its outer shell.
-            SizedBox(
-              height: 110,
-              child: ScoreboardRow(gs: _gs, repaint: _canvasRepaint),
+            // IntrinsicHeight measures Scoreboard's natural height (~197 px:
+            // _MainBar 110 + _BallDivider 32 + _PlayerCardsRow ~55) and passes
+            // that as a bounded maxHeight to ScoreboardRow's
+            // Row(CrossAxisAlignment.stretch). ScoreboardRow uses Expanded(flex:)
+            // instead of LayoutBuilder, so this measurement succeeds.
+            IntrinsicHeight(
+              child: ScoreboardRow(
+                gs:       _gs,
+                repaint:  _canvasRepaint,
+                recorder: _highlightRecorder,
+              ),
             ),
 
             // Game canvas
@@ -762,11 +777,25 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
                               ),
                             ),
 
-                            // Team roster panel (right side)
+                            // Team roster panel + highlight clip list (right side, stacked)
                             Positioned(
                               top: 8,
                               right: 8,
-                              child: _RosterPanel(gs: _gs),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _RosterPanel(gs: _gs),
+                                  if (_highlightRecorder != null) ...[
+                                    const SizedBox(height: 8),
+                                    HighlightClipList(
+                                      recorder:     _highlightRecorder!,
+                                      homeTeamName: widget.settings.homeTeamName,
+                                      awayTeamName: widget.settings.awayTeamName,
+                                    ),
+                                  ],
+                                ],
+                              ),
                             ),
 
                             // Settings gear button (top-left)

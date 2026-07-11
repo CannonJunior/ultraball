@@ -42,6 +42,26 @@ class _ScoreboardState extends State<Scoreboard>
   late final AnimationController _blinkCtrl;
   late final Animation<double>   _pipGlow;
 
+  // ── Debug height measurement ──────────────────────────────────────────────
+  final _mainBarKey = GlobalKey();
+  final _ballDivKey = GlobalKey();
+  final _cardsKey   = GlobalKey();
+  double? _mainBarH, _ballDivH, _cardsH;
+
+  void _readHeights() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      double? h(GlobalKey k) =>
+          (k.currentContext?.findRenderObject() as RenderBox?)?.size.height;
+      final mb = h(_mainBarKey);
+      final bd = h(_ballDivKey);
+      final cr = h(_cardsKey);
+      if (mb != _mainBarH || bd != _ballDivH || cr != _cardsH) {
+        setState(() { _mainBarH = mb; _ballDivH = bd; _cardsH = cr; });
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -62,6 +82,8 @@ class _ScoreboardState extends State<Scoreboard>
 
   @override
   Widget build(BuildContext context) {
+    _readHeights();
+
     final gs  = widget.gs;
     final act = gs.actState;
 
@@ -71,33 +93,69 @@ class _ScoreboardState extends State<Scoreboard>
 
     final actLabel = act.isAct5 ? 'FINAL ACT' : 'ACT ${act.currentAct}';
 
-    return Container(
-      color: _kBg,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _MainBar(
-            awayName:   gs.settings.awayTeamName,
-            homeName:   gs.settings.homeTeamName,
-            awayScore:  act.opponentScore,
-            homeScore:  act.playerScore,
-            actLabel:   actLabel,
-            act:        act.currentAct,
-            actResults: act.actResults.length,
-            timerSecs:  act.timerSeconds,
-            timerText:  act.timerDisplay,
-            isAct5:     act.isAct5,
-            pipGlow:    _pipGlow,
-            blinkCtrl:  _blinkCtrl,
+    final mb = _mainBarH?.toStringAsFixed(1) ?? '?';
+    final bd = _ballDivH?.toStringAsFixed(1) ?? '?';
+    final cr = _cardsH?.toStringAsFixed(1)   ?? '?';
+    final total = (_mainBarH != null && _ballDivH != null && _cardsH != null)
+        ? (_mainBarH! + _ballDivH! + _cardsH!).toStringAsFixed(1)
+        : '?';
+
+    return Stack(
+      children: [
+        Container(
+          color: _kBg,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              KeyedSubtree(
+                key: _mainBarKey,
+                child: _MainBar(
+                  awayName:   gs.settings.awayTeamName,
+                  homeName:   gs.settings.homeTeamName,
+                  awayScore:  act.opponentScore,
+                  homeScore:  act.playerScore,
+                  actLabel:   actLabel,
+                  act:        act.currentAct,
+                  actResults: act.actResults.length,
+                  timerSecs:  act.timerSeconds,
+                  timerText:  act.timerDisplay,
+                  isAct5:     act.isAct5,
+                  pipGlow:    _pipGlow,
+                  blinkCtrl:  _blinkCtrl,
+                ),
+              ),
+              KeyedSubtree(
+                key: _ballDivKey,
+                child: _BallDivider(ball: gs.ball),
+              ),
+              KeyedSubtree(
+                key: _cardsKey,
+                child: _PlayerCardsRow(
+                  awayPlayers: awayPlayers,
+                  homePlayers: homePlayers,
+                  targetId:    gs.currentTargetId,
+                ),
+              ),
+            ],
           ),
-          _BallDivider(ball: gs.ball),
-          _PlayerCardsRow(
-            awayPlayers: awayPlayers,
-            homePlayers: homePlayers,
-            targetId:    gs.currentTargetId,
+        ),
+        Positioned(
+          top: 4,
+          right: 8,
+          child: IgnorePointer(
+            child: Text(
+              'MainBar:${mb}  BallDiv:${bd}  Cards:${cr}  Total:${total}',
+              style: const TextStyle(
+                color: Color(0xFFFFFF00),
+                fontSize: 10,
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.bold,
+                shadows: [Shadow(color: Colors.black, blurRadius: 4)],
+              ),
+            ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
