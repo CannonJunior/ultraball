@@ -13,6 +13,10 @@ class GameplayPreferences {
   bool showScoreboardDebugHeights = false;
   double targetIndicatorSize   = 2.0;
 
+  // Which ability slot icon (1–10) is currently hovered in the HUD.
+  // Read by FieldPainter to draw the world-space range circle.
+  int? hoveredAbilitySlot;
+
   // null means "use the value from GameSettings" (the pre-match selection).
   ViewMode? viewModeOverride;
 

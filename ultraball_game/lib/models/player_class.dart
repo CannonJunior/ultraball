@@ -1,5 +1,26 @@
 enum PlayerClass { spectre, geomancer, archon, warden, corsair, trickster, wrecker }
 
+/// Semantic purpose of an ability — drives icon color.
+enum AbilityType {
+  damage,   // deals direct damage as primary effect
+  heal,     // restores HP (self or ally)
+  selfBuff, // enhances speed, defense, or invulnerability on self
+  support,  // buffs or restores an ally (mana, shield, pull-ally)
+  cc,       // crowd control: stun, confuse, dedicated snare, pull-enemy
+  movement, // repositioning with no significant damage primary
+  terrain,  // creates or manipulates field terrain
+  utility,  // mark, drain, creature manipulation, disruption
+  ultra,    // APEX ability gated by ultra mana
+}
+
+/// Secondary properties shown as corner pips on the ability icon.
+enum AbilityTag {
+  aoe,    // hits multiple targets — top-left orange pip
+  cc,     // CC rider on a non-CC-type ability — top-right purple pip
+  snare,  // slow/root rider (shown only if no cc tag) — top-right blue pip
+  fumble, // forces ball fumble — bottom-right gold pip
+}
+
 extension PlayerClassInfo on PlayerClass {
   String get displayName => switch (this) {
     PlayerClass.spectre    => 'SPECTRE',
@@ -86,14 +107,14 @@ extension PlayerClassInfo on PlayerClass {
     // Play pattern: tank up → heal ally → cleanse → speed burst → pull ally → stomp → mass heal
     PlayerClass.archon => [
       'Stonefist',      // 1  melee knockback
-      'Fault Line',     // 2  stun strike
-      'Field Stitch',   // 3  heal ally (spam)
+      'Fault Line',     // 2  snare strike
+      'March',          // 3  speed burst
       'Fortress',       // 4  self damage reduction
-      'Absolution',     // 5  cleanse ally CC
-      'March',          // 6  speed burst
-      'Tenacity',       // 7  pull ally + heal
-      'Aegis Stomp',    // 8  stun + AoE knockback
-      'Salvation',      // 9  mass heal
+      'Field Stitch',   // 5  heal ally
+      'Charge',         // 6  gap-close + snare
+      'Tenacity',       // 7  self heal + mana
+      'Aegis Stomp',    // 8  ally damage reduction
+      'Salvation',      // 9  mass heal + cleanse
       'CITADEL',        // 10 ultra
     ],
     // ── WARDEN ──────────────────────────────────────────────────────────────
@@ -180,15 +201,15 @@ extension PlayerClassInfo on PlayerClass {
       'Raise hills across 30m · open pits under all enemies',
     ],
     PlayerClass.archon => [
-      '15 dmg · 2m push',
-      '22 dmg · 1s stun',
-      '+35 HP to nearest ally',
-      '50% dmg reduction for 3s',
-      'Cleanse all CC from nearest ally',
+      '20 dmg · 2m push',
+      '28 dmg · 1.5s snare (50% slow)',
       '1.5× speed for 3s',
-      'Pull nearest ally 7m toward self · +25 HP',
-      '25 dmg · 2s stun to nearest enemy · 3m AoE knockback',
-      '+55 HP · CC cleanse to all allies in 10m',
+      '50% dmg reduction for 3s',
+      '+35 HP to nearest ally',
+      'Dash to target (up to 8m) · 25 dmg · 1s stun on hit',
+      'Self +35 HP · +20 Blue Mana',
+      '30% dmg reduction to nearest ally for 4s',
+      '+25 HP · CC cleanse to all allies in 7m',
       '50% dmg reduction · stun immunity · +8 HP/s · 6s',
     ],
     PlayerClass.warden => [
@@ -246,7 +267,7 @@ extension PlayerClassInfo on PlayerClass {
     //                  1     2     3     4     5     6     7     8     9    10
     PlayerClass.spectre    => ['—', '20R', '15B', '20B', '25R', '30R', '30B', '25B', '40R', '5U'],
     PlayerClass.geomancer  => ['—', '20R', '15R', '20B', '25R', '30B', '35B', '35R', '30R', '5U'],
-    PlayerClass.archon     => ['—', '20R', '20B', '25B', '20B', '25B', '35B', '30R', '50B', '5U'],
+    PlayerClass.archon     => ['—', '20R', '20B', '25B', '20B', '25R', '35B', '30R', '50B', '5U'],
     PlayerClass.warden     => ['—', '20R', '20B', '25B', '15B', '25R', '35B', '30R', '45B', '5U'],
     PlayerClass.corsair    => ['—', '20R', '15B', '20R', '25R', '30R', '20B', '30B', '30R', '5U'],
     PlayerClass.trickster  => ['—', '20B', '15B', '25R', '20B', '35R', '25B', '20B', '30R', '5U'],
@@ -258,12 +279,22 @@ extension PlayerClassInfo on PlayerClass {
     //                  1       2       3        4          5       6       7        8        9         10
     PlayerClass.spectre   => ['2.5m',  '2.5m',  'self',   '6m dash',  'self',    '2.5m',   '10m',    '4m AoE',  '2.5m',   'self'   ],
     PlayerClass.geomancer => ['2.5m',  '2.5m',  '2.5m',  'self',     '5m AoE',  'aimed',  '7m',     'aimed',   '5m dash','30m AoE'],
-    PlayerClass.archon    => ['2.5m',  '3m',    '5m',    'self',     '5m',      'self',   '7m',     '3m AoE',  '10m AoE','10m AoE'],
+    PlayerClass.archon    => ['2.5m',  '3m',    'self',  'self',     '5m',      '8m',     'self',   '5m',      '7m AoE', '10m AoE'],
     PlayerClass.warden    => ['2.5m',  '3m',    '5m',    '5m',       'self',    '3m',     '5m',     '7m',      'global', 'global' ],
     PlayerClass.corsair   => ['2.5m',  '2.5m',  'self',  '5m dash',  '3m',      '4m',     '20m',    '6m',      '3.5m',   'self'   ],
     PlayerClass.trickster => ['2.5m',  '7m',    'self',  '3m',       '8m',      'global', '5m',     '5m AoE',  '3m',     'global' ],
     PlayerClass.wrecker   => ['2.5m',  '2.5m',  '5m dash','3m',      '4m AoE',  '2.5m',   '8m',    '4m AoE',  '2.5m',   '6m AoE' ],
   };
+
+  /// Numeric range in world units for slot [slot] (1-indexed).
+  /// Returns 0.0 for self-cast, global, aimed, or unparseable ranges.
+  double slotRange(int slot) {
+    if (slot < 1 || slot > 10) return 0.0;
+    final str = abilityRanges[slot - 1];
+    if (str == 'self' || str == 'global' || str == 'aimed') return 0.0;
+    final m = RegExp(r'^(\d+(?:\.\d+)?)m').firstMatch(str);
+    return m != null ? double.parse(m.group(1)!) : 0.0;
+  }
 
   // Max cooldowns for slots 1–10 (indices 0–9).
   // All classes share the same cooldown tier pattern:
@@ -281,4 +312,48 @@ extension PlayerClassInfo on PlayerClass {
     PlayerClass.trickster  => [1.5, 1.5, 5.0, 5.0, 5.0, 10.0, 10.0, 20.0, 20.0, 0.0],
     PlayerClass.wrecker    => [1.5, 1.5, 5.0, 5.0, 5.0, 10.0, 10.0, 20.0, 20.0, 0.0],
   };
+
+  // ─── Semantic ability metadata ────────────────────────────────────────────
+  // Based on what each slot actually does in combat_system.dart (slots 1–10).
+  // Drives icon color and corner-pip indicators in the ability hotbar.
+
+  List<AbilityType> get abilityTypes {
+    const d = AbilityType.damage,   h = AbilityType.heal,
+              b = AbilityType.selfBuff, p = AbilityType.support,
+              c = AbilityType.cc,   m = AbilityType.movement,
+              t = AbilityType.terrain,  u = AbilityType.utility,
+              x = AbilityType.ultra;
+    return switch (this) {
+      // Spectre:   jab  snare  sprint  dash   invuln  stun-hit  self-heal  AoE-snare  stun-immune  ultra
+      PlayerClass.spectre   => [d, d, b, m, b, d, h, c, b, x],
+      // Geomancer: fist  hill  shove  pit  AoE-snare  armor  selfheal  upheaval  fissure  ultra
+      PlayerClass.geomancer => [d, t, d, t, d, b, h, b, t, x],
+      // Archon:    fist  snare  sprint  shield  heal-ally  charge  self-heal  ally-shield  AoE-heal  ultra
+      PlayerClass.archon    => [d, d, b, b, h, d, h, p, h, x],
+      // Warden:    jab  snare  sprint  heal-ally  mana-ally  stun+snare  big-heal  AoE-mana  dash-stun  ultra
+      PlayerClass.warden    => [d, d, b, h, p, c, h, p, c, x],
+      // Corsair:   fang  stun+fumble  sprint  dash-snare  dmgbuff  hit+snare  mark  AoE-push  bait  ultra
+      PlayerClass.corsair   => [d, d, b, m, b, d, u, c, u, x],
+      // Trickster: hex-hit  teleport  sprint  confuse  goad  swap  drain  AoE-hex  chaos  ultra
+      PlayerClass.trickster => [d, m, b, c, u, u, u, c, c, x],
+      // Wrecker:   all damage, all the time
+      PlayerClass.wrecker   => [d, d, d, d, d, d, d, d, d, x],
+    };
+  }
+
+  List<Set<AbilityTag>> get abilityTags {
+    const a = AbilityTag.aoe,   c = AbilityTag.cc,
+              s = AbilityTag.snare, f = AbilityTag.fumble;
+    const e = <AbilityTag>{};
+    return switch (this) {
+      //                                      1   2      3  4  5     6     7  8      9  10
+      PlayerClass.spectre   => [e, {s}, e, e, e, {c}, e, {a}, e, e],
+      PlayerClass.geomancer => [e, e,   e, e, {a, s}, e, e, e, e, {a}],
+      PlayerClass.archon    => [e, {s}, e, e, e, {s}, e, e, {a}, {a}],
+      PlayerClass.warden    => [e, {s}, e, e, e, {s}, e, {a}, e, {a}],
+      PlayerClass.corsair   => [e, {c, f}, e, {s}, e, {s}, e, {a}, e, e],
+      PlayerClass.trickster => [e, {s}, e, {f}, {a}, e, {c}, {a}, {f}, {a}],
+      PlayerClass.wrecker   => [e, {c}, e, {s}, {a}, {c}, {a}, {a, c}, {c}, {a, c}],
+    };
+  }
 }

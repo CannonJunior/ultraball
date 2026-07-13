@@ -45,6 +45,7 @@ class UltraballRenderSystem {
   CharacterRig? _creatureRig;
 
   final Map<String, CharacterRig> _playerRigs = {};
+  final Map<String, CharacterRig> _selectedCubeRigs = {};
   bool _useCubeModels = false;
 
   bool _ready = false;
@@ -125,15 +126,22 @@ class UltraballRenderSystem {
   void initPlayers(GameState gs, {bool useCubeModels = false}) {
     _useCubeModels = useCubeModels;
     _playerRigs.clear();
+    _selectedCubeRigs.clear();
     for (final p in gs.playerRoster) {
       _playerRigs[p.id] = useCubeModels
           ? PlayerMeshBuilder.buildCube(p.team)
           : PlayerMeshBuilder.build(p.team, p.playerClass);
+      if (useCubeModels) {
+        _selectedCubeRigs[p.id] = PlayerMeshBuilder.buildCubeSelected(p.team, p.playerClass);
+      }
     }
     for (final p in gs.opponentRoster) {
       _playerRigs[p.id] = useCubeModels
           ? PlayerMeshBuilder.buildCube(p.team)
           : PlayerMeshBuilder.build(p.team, p.playerClass);
+      if (useCubeModels) {
+        _selectedCubeRigs[p.id] = PlayerMeshBuilder.buildCubeSelected(p.team, p.playerClass);
+      }
     }
   }
 
@@ -147,6 +155,10 @@ class UltraballRenderSystem {
     // Player animation
     for (final player in gs.fieldPlayers) {
       PlayerAnimator.update(player, _getRig(player), dt);
+      if (_useCubeModels) {
+        final selRig = _selectedCubeRigs[player.id];
+        if (selRig != null) PlayerAnimator.update(player, selRig, dt);
+      }
     }
 
     // Creature body-bob + facing update
@@ -195,6 +207,16 @@ class UltraballRenderSystem {
   }
 
   CameraMode get cameraMode => _camera?.mode ?? CameraMode.broadcast;
+
+  /// Zoom in/out for ball-cam mode (broadcast camera only).
+  /// Ball-cam tightens the view; toggling off restores broadcast defaults.
+  void setBallCam(bool enabled) {
+    if (!_ready || _camera?.mode != CameraMode.broadcast) return;
+    _camera!.startCameraTransition(
+      targetPitch:    enabled ? 50.0 : 35.0,
+      targetDistance: enabled ? 28.0 : 55.0,
+    );
+  }
 
   // ── render ────────────────────────────────────────────────────────────────
 
@@ -273,6 +295,7 @@ class UltraballRenderSystem {
     _ballMeshes = null;
     _creatureRig = null;
     _playerRigs.clear();
+    _selectedCubeRigs.clear();
     _ready = false;
     debugPrint('[UltraballRenderSystem] disposed');
   }
@@ -326,7 +349,9 @@ class UltraballRenderSystem {
     PerspectiveCamera c,
     UltraballPlayer player,
   ) {
-    final rig = _getRig(player);
+    final rig = (_useCubeModels && player.isSelected)
+        ? (_selectedCubeRigs[player.id] ?? _getRig(player))
+        : _getRig(player);
     final charT = _playerTransform(player);
     for (final part in rig.parts) {
       r.render(part.mesh, part.getWorldTransform(charT), c);

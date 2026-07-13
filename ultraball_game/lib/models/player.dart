@@ -112,6 +112,15 @@ class UltraballPlayer {
   String? lastExecutedAbility;
   double lastExecutedTimer = 0.0;
 
+  // Ability combo streak (queue-chaining counter)
+  int abilityComboStreak = 0;
+  int lastExecutedComboStreak = 0; // captured at fire time for stable badge display
+
+  // Exiting queue labels: abilities just fired from queue, fading out
+  final List<String> exitingQueueNames = [];
+  final List<double> exitingQueueTimers = [];
+  static const double queueExitDuration = 1.0;
+
   // Max durations for buff progress rings (set alongside timers)
   double damageBoostMax = 0.0;
   double damageReductionMax = 0.0;
@@ -330,6 +339,20 @@ class UltraballPlayer {
       if (lastExecutedTimer <= 0) lastExecutedAbility = null;
     }
 
+    // Tick exiting queue labels
+    for (int i = exitingQueueTimers.length - 1; i >= 0; i--) {
+      exitingQueueTimers[i] -= dt;
+      if (exitingQueueTimers[i] <= 0) {
+        exitingQueueTimers.removeAt(i);
+        exitingQueueNames.removeAt(i);
+      }
+    }
+    // Decay combo streak when GCD is done and queue is empty
+    if (gcdRemaining <= 0 && abilityQueue.isEmpty) {
+      abilityComboStreak = 0;
+      lastExecutedComboStreak = 0;
+    }
+
     // Jump physics
     if (isAirborne) {
       zVelocity -= _gravity * dt;
@@ -483,5 +506,9 @@ class UltraballPlayer {
     abilityQueue = [];
     lastExecutedAbility = null;
     lastExecutedTimer = 0;
+    abilityComboStreak = 0;
+    lastExecutedComboStreak = 0;
+    exitingQueueNames.clear();
+    exitingQueueTimers.clear();
   }
 }

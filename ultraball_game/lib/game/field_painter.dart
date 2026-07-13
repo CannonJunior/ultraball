@@ -25,6 +25,10 @@ class FieldPainter extends CustomPainter {
 
   // View mode
   ViewMode viewMode = ViewMode.flat;
+  /// When true the active renderer centres its camera on the ball each frame.
+  bool ballCam = false;
+  bool _prevBallCam = false; // detects toggle so we can force one camera rebuild
+
   final Camera3D _camera3D = Camera3D();
   Size _last3DSize = Size.zero;
 
@@ -251,10 +255,28 @@ class FieldPainter extends CustomPainter {
   // paint()
   // ====================================================================
 
+  // Ball-cam: update scale/offsetX/offsetY to centre the viewport on the ball.
+  // Called at the top of paint() so all sx/sy/sm helpers use the right transform.
+  void _applyBallCamTransform(Size size) {
+    const viewW = 42.0; // world units visible horizontally
+    final viewH = viewW * size.height / size.width;
+    final camScale = size.width / viewW;
+    final ball = gs.ball;
+    final cx = ball.x.clamp(viewW / 2, 140.0 - viewW / 2);
+    final cy = ball.y.clamp(viewH / 2, 40.0 - viewH / 2);
+    scale   = camScale;
+    offsetX = size.width  / 2 - cx * camScale;
+    offsetY = size.height / 2 - cy * camScale;
+    // Force dash-path cache rebuild since offset changes every frame
+    _dashScale = -1;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     if (viewMode == ViewMode.threeQuarter) { _paint3D(canvas, size); return; }
     if (viewMode == ViewMode.full3D) { _paintFull3D(canvas, size); return; }
+
+    if (ballCam) _applyBallCamTransform(size);
 
     // 1. Background
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), _bgPaint);
@@ -307,11 +329,17 @@ class FieldPainter extends CustomPainter {
     // 11b. Terrain aim reticle
     _drawTerrainAimReticle(canvas);
 
+    // 11c. Ability range circle (hovered icon)
+    _drawAbilityRangeCircle(canvas);
+
     // 12. Ball
     _drawBall(canvas);
 
     // 13. Damage indicators
     if (gs.prefs.showDamageIndicators) _drawDamageIndicators(canvas);
+
+    // 14. Ability queue overlay (above selected player)
+    _drawAbilityQueueOverlay(canvas, size);
   }
 
   void _drawTerrainOverlay(Canvas canvas) {
@@ -838,6 +866,164 @@ class FieldPainter extends CustomPainter {
     )..layout();
     _indicatorTp[ind] = tp;
     return tp;
+  }
+
+  void _drawAbilityRangeCircle(Canvas canvas) {
+    final slot = gs.prefs.hoveredAbilitySlot;
+    if (slot == null) return;
+    final player = gs.selectedPlayer;
+    if (player == null) return;
+    final range = player.playerClass.slotRange(slot);
+    if (range <= 0) return;
+
+    final cx = sx(player.x);
+    final cy = sy(player.y);
+    final r  = sm(range);
+
+    // Soft glow fill
+    _gp
+      ..color      = const Color(0x22FFAA00)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+    canvas.drawCircle(Offset(cx, cy), r, _gp);
+    _gp.maskFilter = null;
+
+    // Solid ring
+    _sp
+      ..color       = const Color(0xCCFFAA00)
+      ..strokeWidth = 2.0
+      ..strokeCap   = StrokeCap.round;
+    canvas.drawCircle(Offset(cx, cy), r, _sp);
+  }
+
+  // ── Ability queue overlay — drawn above the selected player ─────────────────
+  //
+  // Layout (bottom-to-top above the player sprite):
+  //   • Queue line  — exiting (yellow fading) + waiting (white/dim) ability names
+  //   • Executing   — ability name in gold, floats upward on direct-fire only
+  //   • Combo badge — "xN COMBO" in gold when queue-chain streak ≥ 2
+
+  void _drawAbilityQueueOverlay(Canvas canvas, Size size) {
+    final player = gs.selectedPlayer;
+    if (player == null) return;
+
+    final exitingNames  = player.exitingQueueNames;
+    final exitingTimers = player.exitingQueueTimers;
+    final queue         = player.abilityQueue;
+    final executing     = player.lastExecutedAbility;
+    final comboStreak   = player.lastExecutedComboStreak;
+    final hasExiting    = exitingNames.isNotEmpty;
+
+    if (queue.isEmpty && executing == null && !hasExiting && comboStreak < 2) return;
+
+    final pos = projectPlayer(player, size);
+    if (pos == null) return;
+
+    // Fixed pixel offset above the projected player centre (works for all view modes).
+    const aboveCenter = 22.0;
+    const rowGap      = 24.0;
+    const queueFontSz = 18.0;
+    const execFontSz  = 22.0;
+    const badgeFontSz = 16.0;
+
+    double y = pos.dy - aboveCenter; // y of the bottommost text row (queue line)
+
+    // Row 1 — queue line (exiting + waiting)
+    if (hasExiting || queue.isNotEmpty) {
+      final abilityNames = player.playerClass.abilityNames;
+      final spans = <(String, Color)>[];
+
+      for (int i = 0; i < exitingNames.length; i++) {
+        final a = (exitingTimers[i] / UltraballPlayer.queueExitDuration).clamp(0.0, 1.0);
+        spans.add((exitingNames[i], Color.fromRGBO(255, 220, 60, a)));
+        if (i < exitingNames.length - 1 || queue.isNotEmpty) {
+          spans.add((' > ', Color.fromRGBO(255, 255, 255, a * 0.7)));
+        }
+      }
+      for (int i = 0; i < queue.length; i++) {
+        if (i > 0) spans.add((' > ', const Color(0xB3FFFFFF)));
+        final slot = queue[i];
+        final name = (slot >= 1 && slot <= abilityNames.length)
+            ? abilityNames[slot - 1]
+            : 'Slot $slot';
+        spans.add((name, player.getSlotCooldown(slot) > 0
+            ? const Color(0x61FFFFFF)
+            : const Color(0xB3FFFFFF)));
+      }
+      _drawQueueSpans(canvas, spans, pos.dx, y, queueFontSz);
+      y -= rowGap;
+    }
+
+    // Row 2 — executing label (direct-fire only, floats upward)
+    if (executing != null) {
+      final progress = (1.0 - (player.lastExecutedTimer / 1.2)).clamp(0.0, 1.0);
+      _drawQueueLabel(canvas, executing.toUpperCase(), pos.dx,
+          y - progress * 20.0, const Color(0xFFFFDD00), execFontSz,
+          (1.0 - progress).clamp(0.0, 1.0));
+      y -= rowGap;
+    }
+
+    // Row 3 — combo badge
+    if (comboStreak >= 2) {
+      final a = hasExiting
+          ? (exitingTimers.last / UltraballPlayer.queueExitDuration).clamp(0.0, 1.0)
+          : 1.0;
+      _drawQueueLabel(canvas, 'x$comboStreak COMBO', pos.dx, y,
+          const Color(0xFFFFAA00), badgeFontSz, a);
+    }
+  }
+
+  // Draw mixed-color text spans side-by-side, centred horizontally.
+  void _drawQueueSpans(
+      Canvas canvas, List<(String, Color)> spans, double cx, double cy, double fontSize) {
+    final painters = <TextPainter>[];
+    double totalW = 0;
+    for (final (text, color) in spans) {
+      final tp = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(
+            color: color,
+            fontSize: fontSize,
+            fontWeight: FontWeight.bold,
+            shadows: const [Shadow(color: Color(0xCC000000), blurRadius: 3, offset: Offset(1, 1))],
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      painters.add(tp);
+      totalW += tp.width;
+    }
+    double x = cx - totalW / 2;
+    for (final tp in painters) {
+      tp.paint(canvas, Offset(x, cy - tp.height / 2));
+      x += tp.width;
+    }
+  }
+
+  // Draw a single centred label with optional opacity.
+  void _drawQueueLabel(Canvas canvas, String text, double cx, double cy,
+      Color color, double fontSize, [double opacity = 1.0]) {
+    if (opacity <= 0) return;
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: Color.fromARGB(
+            (color.alpha * opacity).round().clamp(0, 255),
+            color.red, color.green, color.blue,
+          ),
+          fontSize: fontSize,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.5,
+          shadows: const [
+            Shadow(color: Color(0xCC000000), blurRadius: 3, offset: Offset(1, 1)),
+            Shadow(color: Color(0x88000000), blurRadius: 6),
+          ],
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset(cx - tp.width / 2, cy - tp.height / 2));
   }
 
   // Red/orange sparkle particles beneath killing-blow numbers — mirrors the
@@ -1450,6 +1636,7 @@ class FieldPainter extends CustomPainter {
     rs.render(gs, size);
     // 2D damage indicators float up from their world positions.
     if (gs.prefs.showDamageIndicators) _drawDamageIndicators3D(canvas, size, rs);
+    _drawAbilityQueueOverlay(canvas, size);
   }
 
   void _drawDamageIndicators3D(
@@ -1511,9 +1698,25 @@ class FieldPainter extends CustomPainter {
   }
 
   void _paint3D(Canvas canvas, Size size) {
-    if (_last3DSize != size) {
+    final camToggled = ballCam != _prevBallCam;
+    _prevBallCam = ballCam;
+    if (ballCam) {
+      // Centre the 3/4 camera on the ball's X position every frame.
+      final cx = gs.ball.x.clamp(28.0, 112.0);
+      _camera3D.camX    = cx;
+      _camera3D.targetX = cx;
       _camera3D.update(size);
       _last3DSize = size;
+    } else {
+      // On the first frame after leaving ball-cam, snap back to midfield.
+      if (camToggled) {
+        _camera3D.camX    = 70.0;
+        _camera3D.targetX = 70.0;
+      }
+      if (_last3DSize != size || camToggled) {
+        _camera3D.update(size);
+        _last3DSize = size;
+      }
     }
 
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), _bgPaint);
@@ -1537,6 +1740,7 @@ class FieldPainter extends CustomPainter {
     _draw3DEntities(canvas);
     _draw3DThrowArcPreview(canvas);
     if (gs.prefs.showDamageIndicators) _drawDamageIndicators(canvas);
+    _drawAbilityQueueOverlay(canvas, size);
   }
 
   void _draw3DThrowArcPreview(Canvas canvas) {

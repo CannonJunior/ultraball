@@ -343,13 +343,13 @@ class CombatSystem {
 
   static void _archonAbility(GameState gs, UltraballPlayer p, int slot) {
     if (slot == 1) {
-      // Shield Bash — 15 dmg + 2m push, 0.8s CD
+      // Stonefist — 20 dmg + 2m push
       if (p.tackleCooldown > 0) return;
       final t = _resolveTarget(gs, p, 2.5);
       if (t == null) return;
       p.tackleCooldown = 1.5;
       gs.dataCollector?.onTackle(p.team == Team.opponent ? 'opponent' : 'player');
-      applyDamage(gs, t, 15.0, p);
+      applyDamage(gs, t, 20.0, p);
       if (t.isAlive) {
         final dx = t.x - p.x, dy = t.y - p.y;
         final dist = math.sqrt(dx * dx + dy * dy);
@@ -361,16 +361,20 @@ class CombatSystem {
       checkCombo(gs, p);
 
     } else if (slot == 2) {
-      // Shockwave — 30 dmg + 1s stun, 3s CD, 25 red
+      // Fault Line — 28 dmg + 1.5s snare (50% slow), 5s CD, 20R
       if (p.slamCooldown > 0) return;
-      if (p.redMana < 25) return;
+      if (p.redMana < 20) return;
       final t = _resolveTarget(gs, p, 3.0);
       if (t == null) return;
-      p.redMana -= 25;
-      p.slamCooldown = 10.0;
+      p.redMana -= 20;
+      p.slamCooldown = 5.0;
       gs.dataCollector?.onSlam(p.team == Team.opponent ? 'opponent' : 'player');
-      applyDamage(gs, t, 30.0, p);
-      t.stun(1.0);
+      applyDamage(gs, t, 28.0, p);
+      if (t.isAlive) {
+        t.applySnare(1.5, 0.5);
+        addIndicator(gs, t.x, t.y - 1, 'FAULT LINE!', IndicatorType.event);
+      }
+      checkCombo(gs, p);
 
     } else if (slot == 3) {
       // Sprint — 1.5× speed for 3s, 6s CD, 20 blue
@@ -404,15 +408,22 @@ class CombatSystem {
       addIndicator(gs, t.x, t.y - 2, '+35 HP', IndicatorType.heal);
 
     } else if (slot == 6) {
-      // Cleanse — remove CC from nearest ally (5m), 12s CD, 20 blue
+      // Charge — dash directly to target (up to 8m); 25 dmg + 1s stun on hit, 10s CD, 25R
       if (p.ability6Cooldown > 0) return;
-      if (p.blueMana < 20) return;
-      final t = _findNearestAlly(gs, p, 5.0);
+      if (p.redMana < 25) return;
+      final t = _resolveTarget(gs, p, 8.0);
       if (t == null) return;
-      p.blueMana -= 20;
-      p.ability6Cooldown = 12.0;
-      t.cleanse();
-      addIndicator(gs, t.x, t.y - 2, 'ABSOLVED!', IndicatorType.event);
+      p.redMana -= 25;
+      p.ability6Cooldown = 10.0;
+      // Land on top of target
+      p.x = t.x.clamp(0.0, GameState.fieldWidth);
+      p.y = t.y.clamp(0.0, GameState.fieldHeight);
+      applyDamage(gs, t, 25.0, p);
+      if (t.isAlive) {
+        t.stun(1.0);
+        addIndicator(gs, t.x, t.y - 1, 'CHARGE!', IndicatorType.event);
+        gs.showEvent('${p.name} charges down ${t.name}!');
+      }
 
     } else if (slot == 7) {
       // Second Wind — self +35 HP + 20 blue, 18s CD, 35 blue
@@ -820,17 +831,38 @@ class CombatSystem {
     final slot = player.abilityQueue.first;
     if (player.getSlotCooldown(slot) > 0) return; // not ready yet, wait
 
+    // Range gate: wait for target to enter range, or drop if no target
+    final range = player.playerClass.slotRange(slot);
+    if (range > 0) {
+      final target = gs.currentTarget;
+      if (target == null || !target.isAlive) {
+        player.abilityQueue.removeAt(0); // drop — nothing to wait for
+        return;
+      }
+      final dx = target.x - player.x;
+      final dy = target.y - player.y;
+      if (math.sqrt(dx * dx + dy * dy) > range) return; // keep waiting
+    }
+
+    final names = player.playerClass.abilityNames;
+    final abilityName = slot >= 1 && slot <= names.length ? names[slot - 1] : null;
+
+    // Push to exiting queue before removal so the label fades out of the queue UI
+    if (abilityName != null) {
+      player.exitingQueueNames.add(abilityName);
+      player.exitingQueueTimers.add(UltraballPlayer.queueExitDuration);
+    }
+
     player.abilityQueue.removeAt(0);
     useClassAbility(gs, player, slot);
 
-    // Set GCD and combat text
+    player.abilityComboStreak++;
+    player.lastExecutedComboStreak = player.abilityComboStreak;
+
     player.gcdRemaining = 1.0;
     player.gcdMax = 1.0;
-    final names = player.playerClass.abilityNames;
-    if (slot >= 1 && slot <= names.length) {
-      player.lastExecutedAbility = names[slot - 1];
-      player.lastExecutedTimer = 1.2;
-    }
+    // Do NOT set lastExecutedAbility here: the exiting queue label already
+    // shows the name in the queue line, so no duplicate gold floating label.
   }
 
   static UltraballPlayer? _findNearestEnemy(

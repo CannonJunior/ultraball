@@ -61,6 +61,7 @@ class ActSystem {
       act.opponentScore += 7;
       gs.showEvent('ULTRA! +7pts for ${gs.settings.awayTeamName}!');
     }
+    gs.onUltraScored?.call(teamId, scorer?.name, act.playerScore, act.opponentScore);
     // Check Act 5 end condition
     if (act.isAct5) {
       bool actEnds = false;
@@ -118,6 +119,7 @@ class ActSystem {
         gs.actState.opponentForfeit = true;
         gs.showEvent('OPPONENT TEAM FORFEIT!');
       }
+      endAct(gs);
       return;
     }
 
@@ -254,6 +256,17 @@ class ActSystem {
       p.state = PlayerState.idle;
       p.resetBuffs();
     }
+
+    // Renumber deploySlots so the scoreboard filter (deploySlot < 7) is accurate:
+    // active players get 0–6, dead/benched players get pushed out of that range.
+    int slot = 0;
+    for (final p in roster) {
+      if (p.isOnField && p.isAlive) {
+        p.deploySlot = slot++;
+      } else if (!p.isAlive) {
+        p.deploySlot = 100 + p.rosterIndex;
+      }
+    }
   }
 
   static void _fillPlayerTeamGaps(GameState gs) {
@@ -275,6 +288,16 @@ class ActSystem {
       p.stunTimer = 0;
       p.state = PlayerState.idle;
       p.resetBuffs();
+    }
+
+    // Same deploySlot renumbering as _restockTeam so the scoreboard is correct.
+    int slot = 0;
+    for (final p in roster) {
+      if (p.isOnField && p.isAlive) {
+        p.deploySlot = slot++;
+      } else if (!p.isAlive) {
+        p.deploySlot = 100 + p.rosterIndex;
+      }
     }
   }
 

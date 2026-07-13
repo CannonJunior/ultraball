@@ -520,13 +520,16 @@ class AiSystem {
     AiTactics tactics,
     AiStrategy strategy,
   ) {
-    // Hero Ball: pass directly to the player character ASAP
+    // Hero Ball: pass to the player character only when they're ahead toward scoring
     if (tactics == AiTactics.heroBall) {
       final hero = gs.selectedPlayer;
       if (hero != null && hero.id != p.id && hero.isAlive && !hero.isStunned) {
-        _aiPassTo(gs, p, hero);
-        CombatSystem.tryAttack(gs, p, 'tackle');
-        return;
+        // Only dump to hero if hero is meaningfully ahead (lower X = toward left endzone)
+        if (hero.x < p.x - 3.0) {
+          _aiPassTo(gs, p, hero);
+          CombatSystem.tryAttack(gs, p, 'tackle');
+          return;
+        }
       }
     }
 
@@ -612,20 +615,27 @@ class AiSystem {
 
     switch (tactics) {
       case AiTactics.heroBall:
-        // Tight escort around the player character (human-controlled unit)
+        // One in three players runs ahead as a scoring threat; others escort the hero
         final hero = gs.selectedPlayer;
         if (hero != null && hero.isAlive) {
-          const offsets = [
-            (dx:  4.0, dy: -3.0),
-            (dx:  4.0, dy:  3.0),
-            (dx: -3.0, dy: -4.0),
-            (dx: -3.0, dy:  4.0),
-            (dx:  0.0, dy: -5.0),
-            (dx:  0.0, dy:  5.0),
-          ];
-          final off = offsets[p.rosterIndex % offsets.length];
-          targetX = hero.x + off.dx;
-          targetY = hero.y + off.dy;
+          if (p.rosterIndex % 3 == 0 && hero.x > 22.0) {
+            // Scoring runner: 20m ahead of hero (capped at x=8 deep in endzone)
+            targetX = math.max(8.0, hero.x - 20.0);
+            targetY = laneY;
+          } else {
+            // Remaining players escort tightly, biased forward (negative dx = toward endzone)
+            const offsets = [
+              (dx: -4.0, dy: -3.0),
+              (dx: -4.0, dy:  3.0),
+              (dx:  3.0, dy: -4.0),
+              (dx:  3.0, dy:  4.0),
+              (dx: -2.0, dy: -5.0),
+              (dx: -2.0, dy:  5.0),
+            ];
+            final off = offsets[p.rosterIndex % offsets.length];
+            targetX = hero.x + off.dx;
+            targetY = hero.y + off.dy;
+          }
         } else {
           targetX = holder.x - 10.0 - (p.rosterIndex % 3) * 8.0;
           targetY = laneY;
@@ -681,6 +691,11 @@ class AiSystem {
     // PossessionBleed: support stays closer to holder for safe dump-off
     if (strategy == AiStrategy.possessionBleed && tactics != AiTactics.heroBall) {
       targetX = (targetX + holder.x) / 2.0;
+    }
+
+    // FloodEndzone: mirror of opponent behavior — pre-position one runner deep in left endzone
+    if (strategy == AiStrategy.floodEndzone && p.rosterIndex % 3 == 0) {
+      targetX = 5.0;
     }
 
     _moveToward(p, targetX.clamp(0.0, 110.0), targetY.clamp(2.0, 38.0), avoid);

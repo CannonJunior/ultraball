@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../game/game_state.dart';
 import '../models/player.dart';
+import '../models/player_class.dart' show AbilityType, AbilityTag;
 import 'ui_assets.dart';
 
 // ─── UiEffect data class ──────────────────────────────────────────────────────
@@ -48,9 +49,47 @@ List<UiEffect> _playerEffects(UltraballPlayer p) {
 
 // ─── Player unit frame (ManaBars) ─────────────────────────────────────────────
 
-class ManaBars extends StatelessWidget {
+class ManaBars extends StatefulWidget {
   final GameState gs;
-  const ManaBars({super.key, required this.gs});
+  final void Function(int slot)? onAbilityTap;
+  final void Function(int? slot)? onAbilityHover;
+  const ManaBars({super.key, required this.gs, this.onAbilityTap, this.onAbilityHover});
+
+  @override
+  State<ManaBars> createState() => _ManaBarsState();
+}
+
+class _ManaBarsState extends State<ManaBars> {
+  int? _hoveredSlot;
+
+  GameState get gs => widget.gs;
+
+  /// Distance to the current target, or null if no target.
+  double? get _targetDistance {
+    final player = gs.selectedPlayer;
+    final target = gs.currentTarget;
+    if (player == null || target == null) return null;
+    final dx = target.x - player.x;
+    final dy = target.y - player.y;
+    return math.sqrt(dx * dx + dy * dy);
+  }
+
+  bool _isOutOfRange(int slot) {
+    final player = gs.selectedPlayer;
+    if (player == null) return false;
+    final range = player.playerClass.slotRange(slot);
+    if (range <= 0) return false; // self/global/aimed — never out of range
+    final dist = _targetDistance;
+    if (dist == null) return false; // no target → not out of range
+    return dist > range;
+  }
+
+  void _onHover(int? slot) {
+    if (_hoveredSlot == slot) return;
+    setState(() => _hoveredSlot = slot);
+    gs.prefs.hoveredAbilitySlot = slot;
+    widget.onAbilityHover?.call(slot);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -141,29 +180,26 @@ class ManaBars extends StatelessWidget {
                 // Debuff icons row
                 _EffectIcons(effects: _playerEffects(player).where((e) => !e.isBuff).toList()),
                 const SizedBox(height: 2),
-                // Queue display (combat text + queued abilities)
-                _QueueDisplay(player: player),
-                const SizedBox(height: 2),
                 // Ability row 1: slots 1–5
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _AbilityIcon(keyLabel: '[1]', label: _abbrev(names[0]), cooldown: player.tackleCooldown,   maxCooldown: maxCDs[0], color: const Color(0xFFFF8844), available: player.tackleCooldown   <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax),
-                    _AbilityIcon(keyLabel: '[2]', label: _abbrev(names[1]), cooldown: player.slamCooldown,     maxCooldown: maxCDs[1], color: const Color(0xFFFF4444), available: player.slamCooldown     <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax),
-                    _AbilityIcon(keyLabel: '[3]', label: _abbrev(names[2]), cooldown: player.sprintCooldown,   maxCooldown: maxCDs[2], color: const Color(0xFF44CCFF), available: player.sprintCooldown   <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax),
-                    _AbilityIcon(keyLabel: '[4]', label: _abbrev(names[3]), cooldown: player.ability4Cooldown, maxCooldown: maxCDs[3], color: const Color(0xFF4488FF), available: player.ability4Cooldown <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax),
-                    _AbilityIcon(keyLabel: '[5]', label: _abbrev(names[4]), cooldown: player.ability5Cooldown, maxCooldown: maxCDs[4], color: const Color(0xFFAA44FF), available: player.ability5Cooldown <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax),
+                    _AbilityIcon(keyLabel: '[1]', label: _abbrev(names[0]), cooldown: player.tackleCooldown,   maxCooldown: maxCDs[0], type: cls.abilityTypes[0], tags: cls.abilityTags[0], available: player.tackleCooldown   <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax, isOutOfRange: _isOutOfRange(1),  isHovered: _hoveredSlot == 1,  onTap: () => widget.onAbilityTap?.call(1),  onHoverEnter: () => _onHover(1),  onHoverExit: () => _onHover(null)),
+                    _AbilityIcon(keyLabel: '[2]', label: _abbrev(names[1]), cooldown: player.slamCooldown,     maxCooldown: maxCDs[1], type: cls.abilityTypes[1], tags: cls.abilityTags[1], available: player.slamCooldown     <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax, isOutOfRange: _isOutOfRange(2),  isHovered: _hoveredSlot == 2,  onTap: () => widget.onAbilityTap?.call(2),  onHoverEnter: () => _onHover(2),  onHoverExit: () => _onHover(null)),
+                    _AbilityIcon(keyLabel: '[3]', label: _abbrev(names[2]), cooldown: player.sprintCooldown,   maxCooldown: maxCDs[2], type: cls.abilityTypes[2], tags: cls.abilityTags[2], available: player.sprintCooldown   <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax, isOutOfRange: _isOutOfRange(3),  isHovered: _hoveredSlot == 3,  onTap: () => widget.onAbilityTap?.call(3),  onHoverEnter: () => _onHover(3),  onHoverExit: () => _onHover(null)),
+                    _AbilityIcon(keyLabel: '[4]', label: _abbrev(names[3]), cooldown: player.ability4Cooldown, maxCooldown: maxCDs[3], type: cls.abilityTypes[3], tags: cls.abilityTags[3], available: player.ability4Cooldown <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax, isOutOfRange: _isOutOfRange(4),  isHovered: _hoveredSlot == 4,  onTap: () => widget.onAbilityTap?.call(4),  onHoverEnter: () => _onHover(4),  onHoverExit: () => _onHover(null)),
+                    _AbilityIcon(keyLabel: '[5]', label: _abbrev(names[4]), cooldown: player.ability5Cooldown, maxCooldown: maxCDs[4], type: cls.abilityTypes[4], tags: cls.abilityTags[4], available: player.ability5Cooldown <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax, isOutOfRange: _isOutOfRange(5),  isHovered: _hoveredSlot == 5,  onTap: () => widget.onAbilityTap?.call(5),  onHoverEnter: () => _onHover(5),  onHoverExit: () => _onHover(null)),
                   ],
                 ),
                 // Ability row 2: slots 6–9 + ultra (no gap between rows)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _AbilityIcon(keyLabel: '[6]', label: _abbrev(names[5]), cooldown: player.ability6Cooldown, maxCooldown: maxCDs[5], color: const Color(0xFF44FF88), available: player.ability6Cooldown <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax),
-                    _AbilityIcon(keyLabel: '[7]', label: _abbrev(names[6]), cooldown: player.ability7Cooldown, maxCooldown: maxCDs[6], color: const Color(0xFF88DDFF), available: player.ability7Cooldown <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax),
-                    _AbilityIcon(keyLabel: '[8]', label: _abbrev(names[7]), cooldown: player.ability8Cooldown, maxCooldown: maxCDs[7], color: const Color(0xFFFFAA44), available: player.ability8Cooldown <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax),
-                    _AbilityIcon(keyLabel: '[9]', label: _abbrev(names[8]), cooldown: player.ability9Cooldown, maxCooldown: maxCDs[8], color: const Color(0xFFFF6688), available: player.ability9Cooldown <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax),
-                    _AbilityIcon(keyLabel: '[0]', label: _abbrev(names[9]), cooldown: 0, maxCooldown: 0, color: const Color(0xFFFFCC00), available: player.ultraMana >= 5, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax),
+                    _AbilityIcon(keyLabel: '[6]', label: _abbrev(names[5]), cooldown: player.ability6Cooldown, maxCooldown: maxCDs[5], type: cls.abilityTypes[5], tags: cls.abilityTags[5], available: player.ability6Cooldown <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax, isOutOfRange: _isOutOfRange(6),  isHovered: _hoveredSlot == 6,  onTap: () => widget.onAbilityTap?.call(6),  onHoverEnter: () => _onHover(6),  onHoverExit: () => _onHover(null)),
+                    _AbilityIcon(keyLabel: '[7]', label: _abbrev(names[6]), cooldown: player.ability7Cooldown, maxCooldown: maxCDs[6], type: cls.abilityTypes[6], tags: cls.abilityTags[6], available: player.ability7Cooldown <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax, isOutOfRange: _isOutOfRange(7),  isHovered: _hoveredSlot == 7,  onTap: () => widget.onAbilityTap?.call(7),  onHoverEnter: () => _onHover(7),  onHoverExit: () => _onHover(null)),
+                    _AbilityIcon(keyLabel: '[8]', label: _abbrev(names[7]), cooldown: player.ability8Cooldown, maxCooldown: maxCDs[7], type: cls.abilityTypes[7], tags: cls.abilityTags[7], available: player.ability8Cooldown <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax, isOutOfRange: _isOutOfRange(8),  isHovered: _hoveredSlot == 8,  onTap: () => widget.onAbilityTap?.call(8),  onHoverEnter: () => _onHover(8),  onHoverExit: () => _onHover(null)),
+                    _AbilityIcon(keyLabel: '[9]', label: _abbrev(names[8]), cooldown: player.ability9Cooldown, maxCooldown: maxCDs[8], type: cls.abilityTypes[8], tags: cls.abilityTags[8], available: player.ability9Cooldown <= 0, gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax, isOutOfRange: _isOutOfRange(9),  isHovered: _hoveredSlot == 9,  onTap: () => widget.onAbilityTap?.call(9),  onHoverEnter: () => _onHover(9),  onHoverExit: () => _onHover(null)),
+                    _AbilityIcon(keyLabel: '[0]', label: _abbrev(names[9]), cooldown: 0, maxCooldown: 0,       type: cls.abilityTypes[9], tags: cls.abilityTags[9], available: player.ultraMana >= 5,  gcdRemaining: player.gcdRemaining, gcdMax: player.gcdMax, isOutOfRange: false,             isHovered: _hoveredSlot == 10, onTap: () => widget.onAbilityTap?.call(10), onHoverEnter: () => _onHover(10), onHoverExit: () => _onHover(null)),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -664,98 +700,23 @@ class _ProgressRingPainter extends CustomPainter {
   bool shouldRepaint(_ProgressRingPainter old) => (progress - old.progress).abs() > 0.01;
 }
 
-// ─── Queue display (combat text + queued abilities) ───────────────────────────
-
-class _QueueDisplay extends StatelessWidget {
-  final UltraballPlayer player;
-  const _QueueDisplay({required this.player});
-
-  // Dissolve-upward progress for the executing label (0 = just fired, 1 = gone).
-  double get _execProgress =>
-      (1.0 - (player.lastExecutedTimer / 1.2)).clamp(0.0, 1.0);
-
-  @override
-  Widget build(BuildContext context) {
-    final queue     = player.abilityQueue;
-    final executing = player.lastExecutedAbility;
-
-    if (queue.isEmpty && executing == null) return const SizedBox.shrink();
-
-    final names = player.playerClass.abilityNames;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Executing ability: gold, dissolves upward as it fades — mirrors the
-        // Warchief QueuedAbilityLabelOverlay executing-label treatment.
-        if (executing != null)
-          Transform.translate(
-            offset: Offset(0, -_execProgress * 12.0),
-            child: Opacity(
-              opacity: (1.0 - _execProgress).clamp(0.0, 1.0),
-              child: Text(
-                executing.toUpperCase(),
-                style: const TextStyle(
-                  color: Color(0xFFFFDD00),
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
-                  shadows: [
-                    Shadow(color: Colors.black, blurRadius: 3, offset: Offset(1, 1)),
-                    Shadow(color: Colors.black, blurRadius: 6),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        // Queue line: "Slot1Name > Slot2Name > ..." matching Warchief RichText style.
-        if (queue.isNotEmpty)
-          RichText(
-            text: TextSpan(
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                shadows: [
-                  Shadow(color: Color(0xB3000000), blurRadius: 2, offset: Offset(1, 1)),
-                ],
-              ),
-              children: [
-                for (int i = 0; i < queue.length; i++) ...[
-                  if (i > 0) const TextSpan(text: ' > ', style: TextStyle(color: Colors.white70)),
-                  TextSpan(
-                    text: queue[i] >= 1 && queue[i] <= names.length
-                        ? names[queue[i] - 1]
-                        : 'Slot ${queue[i]}',
-                    style: TextStyle(
-                      // Dimmed when on cooldown — mirrors Colors.white38 used on
-                      // ability buttons during their cooldown sweep (Warchief convention).
-                      color: player.getSlotCooldown(queue[i]) > 0
-                          ? Colors.white38
-                          : Colors.white70,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        const SizedBox(height: 2),
-      ],
-    );
-  }
-}
-
 // ─── Ability icon ─────────────────────────────────────────────────────────────
 
 class _AbilityIcon extends StatelessWidget {
-  final String keyLabel;
-  final String label;
-  final double cooldown;
-  final double maxCooldown;
-  final Color  color;
-  final bool   available;
-  final double gcdRemaining;
-  final double gcdMax;
+  final String       keyLabel;
+  final String       label;
+  final double       cooldown;
+  final double       maxCooldown;
+  final AbilityType  type;
+  final Set<AbilityTag> tags;
+  final bool         available;
+  final double       gcdRemaining;
+  final double       gcdMax;
+  final bool         isOutOfRange;
+  final bool         isHovered;
+  final VoidCallback? onTap;
+  final VoidCallback? onHoverEnter;
+  final VoidCallback? onHoverExit;
 
   static const double size = 50;
 
@@ -764,15 +725,34 @@ class _AbilityIcon extends StatelessWidget {
     required this.label,
     required this.cooldown,
     required this.maxCooldown,
-    required this.color,
+    required this.type,
+    required this.tags,
     required this.available,
     required this.gcdRemaining,
     required this.gcdMax,
+    required this.isOutOfRange,
+    required this.isHovered,
+    this.onTap,
+    this.onHoverEnter,
+    this.onHoverExit,
   });
+
+  // Semantic color palette — maps ability purpose to a distinct hue.
+  static Color _typeColor(AbilityType t) => switch (t) {
+    AbilityType.damage   => const Color(0xFFCC3344), // crimson   — aggression
+    AbilityType.heal     => const Color(0xFF33BB66), // green     — life
+    AbilityType.selfBuff => const Color(0xFF22CCEE), // cyan      — self-power
+    AbilityType.support  => const Color(0xFFFF9922), // orange    — team support
+    AbilityType.cc       => const Color(0xFF9933CC), // violet    — crowd control
+    AbilityType.movement => const Color(0xFF22BBAA), // teal      — repositioning
+    AbilityType.terrain  => const Color(0xFFBB8833), // earth     — ground shaping
+    AbilityType.utility  => const Color(0xFF6688BB), // steel-blue — disruption/mark
+    AbilityType.ultra    => const Color(0xFFFFCC00), // gold      — matches ultra bar
+  };
 
   @override
   Widget build(BuildContext context) {
-    // Show whichever is greater: slot CD or active GCD
+    final color        = _typeColor(type);
     final effectiveCd  = math.max(cooldown, gcdRemaining);
     final showingGcd   = gcdRemaining > cooldown && gcdRemaining > 0;
     final effectiveMax = showingGcd
@@ -780,63 +760,159 @@ class _AbilityIcon extends StatelessWidget {
         : (maxCooldown > 0 ? maxCooldown : 1.0);
     final cdFrac = effectiveMax > 0 ? (effectiveCd / effectiveMax).clamp(0.0, 1.0) : 0.0;
 
-    // GCD sweep uses a lighter color to distinguish from ability CD
     final sweepColor = showingGcd
         ? Colors.white.withValues(alpha: 0.45)
         : Colors.black.withValues(alpha: 0.65);
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: available ? color.withValues(alpha: 0.2) : const Color(0xFF111111),
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(
-              color: available ? color : Colors.grey.withValues(alpha: 0.3),
-              width: 1.5,
-            ),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                if (cdFrac > 0)
-                  CustomPaint(size: Size(size, size), painter: _ClockSweepPainter(cdFrac, sweepColor)),
-                Text(
-                  keyLabel,
-                  style: TextStyle(color: available ? color : Colors.grey, fontSize: 12, fontWeight: FontWeight.bold),
-                ),
-                if (cdFrac > 0)
-                  Positioned(
-                    top: 1,
-                    left: 2,
-                    child: Text(
-                      effectiveCd >= 10 ? '${effectiveCd.toInt()}s' : '${effectiveCd.toStringAsFixed(1)}s',
-                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold, shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
+    final borderColor = isOutOfRange
+        ? const Color(0xFFFF3333)
+        : isHovered
+            ? Colors.white.withValues(alpha: 0.9)
+            : available
+                ? color
+                : Colors.grey.withValues(alpha: 0.3);
+
+    return MouseRegion(
+      onEnter: (_) => onHoverEnter?.call(),
+      onExit:  (_) => onHoverExit?.call(),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                color: isOutOfRange
+                    ? const Color(0xFF330000)
+                    : available
+                        ? color.withValues(alpha: 0.18)
+                        : const Color(0xFF111111),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: borderColor, width: isHovered ? 2.0 : 1.5),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    if (cdFrac > 0)
+                      CustomPaint(size: Size(size, size), painter: _ClockSweepPainter(cdFrac, sweepColor)),
+                    Text(
+                      keyLabel,
+                      style: TextStyle(color: available ? color : Colors.grey, fontSize: 12, fontWeight: FontWeight.bold),
                     ),
-                  ),
-              ],
+                    if (cdFrac > 0)
+                      Positioned(
+                        top: 1,
+                        left: 2,
+                        child: Text(
+                          effectiveCd >= 10 ? '${effectiveCd.toInt()}s' : '${effectiveCd.toStringAsFixed(1)}s',
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold, shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
+                        ),
+                      ),
+                    // Corner pips: AoE (top-left), CC/Snare (top-right), Fumble (bottom-right)
+                    if (tags.isNotEmpty)
+                      Positioned.fill(child: CustomPaint(painter: _TagPipPainter(tags))),
+                    // Out-of-range overlay: red diagonal slash (rendered last, on top)
+                    if (isOutOfRange)
+                      Positioned.fill(child: CustomPaint(painter: _OutOfRangePainter())),
+                  ],
+                ),
+              ),
             ),
-          ),
+            const SizedBox(height: 2),
+            SizedBox(
+              width: size + 4,
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: isOutOfRange
+                      ? const Color(0xFFFF6666).withValues(alpha: 0.8)
+                      : Colors.white.withValues(alpha: 0.4),
+                  fontSize: 11,
+                ),
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 2),
-        SizedBox(
-          width: size + 4,
-          child: Text(
-            label,
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11),
-            textAlign: TextAlign.center,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 1,
-          ),
-        ),
-      ],
+      ),
     );
   }
+}
+
+// ─── Tag pip painter ──────────────────────────────────────────────────────────
+// Draws small 5×5 corner squares indicating secondary ability properties.
+//  Top-left  (orange): AoE — hits multiple targets
+//  Top-right (violet): CC rider; or (blue) snare rider if no cc tag
+//  Bottom-right (gold): forces ball fumble
+
+class _TagPipPainter extends CustomPainter {
+  final Set<AbilityTag> tags;
+  static const double _sz = 5.0;
+  static const double _m  = 2.5;
+
+  const _TagPipPainter(this.tags);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (tags.isEmpty) return;
+    final p = Paint()..style = PaintingStyle.fill;
+
+    if (tags.contains(AbilityTag.aoe)) {
+      p.color = const Color(0xFFFF8833);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromLTWH(_m, _m, _sz, _sz), const Radius.circular(1.5)),
+        p,
+      );
+    }
+
+    final rightColor = tags.contains(AbilityTag.cc)
+        ? const Color(0xFFAA44FF)
+        : tags.contains(AbilityTag.snare)
+            ? const Color(0xFF4499FF)
+            : null;
+    if (rightColor != null) {
+      p.color = rightColor;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromLTWH(size.width - _m - _sz, _m, _sz, _sz), const Radius.circular(1.5)),
+        p,
+      );
+    }
+
+    if (tags.contains(AbilityTag.fumble)) {
+      p.color = const Color(0xFFFFDD00);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(size.width - _m - _sz, size.height - _m - _sz, _sz, _sz),
+          const Radius.circular(1.5),
+        ),
+        p,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_TagPipPainter old) => old.tags != tags;
+}
+
+class _OutOfRangePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0x55FF2222)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+    canvas.drawLine(Offset(4, size.height - 4), Offset(size.width - 4, 4), paint);
+  }
+
+  @override
+  bool shouldRepaint(_OutOfRangePainter old) => false;
 }
 
 // ─── Jump indicator ───────────────────────────────────────────────────────────

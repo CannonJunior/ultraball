@@ -96,6 +96,10 @@ class GameState {
   // Accumulated match clock — incremented every active game tick; used for DPS calculation.
   double matchTimeElapsed = 0.0;
 
+  /// Called by ActSystem whenever an Ultra is scored; wired to
+  /// HighlightRecorder.notifyUltraScored() by GameWidget.
+  void Function(String teamId, String? scorerName, int playerScore, int opponentScore)? onUltraScored;
+
   // Act transition state
   bool showingActTransition = false;
   double actTransitionTimer = 0;

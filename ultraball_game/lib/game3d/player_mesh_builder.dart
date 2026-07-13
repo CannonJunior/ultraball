@@ -50,6 +50,31 @@ class PlayerMeshBuilder {
     ]);
   }
 
+  static CharacterRig buildCubeSelected(Team team, PlayerClass playerClass) {
+    final color = _classColorVec(playerClass);
+    final mesh = _cache.putIfAbsent(
+      'cube_selected_${playerClass.name}',
+      () => Mesh.cube(size: 1.6, color: color),
+    );
+    return CharacterRig(parts: [
+      RigPart(
+        mesh: mesh,
+        name: 'body',
+        restPosition: Vector3(0, 0.8, 0),
+      ),
+    ]);
+  }
+
+  static Vector3 _classColorVec(PlayerClass cls) => switch (cls) {
+    PlayerClass.spectre   => Vector3(0x44 / 255, 1.0,          0xCC / 255),
+    PlayerClass.corsair   => Vector3(1.0,         0x44 / 255,  0xAA / 255),
+    PlayerClass.geomancer => Vector3(1.0,         0x55 / 255,  0x44 / 255),
+    PlayerClass.archon    => Vector3(0x44 / 255,  0x88 / 255,  1.0        ),
+    PlayerClass.warden    => Vector3(1.0,         0xCC / 255,  0x44 / 255 ),
+    PlayerClass.trickster => Vector3(0xAA / 255,  0x44 / 255,  1.0        ),
+    PlayerClass.wrecker   => Vector3(1.0,         0x77 / 255,  0.0        ),
+  };
+
   static CharacterRig build(Team team, PlayerClass playerClass) {
     final t = team.name;
     final c = playerClass.name;

@@ -90,6 +90,7 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
 
     _highlightRecorder = HighlightRecorder();
+    _gs.onUltraScored  = _highlightRecorder!.notifyUltraScored;
 
     _startGameLoop();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -261,6 +262,10 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     if (_renderSystem != null && _renderSystem!.ready) {
       _renderSystem!.update(_gs, dt);
     }
+
+    // Auto highlight: arm on carrier threshold crossing, render ball-cam frame
+    _highlightRecorder?.checkBallCarrierCrossing(_gs);
+    _highlightRecorder?.update(_gs, dt);
 
     // Trigger canvas repaint (painter is long-lived; doesn't go through shouldRepaint).
     // ValueListenableBuilder widgets in build() subscribe to this and rebuild their
@@ -472,6 +477,14 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       return;
     }
 
+    // Backspace: cancel the last queued ability
+    if (key == LogicalKeyboardKey.backspace) {
+      if (player != null && player.abilityQueue.isNotEmpty) {
+        player.abilityQueue.removeLast();
+      }
+      return;
+    }
+
     // C: cycle player class (test mode only)
     if (key == LogicalKeyboardKey.keyC) {
       if (player != null && _gs.settings.testMode) {
@@ -496,9 +509,17 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       return;
     }
 
-    // V: toggle 3D camera mode (broadcast ↔ third-person follow)
+    // V: toggle 3D camera mode; Shift+V: toggle ball-cam (all view modes)
     if (key == LogicalKeyboardKey.keyV) {
-      _renderSystem?.toggleCameraMode();
+      final isShift = _gs.pressedKeys.contains(LogicalKeyboardKey.shiftLeft) ||
+          _gs.pressedKeys.contains(LogicalKeyboardKey.shiftRight);
+      if (isShift) {
+        _fieldPainter.ballCam = !_fieldPainter.ballCam;
+        _renderSystem?.setBallCam(_fieldPainter.ballCam);
+        _canvasRepaint.value++;
+      } else {
+        _renderSystem?.toggleCameraMode();
+      }
       return;
     }
 
@@ -611,7 +632,9 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       return;
     }
     CombatSystem.useClassAbility(_gs, player, slot);
-    // Set GCD and show combat text
+    // Direct-fire breaks any queue combo chain
+    player.abilityComboStreak = 0;
+    player.lastExecutedComboStreak = 0;
     player.gcdRemaining = 1.0;
     player.gcdMax = 1.0;
     final names = player.playerClass.abilityNames;
@@ -627,9 +650,13 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       orderedAlive[i].deploySlot = i;
       orderedAlive[i].isOnField = i < 7;
     }
-    // Dead players always off field
+    // Dead players always off field; push their deploySlot out of the active range
+    // so the scoreboard filter (deploySlot < 7) doesn't show stale eliminated units.
     for (final p in _gs.playerRoster) {
-      if (!p.isAlive) p.isOnField = false;
+      if (!p.isAlive) {
+        p.isOnField  = false;
+        p.deploySlot = 100 + p.rosterIndex;
+      }
     }
     _gs.markRosterDirty();
     _gs.showingRosterScreen = false;
@@ -779,7 +806,13 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
                                   if (_gs.currentTarget != null) const SizedBox(height: 4),
                                   TargetOfTargetFrame(gs: _gs),
                                   if (_gs.currentTarget != null) const SizedBox(height: 6),
-                                  ManaBars(gs: _gs),
+                                  ManaBars(
+                                    gs: _gs,
+                                    onAbilityTap: (slot) {
+                                      final p = _gs.selectedPlayer;
+                                      if (p != null) _tryFireAbility(p, slot);
+                                    },
+                                  ),
                                 ],
                               ),
                             ),
