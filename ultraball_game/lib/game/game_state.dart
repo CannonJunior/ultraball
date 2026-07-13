@@ -323,12 +323,16 @@ class GameState {
     for (final p in playerRoster)  { _playerById[p.id] = p; }
     for (final p in opponentRoster) { _playerById[p.id] = p; }
 
-    // Select first player
-    selectedPlayer = playerRoster[0];
-    playerRoster[0].isSelected = true;
-    playerRoster[0].isPlayerControlled = true;
+    // Select the first on-field player by deploy slot (respects roster reordering and inactive classes)
+    final onField = playerRoster.where((p) => p.isOnField && p.isAlive).toList();
+    final first = onField.isNotEmpty
+        ? onField.reduce((a, b) => a.deploySlot <= b.deploySlot ? a : b)
+        : playerRoster[0];
+    selectedPlayer = first;
+    first.isSelected = true;
+    first.isPlayerControlled = true;
     // Face right (toward opponents) at start
-    playerRoster[0].facing = math.pi;
+    first.facing = math.pi;
 
     // Create ball at midfield
     ball = Ultraball(x: 70, y: 20);
