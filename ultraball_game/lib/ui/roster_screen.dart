@@ -7,8 +7,7 @@ import 'ui_assets.dart';
 import 'stat_table.dart';
 
 // ── Design palette ────────────────────────────────────────────────────────────
-const _kRed  = Color(0xFFFF3B53);
-const _kBlue = Color(0xFF2F83FF);
+const _kDead = Color(0xFFFF3B53); // semantic "eliminated/dead" red
 const _kGold = Color(0xFFFFCB3D);
 const _kSurf = Color(0xFF0A0C14);
 const _kDark = Color(0xFF06070D);
@@ -143,7 +142,8 @@ class _IntermissionHeader extends StatelessWidget {
             children: [
               Text(gs.settings.awayTeamName,
                 style: GoogleFonts.barlowCondensed(
-                  fontSize: 22, fontWeight: FontWeight.w700, color: _kRed)),
+                  fontSize: 22, fontWeight: FontWeight.w700,
+                  color: Color(gs.settings.awayTeamPrimary))),
               const SizedBox(width: 12),
               Text(
                 '${act.opponentScore}  –  ${act.playerScore}',
@@ -153,7 +153,8 @@ class _IntermissionHeader extends StatelessWidget {
               const SizedBox(width: 12),
               Text(gs.settings.homeTeamName,
                 style: GoogleFonts.barlowCondensed(
-                  fontSize: 22, fontWeight: FontWeight.w700, color: _kBlue)),
+                  fontSize: 22, fontWeight: FontWeight.w700,
+                  color: Color(gs.settings.homeTeamPrimary))),
             ],
           ),
         ],
@@ -210,7 +211,7 @@ class _LineupSection extends StatelessWidget {
           ),
           if (dead.isNotEmpty) ...[
             const SizedBox(height: 12),
-            _sectionLabel('ELIMINATED', _kRed),
+            _sectionLabel('ELIMINATED', _kDead),
             const SizedBox(height: 6),
             for (final p in dead) _DeadRow(player: p),
           ],
@@ -457,7 +458,7 @@ class _DeadRow extends StatelessWidget {
             width: 58,
             child: Text('DEAD',
               style: GoogleFonts.chakraPetch(
-                color: _kRed.withValues(alpha: 0.6),
+                color: _kDead.withValues(alpha: 0.6),
                 fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: 0.5))),
           Text(player.playerClass.displayName,
             style: TextStyle(fontSize: 22, color: Colors.white.withValues(alpha: 0.3))),

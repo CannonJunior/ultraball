@@ -125,6 +125,15 @@ class UltraballRenderSystem {
 
   void initPlayers(GameState gs, {bool useCubeModels = false}) {
     _useCubeModels = useCubeModels;
+
+    // Apply per-match team colors so meshes are rebuilt with the right palette.
+    PlayerMeshBuilder.setTeamColors(
+      homePrimary:   _argbToVec(gs.settings.homeTeamPrimary),
+      homeSecondary: _argbToVec(gs.settings.homeTeamSecondary),
+      awayPrimary:   _argbToVec(gs.settings.awayTeamPrimary),
+      awaySecondary: _argbToVec(gs.settings.awayTeamSecondary),
+    );
+
     _playerRigs.clear();
     _selectedCubeRigs.clear();
     for (final p in gs.playerRoster) {
@@ -490,4 +499,11 @@ class UltraballRenderSystem {
     if (ball.possessingTeamId == 'opponent') return _ballMeshes!.coreAway;
     return _ballMeshes!.coreLoose;
   }
+
+  /// Convert an ARGB int (e.g. 0xFF00C853) to a normalised RGB Vector3.
+  static Vector3 _argbToVec(int argb) => Vector3(
+    ((argb >> 16) & 0xFF) / 255.0,
+    ((argb >>  8) & 0xFF) / 255.0,
+    ( argb        & 0xFF) / 255.0,
+  );
 }

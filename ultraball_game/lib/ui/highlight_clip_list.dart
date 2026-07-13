@@ -6,12 +6,16 @@ class HighlightClipList extends StatelessWidget {
   final HighlightRecorder recorder;
   final String homeTeamName;
   final String awayTeamName;
+  final Color  homeTeamColor;
+  final Color  awayTeamColor;
 
   const HighlightClipList({
     super.key,
     required this.recorder,
     required this.homeTeamName,
     required this.awayTeamName,
+    required this.homeTeamColor,
+    required this.awayTeamColor,
   });
 
   @override
@@ -69,10 +73,12 @@ class HighlightClipList extends StatelessWidget {
           builder: (_, clips, __) {
             if (clips.isEmpty) return const SizedBox.shrink();
             return _ClipListPanel(
-              clips:        clips.reversed.toList(),
-              recorder:     recorder,
-              homeTeamName: homeTeamName,
-              awayTeamName: awayTeamName,
+              clips:         clips.reversed.toList(),
+              recorder:      recorder,
+              homeTeamName:  homeTeamName,
+              awayTeamName:  awayTeamName,
+              homeTeamColor: homeTeamColor,
+              awayTeamColor: awayTeamColor,
             );
           },
         ),
@@ -86,12 +92,16 @@ class _ClipListPanel extends StatelessWidget {
   final HighlightRecorder   recorder;
   final String homeTeamName;
   final String awayTeamName;
+  final Color  homeTeamColor;
+  final Color  awayTeamColor;
 
   const _ClipListPanel({
     required this.clips,
     required this.recorder,
     required this.homeTeamName,
     required this.awayTeamName,
+    required this.homeTeamColor,
+    required this.awayTeamColor,
   });
 
   @override
@@ -139,10 +149,12 @@ class _ClipListPanel extends StatelessWidget {
               padding:     EdgeInsets.zero,
               itemCount:   clips.length,
               itemBuilder: (_, i) => _ClipItem(
-                clip:         clips[i],
-                homeTeamName: homeTeamName,
-                awayTeamName: awayTeamName,
-                onTap:        () => recorder.onPlayClipRequest?.call(clips[i]),
+                clip:          clips[i],
+                homeTeamName:  homeTeamName,
+                awayTeamName:  awayTeamName,
+                homeTeamColor: homeTeamColor,
+                awayTeamColor: awayTeamColor,
+                onTap:         () => recorder.onPlayClipRequest?.call(clips[i]),
               ),
             ),
           ),
@@ -156,19 +168,23 @@ class _ClipItem extends StatelessWidget {
   final HighlightClip clip;
   final String        homeTeamName;
   final String        awayTeamName;
+  final Color         homeTeamColor;
+  final Color         awayTeamColor;
   final VoidCallback  onTap;
 
   const _ClipItem({
     required this.clip,
     required this.homeTeamName,
     required this.awayTeamName,
+    required this.homeTeamColor,
+    required this.awayTeamColor,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final isHome    = clip.teamId == 'player';
-    final teamColor = isHome ? const Color(0xFF2F83FF) : const Color(0xFFFF3B53);
+    final teamColor = isHome ? homeTeamColor : awayTeamColor;
     final teamName  = isHome ? homeTeamName : awayTeamName;
 
     return GestureDetector(

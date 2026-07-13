@@ -257,15 +257,15 @@ class ActSystem {
       p.resetBuffs();
     }
 
-    // Renumber deploySlots so the scoreboard filter (deploySlot < 7) is accurate:
-    // active players get 0–6, dead/benched players get pushed out of that range.
+    // Renumber deploySlots preserving relative order (sort by existing slot first).
     int slot = 0;
-    for (final p in roster) {
-      if (p.isOnField && p.isAlive) {
-        p.deploySlot = slot++;
-      } else if (!p.isAlive) {
-        p.deploySlot = 100 + p.rosterIndex;
-      }
+    final onFieldAlive = roster.where((p) => p.isOnField && p.isAlive).toList()
+        ..sort((a, b) => a.deploySlot.compareTo(b.deploySlot));
+    for (final p in onFieldAlive) {
+      p.deploySlot = slot++;
+    }
+    for (final p in roster.where((p) => !p.isAlive)) {
+      p.deploySlot = 100 + p.rosterIndex;
     }
   }
 
@@ -290,14 +290,16 @@ class ActSystem {
       p.resetBuffs();
     }
 
-    // Same deploySlot renumbering as _restockTeam so the scoreboard is correct.
+    // Renumber deploySlots preserving the order the roster screen established.
+    // Sort by existing deploySlot so the player's drag-reorder is respected.
     int slot = 0;
-    for (final p in roster) {
-      if (p.isOnField && p.isAlive) {
-        p.deploySlot = slot++;
-      } else if (!p.isAlive) {
-        p.deploySlot = 100 + p.rosterIndex;
-      }
+    final onFieldAlive = roster.where((p) => p.isOnField && p.isAlive).toList()
+        ..sort((a, b) => a.deploySlot.compareTo(b.deploySlot));
+    for (final p in onFieldAlive) {
+      p.deploySlot = slot++;
+    }
+    for (final p in roster.where((p) => !p.isAlive)) {
+      p.deploySlot = 100 + p.rosterIndex;
     }
   }
 

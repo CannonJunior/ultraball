@@ -209,6 +209,7 @@ class AbilityStatsCollector {
   }
 
   int get totalUses => _log.length;
+  List<AbilityUseRecord> get log => List.unmodifiable(_log);
   void reset() { _log.clear(); _outcomes.clear(); }
 }
 
@@ -244,6 +245,22 @@ class AbilityUseRecord {
     required this.playerHpRatio,
     required this.gameTimeRemaining,
   });
+
+  Map<String, dynamic> toJson() => {
+    'player_id':          playerId,
+    'player_name':        playerName,
+    'player_class':       playerClass.displayName,
+    'team':               team.name,
+    'slot':               slot,
+    'ability_name':       abilityName,
+    'damage_dealt':       damageDealt,
+    'caused_fumble':      causedFumble,
+    'applied_cc':         appliedCC,
+    'hit_a_target':       hitATarget,
+    'team_had_ball':      teamHadBall,
+    'player_hp_ratio':    playerHpRatio,
+    'game_time_remaining': gameTimeRemaining,
+  };
 }
 
 class PerAbilityStats {

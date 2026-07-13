@@ -22,6 +22,11 @@ flutter:
   uses-material-design: true
   assets:
     - assets/
+    - assets/fonts/
     - assets/ui/
     - assets/ui/class_icons/
     - assets/ui/score_icons/
+  fonts:
+    - family: Bangers
+      fonts:
+        - asset: assets/fonts/Bangers-Regular.ttf

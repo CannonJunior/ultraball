@@ -117,8 +117,9 @@ class FieldPainter extends CustomPainter {
   // Damage indicator TextPainter cache — keyed by indicator instance,
   // layout runs once on first encounter; saveLayer provides per-frame opacity
   // ====================================================================
-  final Expando<TextPainter> _indicatorTp = Expando();
+  Expando<TextPainter> _indicatorTp = Expando();
   final Paint _indicatorLayerPaint = Paint();
+  String _combatPrefsKey = '';
 
   // ====================================================================
   // Phase line dash-path cache (per screen layout)
@@ -818,14 +819,28 @@ class FieldPainter extends CustomPainter {
     }
   }
 
-  // Returns the font size for a given indicator type — used for vertical centering.
-  static double _indicatorFontSize(IndicatorType type) => switch (type) {
-    IndicatorType.damage => 22.0,
-    IndicatorType.kill   => 26.0,
-    IndicatorType.heal   => 22.0,
-    IndicatorType.combo  => 28.0,
-    IndicatorType.event  => 18.0,
-  };
+  // Returns the font size for a given indicator type, scaled by combatFontScale.
+  double _indicatorFontSize(IndicatorType type) {
+    final base = switch (type) {
+      IndicatorType.damage => 22.0,
+      IndicatorType.kill   => 26.0,
+      IndicatorType.heal   => 22.0,
+      IndicatorType.combo  => 28.0,
+      IndicatorType.event  => 18.0,
+    };
+    return base * gs.prefs.combatFontScale;
+  }
+
+  // Allocates a fresh Expando when font family, scale, or shadow pref changes,
+  // discarding all cached TextPainters so they are rebuilt with new styles.
+  void _invalidateCombatCacheIfNeeded() {
+    final p = gs.prefs;
+    final key = '${p.combatFontFamily}:${p.combatFontScale}:${p.combatShadow}';
+    if (key != _combatPrefsKey) {
+      _indicatorTp    = Expando();
+      _combatPrefsKey = key;
+    }
+  }
 
   // Returns the rise distance in screen pixels for a given indicator type.
   static double _indicatorRise(IndicatorType type) => switch (type) {
@@ -838,28 +853,35 @@ class FieldPainter extends CustomPainter {
 
   // Builds and caches a full-opacity TextPainter for the indicator.
   // Layout runs once; opacity is applied later via canvas.saveLayer.
+  // Cache is invalidated by _invalidateCombatCacheIfNeeded when prefs change.
   TextPainter _getOrBuildIndicatorTp(DamageIndicator ind) {
     final existing = _indicatorTp[ind];
     if (existing != null) return existing;
 
-    final (Color baseColor, double fontSize) = switch (ind.type) {
-      IndicatorType.damage => (const Color(0xFFFFDD00), 22.0),
-      IndicatorType.kill   => (const Color(0xFFFF2222), 26.0),
-      IndicatorType.heal   => (const Color(0xFF44FF88), 22.0),
-      IndicatorType.combo  => (const Color(0xFFFFAA00), 28.0),
-      IndicatorType.event  => (const Color(0xFFFFFFFF), 18.0),
+    final prefs = gs.prefs;
+    final scale = prefs.combatFontScale;
+    final (Color baseColor, double baseSize) = switch (ind.type) {
+      IndicatorType.damage => (prefs.combatDamageColor,        22.0),
+      IndicatorType.kill   => (prefs.combatKillColor,          26.0),
+      IndicatorType.heal   => (prefs.combatHealColor,          22.0),
+      IndicatorType.combo  => (const Color(0xFFFFAA00),        28.0),
+      IndicatorType.event  => (const Color(0xFFFFFFFF),        18.0),
     };
+    final shadows = prefs.combatShadow
+        ? const [
+            Shadow(color: Color(0xCC000000), blurRadius: 3, offset: Offset(1, 1)),
+            Shadow(color: Color(0x88000000), blurRadius: 6),
+          ]
+        : null;
     final tp = TextPainter(
       text: TextSpan(
         text: ind.text,
         style: TextStyle(
-          color: baseColor,
-          fontSize: fontSize,
+          color:      baseColor,
+          fontSize:   baseSize * scale,
+          fontFamily: prefs.combatFontFamily,
           fontWeight: FontWeight.w900,
-          shadows: const [
-            Shadow(color: Color(0xCC000000), blurRadius: 3, offset: Offset(1, 1)),
-            Shadow(color: Color(0x88000000), blurRadius: 6),
-          ],
+          shadows:    shadows,
         ),
       ),
       textDirection: TextDirection.ltr,
@@ -869,25 +891,48 @@ class FieldPainter extends CustomPainter {
   }
 
   void _drawAbilityRangeCircle(Canvas canvas) {
-    final slot = gs.prefs.hoveredAbilitySlot;
-    if (slot == null) return;
     final player = gs.selectedPlayer;
     if (player == null) return;
-    final range = player.playerClass.slotRange(slot);
-    if (range <= 0) return;
 
     final cx = sx(player.x);
     final cy = sy(player.y);
-    final r  = sm(range);
 
-    // Soft glow fill
+    // Queued-ability range (cyan) — shown when the pref is on and the queue is
+    // non-empty, unless the hovered slot already covers the same slot (avoids
+    // a redundant double-ring).
+    final hovered = gs.prefs.hoveredAbilitySlot;
+    if (gs.prefs.showNextQueuedAbilityRange && player.abilityQueue.isNotEmpty) {
+      final queuedSlot = player.abilityQueue.first;
+      if (queuedSlot != hovered) {
+        final range = player.playerClass.slotRange(queuedSlot);
+        if (range > 0) {
+          final r = sm(range);
+          _gp
+            ..color      = const Color(0x2244CCFF)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+          canvas.drawCircle(Offset(cx, cy), r, _gp);
+          _gp.maskFilter = null;
+          _sp
+            ..color       = const Color(0xCC44CCFF)
+            ..strokeWidth = 2.0
+            ..strokeCap   = StrokeCap.round;
+          canvas.drawCircle(Offset(cx, cy), r, _sp);
+        }
+      }
+    }
+
+    // Hovered-ability range (orange) — existing behaviour.
+    if (hovered == null) return;
+    final range = player.playerClass.slotRange(hovered);
+    if (range <= 0) return;
+    final r = sm(range);
+
     _gp
       ..color      = const Color(0x22FFAA00)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
     canvas.drawCircle(Offset(cx, cy), r, _gp);
     _gp.maskFilter = null;
 
-    // Solid ring
     _sp
       ..color       = const Color(0xCCFFAA00)
       ..strokeWidth = 2.0
@@ -918,12 +963,15 @@ class FieldPainter extends CustomPainter {
     final pos = projectPlayer(player, size);
     if (pos == null) return;
 
+    _invalidateCombatCacheIfNeeded();
+
     // Fixed pixel offset above the projected player centre (works for all view modes).
+    final scale       = gs.prefs.combatFontScale;
     const aboveCenter = 22.0;
     const rowGap      = 24.0;
-    const queueFontSz = 18.0;
-    const execFontSz  = 22.0;
-    const badgeFontSz = 16.0;
+    final queueFontSz = 18.0 * scale;
+    final execFontSz  = 22.0 * scale;
+    final badgeFontSz = 16.0 * scale;
 
     double y = pos.dy - aboveCenter; // y of the bottommost text row (queue line)
 
@@ -975,6 +1023,10 @@ class FieldPainter extends CustomPainter {
   // Draw mixed-color text spans side-by-side, centred horizontally.
   void _drawQueueSpans(
       Canvas canvas, List<(String, Color)> spans, double cx, double cy, double fontSize) {
+    final prefs   = gs.prefs;
+    final shadows = prefs.combatShadow
+        ? [const Shadow(color: Color(0xCC000000), blurRadius: 3, offset: Offset(1, 1))]
+        : null;
     final painters = <TextPainter>[];
     double totalW = 0;
     for (final (text, color) in spans) {
@@ -982,10 +1034,11 @@ class FieldPainter extends CustomPainter {
         text: TextSpan(
           text: text,
           style: TextStyle(
-            color: color,
-            fontSize: fontSize,
+            color:      color,
+            fontSize:   fontSize,
+            fontFamily: prefs.combatFontFamily,
             fontWeight: FontWeight.bold,
-            shadows: const [Shadow(color: Color(0xCC000000), blurRadius: 3, offset: Offset(1, 1))],
+            shadows:    shadows,
           ),
         ),
         textDirection: TextDirection.ltr,
@@ -1004,6 +1057,13 @@ class FieldPainter extends CustomPainter {
   void _drawQueueLabel(Canvas canvas, String text, double cx, double cy,
       Color color, double fontSize, [double opacity = 1.0]) {
     if (opacity <= 0) return;
+    final prefs   = gs.prefs;
+    final shadows = prefs.combatShadow
+        ? [
+            const Shadow(color: Color(0xCC000000), blurRadius: 3, offset: Offset(1, 1)),
+            const Shadow(color: Color(0x88000000), blurRadius: 6),
+          ]
+        : null;
     final tp = TextPainter(
       text: TextSpan(
         text: text,
@@ -1012,13 +1072,11 @@ class FieldPainter extends CustomPainter {
             (color.alpha * opacity).round().clamp(0, 255),
             color.red, color.green, color.blue,
           ),
-          fontSize: fontSize,
-          fontWeight: FontWeight.bold,
+          fontSize:     fontSize,
+          fontFamily:   prefs.combatFontFamily,
+          fontWeight:   FontWeight.bold,
           letterSpacing: 0.5,
-          shadows: const [
-            Shadow(color: Color(0xCC000000), blurRadius: 3, offset: Offset(1, 1)),
-            Shadow(color: Color(0x88000000), blurRadius: 6),
-          ],
+          shadows:      shadows,
         ),
       ),
       textDirection: TextDirection.ltr,
@@ -1072,6 +1130,7 @@ class FieldPainter extends CustomPainter {
 
   void _drawDamageIndicators(Canvas canvas) {
     if (gs.indicators.isEmpty) return;
+    _invalidateCombatCacheIfNeeded();
     for (final ind in gs.indicators) {
       // xJitter is now in screen pixels (no scale multiplication).
       final screenX = ind.worldX * scale + offsetX + ind.xJitter;
@@ -1323,8 +1382,11 @@ class FieldPainter extends CustomPainter {
       _gp.maskFilter = null;
     }
     if (p.isSelected) {
+      final selColor = p.team == Team.player
+          ? Color(gs.settings.homeTeamPrimary)
+          : Color(gs.settings.awayTeamPrimary);
       _gp
-        ..color = const Color(0xFF1E88E5).withValues(alpha: 0.38)
+        ..color = selColor.withValues(alpha: 0.38)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
       canvas.drawCircle(pos, r + sm(1.0), _gp);
       _gp.maskFilter = null;
@@ -1341,8 +1403,8 @@ class FieldPainter extends CustomPainter {
 
     // Player body
     final teamColor = p.team == Team.player
-        ? const Color(0xFF1E88E5)
-        : const Color(0xFFE53935);
+        ? Color(gs.settings.homeTeamPrimary)
+        : Color(gs.settings.awayTeamPrimary);
     final bodyColor = p.isSelected ? UiAssets.classColor(p.playerClass) : teamColor;
 
     _fp.color = bodyColor;
@@ -1642,6 +1704,7 @@ class FieldPainter extends CustomPainter {
   void _drawDamageIndicators3D(
       Canvas canvas, Size size, UltraballRenderSystem rs) {
     if (gs.indicators.isEmpty) return;
+    _invalidateCombatCacheIfNeeded();
     for (final ind in gs.indicators) {
       // Ease-out rise: 3 world units total, decelerating.
       final easedProgress = 1.0 - math.pow(1.0 - ind.progress, 2.0) as double;
@@ -2004,8 +2067,8 @@ class FieldPainter extends CustomPainter {
 
     // Player body
     final teamColor = p.team == Team.player
-        ? const Color(0xFF1E88E5)
-        : const Color(0xFFE53935);
+        ? Color(gs.settings.homeTeamPrimary)
+        : Color(gs.settings.awayTeamPrimary);
     final bodyColor = p.isSelected ? UiAssets.classColor(p.playerClass) : teamColor;
     _fp.color = bodyColor;
     canvas.drawCircle(pos, r, _fp);

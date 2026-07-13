@@ -9,8 +9,6 @@ import '../game/highlight_recorder.dart';
 import 'scoreboard.dart';
 
 // ── Design constants ──────────────────────────────────────────────────────────
-const _kRed  = Color(0xFFFF3B53);
-const _kBlue = Color(0xFF2F83FF);
 
 const _kPanelWidth   = 340.0;
 const _kRedStripW    = 7.0;
@@ -130,14 +128,16 @@ class _ScoreboardRowState extends State<ScoreboardRow>
 
   @override
   Widget build(BuildContext context) {
-    final gs   = widget.gs;
-    final away = gs.settings.awayTeamName;
-    final home = gs.settings.homeTeamName;
+    final gs        = widget.gs;
+    final away      = gs.settings.awayTeamName;
+    final home      = gs.settings.homeTeamName;
+    final awayColor = Color(gs.settings.awayTeamPrimary);
+    final homeColor = Color(gs.settings.homeTeamPrimary);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ── Left side (away / opponent / red) ───────────────────────────────
+        // ── Left side (away / opponent) ─────────────────────────────────────
         // Stack+Positioned(top:0,bottom:0) propagates the tight row height
         // (set by IntrinsicHeight + crossAxisAlignment.stretch) into the inner
         // Row, so the panel fills the full scoreboard height. Align(centerRight)
@@ -157,7 +157,7 @@ class _ScoreboardRowState extends State<ScoreboardRow>
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _BorderStrip(width: _kRedStripW, color: _kRed, glow: true),
+                        _BorderStrip(width: _kRedStripW, color: awayColor, glow: true),
                         SizeTransition(
                           sizeFactor:    _leftAnim,
                           axis:          Axis.horizontal,
@@ -167,7 +167,7 @@ class _ScoreboardRowState extends State<ScoreboardRow>
                             child: _HighlightPanel(
                               key:          _leftPanelKey,
                               teamName:     away,
-                              teamColor:    _kRed,
+                              teamColor:    awayColor,
                               labelRight:   false,
                               openFraction: _leftAnim,
                             ),
@@ -192,7 +192,7 @@ class _ScoreboardRowState extends State<ScoreboardRow>
           ),
         ),
 
-        // ── Right side (home / player / blue) ───────────────────────────────
+        // ── Right side (home / player) ──────────────────────────────────────
         Expanded(
           flex: 33,
           child: Stack(
@@ -217,13 +217,13 @@ class _ScoreboardRowState extends State<ScoreboardRow>
                             child: _HighlightPanel(
                               key:          _rightPanelKey,
                               teamName:     home,
-                              teamColor:    _kBlue,
+                              teamColor:    homeColor,
                               labelRight:   true,
                               openFraction: _rightAnim,
                             ),
                           ),
                         ),
-                        _BorderStrip(width: _kRedStripW, color: _kBlue, glow: true),
+                        _BorderStrip(width: _kRedStripW, color: homeColor, glow: true),
                       ],
                     ),
                   ),

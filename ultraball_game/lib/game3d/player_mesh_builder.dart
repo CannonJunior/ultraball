@@ -28,17 +28,42 @@ import '../models/player.dart';
 class PlayerMeshBuilder {
   static final Map<String, Mesh> _cache = {};
 
+  // ── Per-match team colors (set once per game via setTeamColors) ───────────
+  static Vector3 _homePrimary   = Vector3(0.15, 0.30, 0.85);
+  static Vector3 _homeSecondary = Vector3(0.08, 0.12, 0.42);
+  static Vector3 _awayPrimary   = Vector3(0.88, 0.15, 0.15);
+  static Vector3 _awaySecondary = Vector3(0.42, 0.08, 0.08);
+
+  /// Call once at game start. Clears the mesh cache so new colors take effect.
+  static void setTeamColors({
+    required Vector3 homePrimary,
+    required Vector3 homeSecondary,
+    required Vector3 awayPrimary,
+    required Vector3 awaySecondary,
+  }) {
+    _homePrimary   = homePrimary;
+    _homeSecondary = homeSecondary;
+    _awayPrimary   = awayPrimary;
+    _awaySecondary = awaySecondary;
+    _cache.clear();
+  }
+
+  static Vector3 _teamPrimary(Team team) =>
+      team == Team.player ? _homePrimary : _awayPrimary;
+
+  static Vector3 _teamSecondary(Team team) =>
+      team == Team.player ? _homeSecondary : _awaySecondary;
+
   static Mesh _box(String key, double w, double h, double d, Vector3 color) {
     return _cache.putIfAbsent(
       key, () => Mesh.box(width: w, height: h, depth: d, color: color));
   }
 
   static CharacterRig buildCube(Team team) {
-    final color = team == Team.player
-        ? Vector3(0.15, 0.30, 0.85)
-        : Vector3(0.88, 0.15, 0.15);
+    final color = _teamPrimary(team);
+    final key = 'cube_${team.name}_${color.r}_${color.g}_${color.b}';
     final mesh = _cache.putIfAbsent(
-      'cube_${team.name}',
+      key,
       () => Mesh.cube(size: 1.6, color: color),
     );
     return CharacterRig(parts: [
@@ -147,11 +172,7 @@ class PlayerMeshBuilder {
   // ── Color helpers ──────────────────────────────────────────────────────────
 
   static Vector3 _jerseyColor(Team team, PlayerClass playerClass) {
-    // Base team color slightly shifted per class for lineup readability
-    final base = team == Team.player
-        ? Vector3(0.15, 0.30, 0.85)   // home: electric blue
-        : Vector3(0.88, 0.15, 0.15);  // away: crimson
-
+    final base  = _teamPrimary(team);
     final shift = _classJerseyShift(playerClass);
     return Vector3(
       (base.x + shift.x).clamp(0.0, 1.0),
@@ -171,9 +192,7 @@ class PlayerMeshBuilder {
     PlayerClass.wrecker  => Vector3( 0.15, -0.08, -0.10),  // WRECKER — deep red-orange shift
   };
 
-  static Vector3 _pantsColor(Team team) => team == Team.player
-      ? Vector3(0.08, 0.12, 0.42)   // dark navy
-      : Vector3(0.42, 0.08, 0.08);  // dark maroon
+  static Vector3 _pantsColor(Team team) => _teamSecondary(team);
 
   static Vector3 _helmetColor(PlayerClass cls) => switch (cls) {
     PlayerClass.spectre   => Vector3(0.90, 0.75, 0.10),  // SPECTRE — gold

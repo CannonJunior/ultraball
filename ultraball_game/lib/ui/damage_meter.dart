@@ -75,13 +75,15 @@ class _DamageMeterState extends State<DamageMeter> {
           ),
 
           // Home team rows (globally ranked order, filtered to home)
-          ..._buildRows(gs.playerRoster, sorted, maxVal, valueOf, fmt, isHome: true),
+          ..._buildRows(gs.playerRoster, sorted, maxVal, valueOf, fmt,
+              teamColor: Color(gs.settings.homeTeamPrimary)),
 
           // Team separator
           _TeamSeparator(),
 
           // Away team rows
-          ..._buildRows(gs.opponentRoster, sorted, maxVal, valueOf, fmt, isHome: false),
+          ..._buildRows(gs.opponentRoster, sorted, maxVal, valueOf, fmt,
+              teamColor: Color(gs.settings.awayTeamPrimary)),
 
           // Totals footer
           _TotalsFooter(
@@ -102,7 +104,7 @@ class _DamageMeterState extends State<DamageMeter> {
     double maxVal,
     double Function(UltraballPlayer) valueOf,
     String Function(double) fmt, {
-    required bool isHome,
+    required Color teamColor,
   }) {
     final rows = globalRanking.where(teamRoster.contains).toList();
     return rows.map((p) {
@@ -114,7 +116,7 @@ class _DamageMeterState extends State<DamageMeter> {
         rank:        rank,
         barFraction: frac,
         valueLabel:  fmt(val),
-        isHome:      isHome,
+        teamColor:   teamColor,
       );
     }).toList();
   }
@@ -194,20 +196,18 @@ class _PlayerRow extends StatelessWidget {
   final int rank;
   final double barFraction;
   final String valueLabel;
-  final bool isHome;
+  final Color  teamColor;
 
   const _PlayerRow({
     required this.player,
     required this.rank,
     required this.barFraction,
     required this.valueLabel,
-    required this.isHome,
+    required this.teamColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    final t         = UiTheme.instance;
-    final teamColor = isHome ? t.homeTeamColor : t.awayTeamColor;
     final classCol  = UiAssets.classColor(player.playerClass);
     final isDead    = !player.isAlive;
 

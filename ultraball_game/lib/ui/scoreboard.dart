@@ -6,8 +6,6 @@ import '../models/player.dart';
 import '../models/ultraball.dart';
 
 // ── Design palette ────────────────────────────────────────────────────────────
-const _kRed   = Color(0xFFFF3B53);
-const _kBlue  = Color(0xFF2F83FF);
 const _kGold  = Color(0xFFFFCB3D);
 const _kCyan  = Color(0xFF19E3E3);
 const _kBg    = Color(0xFF04050A);
@@ -115,6 +113,8 @@ class _ScoreboardState extends State<Scoreboard>
               isAct5:     act.isAct5,
               pipGlow:    _pipGlow,
               blinkCtrl:  _blinkCtrl,
+              awayColor:  Color(gs.settings.awayTeamPrimary),
+              homeColor:  Color(gs.settings.homeTeamPrimary),
             ),
           ),
           KeyedSubtree(
@@ -127,6 +127,8 @@ class _ScoreboardState extends State<Scoreboard>
               awayPlayers: awayPlayers,
               homePlayers: homePlayers,
               targetId:    gs.currentTargetId,
+              awayColor:   Color(gs.settings.awayTeamPrimary),
+              homeColor:   Color(gs.settings.homeTeamPrimary),
             ),
           ),
         ],
@@ -176,6 +178,7 @@ class _MainBar extends StatelessWidget {
   final bool isAct5;
   final Animation<double> pipGlow;
   final AnimationController blinkCtrl;
+  final Color awayColor, homeColor;
 
   const _MainBar({
     required this.awayName,
@@ -190,6 +193,8 @@ class _MainBar extends StatelessWidget {
     required this.isAct5,
     required this.pipGlow,
     required this.blinkCtrl,
+    required this.awayColor,
+    required this.homeColor,
   });
 
   @override
@@ -207,10 +212,10 @@ class _MainBar extends StatelessWidget {
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    _kRed.withValues(alpha: 0.18),
+                    awayColor.withValues(alpha: 0.18),
                     Colors.transparent,
                     Colors.transparent,
-                    _kBlue.withValues(alpha: 0.18),
+                    homeColor.withValues(alpha: 0.18),
                   ],
                   stops: const [0, 0.36, 0.64, 1],
                 ),
@@ -227,13 +232,13 @@ class _MainBar extends StatelessWidget {
                   child: Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [_kRed.withValues(alpha: 0.28), _kRed.withValues(alpha: 0.04)],
+                        colors: [awayColor.withValues(alpha: 0.28), awayColor.withValues(alpha: 0.04)],
                       ),
                     ),
                     child: _TeamPanel(
                       name:   awayName,
                       score:  awayScore,
-                      color:  _kRed,
+                      color:  awayColor,
                       isHome: false,
                     ),
                   ),
@@ -268,13 +273,13 @@ class _MainBar extends StatelessWidget {
                       gradient: LinearGradient(
                         begin: Alignment.centerRight,
                         end: Alignment.centerLeft,
-                        colors: [_kBlue.withValues(alpha: 0.28), _kBlue.withValues(alpha: 0.04)],
+                        colors: [homeColor.withValues(alpha: 0.28), homeColor.withValues(alpha: 0.04)],
                       ),
                     ),
                     child: _TeamPanel(
                       name:   homeName,
                       score:  homeScore,
-                      color:  _kBlue,
+                      color:  homeColor,
                       isHome: true,
                     ),
                   ),
@@ -630,10 +635,13 @@ class _UltraballPainter extends CustomPainter {
 class _PlayerCardsRow extends StatelessWidget {
   final List<UltraballPlayer> awayPlayers, homePlayers;
   final String? targetId;
+  final Color awayColor, homeColor;
   const _PlayerCardsRow({
     required this.awayPlayers,
     required this.homePlayers,
     required this.targetId,
+    required this.awayColor,
+    required this.homeColor,
   });
 
   @override
@@ -651,7 +659,7 @@ class _PlayerCardsRow extends StatelessWidget {
               children: awayPlayers.map((p) =>
                 _PlayerCard(
                   player:           p,
-                  teamColor:        _kRed,
+                  teamColor:        awayColor,
                   killBadgeOnRight: true,
                   isTargeted:       p.id == targetId,
                 )
@@ -666,7 +674,7 @@ class _PlayerCardsRow extends StatelessWidget {
               children: homePlayers.map((p) =>
                 _PlayerCard(
                   player:           p,
-                  teamColor:        _kBlue,
+                  teamColor:        homeColor,
                   killBadgeOnRight: false,
                   isTargeted:       p.id == targetId || p.isSelected,
                 )

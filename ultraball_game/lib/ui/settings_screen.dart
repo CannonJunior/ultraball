@@ -238,7 +238,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           _homeTeamIdx = i;
                           _homeRosterOrder = List.generate(15, (j) => j);
                         }),
-                        accentColor: const Color(0xFF1E88E5),
+                        accentColor: Color(TeamDefinition.teams[_homeTeamIdx].primaryColor),
                       ),
                     ],
                   ),
@@ -259,7 +259,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         selected: _awayTeamIdx,
                         excludeIdx: _homeTeamIdx,
                         onChanged: (i) => setState(() => _awayTeamIdx = i),
-                        accentColor: const Color(0xFFE53935),
+                        accentColor: Color(TeamDefinition.teams[_awayTeamIdx].primaryColor),
                       ),
                     ],
                   ),
@@ -1357,10 +1357,14 @@ class _RosterEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final homeNames    = TeamDefinition.teams[homeTeamIdx].playerNames;
-    final homeTeamName = TeamDefinition.teams[homeTeamIdx].name;
-    final awayNames    = TeamDefinition.teams[awayTeamIdx].playerNames;
-    final awayTeamName = TeamDefinition.teams[awayTeamIdx].name;
+    final homeDef      = TeamDefinition.teams[homeTeamIdx];
+    final awayDef      = TeamDefinition.teams[awayTeamIdx];
+    final homeNames    = homeDef.playerNames;
+    final homeTeamName = homeDef.name;
+    final awayNames    = awayDef.playerNames;
+    final awayTeamName = awayDef.name;
+    final homeColor    = Color(homeDef.primaryColor);
+    final awayColor    = Color(awayDef.primaryColor);
 
     // Inactive player indices for each team (home uses roster order, away uses 0-14)
     final homeInactive = homeRosterOrder.where((i) => inactiveClasses.contains(i % 7)).toList();
@@ -1403,7 +1407,7 @@ class _RosterEditor extends StatelessWidget {
               children: [
                 Expanded(child: _EditableTeamRoster(
                   teamName: homeTeamName,
-                  color: const Color(0xFF1E88E5),
+                  color: homeColor,
                   names: homeNames,
                   order: homeRosterOrder,
                   onReorder: onHomeReorder,
@@ -1412,7 +1416,7 @@ class _RosterEditor extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(child: _ReadonlyTeamRoster(
                   teamName: awayTeamName,
-                  color: const Color(0xFFE53935),
+                  color: awayColor,
                   names: awayNames,
                   inactiveClasses: inactiveClasses,
                 )),

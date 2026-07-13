@@ -5,12 +5,11 @@ import '../game/game_state.dart';
 import '../models/player.dart';
 
 // ── Design palette ────────────────────────────────────────────────────────────
-const _kRed  = Color(0xFFFF3B53);
-const _kBlue = Color(0xFF2F83FF);
 const _kGold = Color(0xFFFFCB3D);
 const _kCyan = Color(0xFF19E3E3);
 const _kDark = Color(0xFF06070D);
 const _kHeal = Color(0xFF6EE7B7);
+const _kKill = Color(0xFFFF3B53); // kill-icon marker (semantic, not team color)
 
 // ── Sort column enum ──────────────────────────────────────────────────────────
 
@@ -21,10 +20,9 @@ enum StatSortKey { name, damage, healing, points, kills }
 class _Row {
   final UltraballPlayer player;
   final bool isHome;
+  final Color color;
 
-  _Row(this.player, {required this.isHome});
-
-  Color get color => isHome ? _kBlue : _kRed;
+  _Row(this.player, {required this.isHome, required this.color});
   String get badge => player.name.isNotEmpty ? player.name[0] : '?';
   String get cls => player.playerClass.displayName.toUpperCase();
   double get dmg => player.totalDamageDealt;
@@ -76,9 +74,11 @@ class _StatTableState extends State<StatTable> {
   Widget build(BuildContext context) {
     final gs = widget.gs;
 
+    final homeColor = Color(gs.settings.homeTeamPrimary);
+    final awayColor = Color(gs.settings.awayTeamPrimary);
     final rows = [
-      ...gs.playerRoster.map((p) => _Row(p, isHome: true)),
-      ...gs.opponentRoster.map((p) => _Row(p, isHome: false)),
+      ...gs.playerRoster.map((p) => _Row(p, isHome: true,  color: homeColor)),
+      ...gs.opponentRoster.map((p) => _Row(p, isHome: false, color: awayColor)),
     ];
 
     rows.sort((a, b) {
@@ -176,9 +176,7 @@ class _StatRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final rowBg = isLeader
       ? _kGold.withValues(alpha: 0.09)
-      : row.isHome
-        ? _kBlue.withValues(alpha: 0.05)
-        : _kRed.withValues(alpha: 0.05);
+      : row.color.withValues(alpha: 0.05);
     final rankColor = isLeader ? _kGold : Colors.white.withValues(alpha: 0.5);
     final dmgPct  = (row.dmg  / maxDmg) .clamp(0.0, 1.0);
     final healPct = (row.heal / maxHeal).clamp(0.0, 1.0);
@@ -293,7 +291,7 @@ class _StatRow extends StatelessWidget {
                       // Kill icon
                       Transform.rotate(
                         angle: math.pi / 4,
-                        child: Container(width: 8, height: 8, color: _kRed)),
+                        child: Container(width: 8, height: 8, color: _kKill)),
                       const SizedBox(width: 3),
                       Text('${row.kills}',
                         style: const TextStyle(fontFamily: 'monospace',
@@ -320,6 +318,7 @@ class _StatRow extends StatelessWidget {
   }
 
   static String _fmt(double v) {
+    if (!v.isFinite) return '0';
     if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}k';
     return v.toInt().toString();
   }
@@ -396,7 +395,7 @@ class _Legend extends StatelessWidget {
           _LegendChip(
             icon: Transform.rotate(
               angle: math.pi / 4,
-              child: Container(width: 8, height: 8, color: _kRed),
+              child: Container(width: 8, height: 8, color: _kKill),
             ),
             label: 'KILLING BLOW',
           ),

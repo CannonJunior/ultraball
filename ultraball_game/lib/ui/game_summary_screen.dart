@@ -5,8 +5,6 @@ import '../models/player.dart';
 import 'stat_table.dart';
 
 // ── Design palette ────────────────────────────────────────────────────────────
-const _kRed  = Color(0xFFFF3B53);
-const _kBlue = Color(0xFF2F83FF);
 const _kGold = Color(0xFFFFCB3D);
 const _kSurf = Color(0xFF0A0C14);
 const _kDark = Color(0xFF06070D);
@@ -30,25 +28,28 @@ class GameSummaryScreen extends StatelessWidget {
     String winnerName;
     Color  winnerColor;
 
+    final homeColor = Color(gs.settings.homeTeamPrimary);
+    final awayColor = Color(gs.settings.awayTeamPrimary);
+
     if (act.playerForfeit) {
       winnerName  = gs.settings.awayTeamName;
-      winnerColor = _kRed;
+      winnerColor = awayColor;
     } else if (act.opponentForfeit) {
       winnerName  = gs.settings.homeTeamName;
-      winnerColor = _kBlue;
+      winnerColor = homeColor;
     } else if (tied) {
       winnerName  = 'DRAW';
       winnerColor = _kGold;
     } else if (playerWon) {
       winnerName  = gs.settings.homeTeamName;
-      winnerColor = _kBlue;
+      winnerColor = homeColor;
     } else {
       winnerName  = gs.settings.awayTeamName;
-      winnerColor = _kRed;
+      winnerColor = awayColor;
     }
 
     // Match duration
-    final totalSecs  = gs.matchTimeElapsed.toInt();
+    final totalSecs  = gs.matchTimeElapsed.isFinite ? gs.matchTimeElapsed.toInt() : 0;
     final mins       = (totalSecs ~/ 60).toString().padLeft(2, '0');
     final secs       = (totalSecs % 60).toString().padLeft(2, '0');
     final fmtDur     = '$mins:$secs';
@@ -83,6 +84,7 @@ class GameSummaryScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       // ── Hero header ─────────────────────────────────────
                       _HeroHeader(
@@ -120,6 +122,7 @@ class GameSummaryScreen extends StatelessWidget {
   }
 
   static String _fmt(double v) {
+    if (!v.isFinite) return '0';
     if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}k';
     return v.toInt().toString();
   }
@@ -313,6 +316,7 @@ class _StatCards extends StatelessWidget {
   }
 
   static String _fmt(double v) {
+    if (!v.isFinite) return '0';
     if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}k';
     return v.toInt().toString();
   }

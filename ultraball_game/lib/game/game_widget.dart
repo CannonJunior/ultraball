@@ -13,6 +13,7 @@ import 'systems/creature_system.dart';
 import 'systems/act_system.dart';
 import 'systems/ai_system.dart';
 import 'systems/terrain_system.dart';
+import 'systems/collision_system.dart';
 import '../models/terrain_event.dart';
 import '../ui/scoreboard.dart';
 import '../ui/scoreboard_row.dart';
@@ -29,6 +30,7 @@ import '../ai/learning_ai.dart';
 import '../ai/game_data_collector.dart';
 import '../game3d/ultraball_render_system.dart';
 import 'highlight_recorder.dart';
+import '../analytics/analytics_reporter.dart';
 
 class GameWidget extends StatefulWidget {
   final GameSettings settings;
@@ -178,6 +180,7 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
         _learnDone = true;
         final record = _dataCollector?.finalise(_gs);
         if (record != null) LearningAi.instance.onGameEnd(record);
+        AnalyticsReporter.send(_gs);
         // Force a rebuild to show the game-over overlay. This matters when
         // forfeit was set outside _update() (e.g. via a key-press ability),
         // because the setState() at the bottom of _update() is never reached.
@@ -228,6 +231,9 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
 
     // Update AI
     AiSystem.update(_gs, dt);
+
+    // Resolve player-to-player collisions (post-move, pre-ball)
+    CollisionSystem.resolvePlayerCollisions(_gs);
 
     // Update ball
     BallSystem.update(_gs, dt);
@@ -829,9 +835,11 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
                                   if (_highlightRecorder != null) ...[
                                     const SizedBox(height: 8),
                                     HighlightClipList(
-                                      recorder:     _highlightRecorder!,
-                                      homeTeamName: widget.settings.homeTeamName,
-                                      awayTeamName: widget.settings.awayTeamName,
+                                      recorder:      _highlightRecorder!,
+                                      homeTeamName:  widget.settings.homeTeamName,
+                                      awayTeamName:  widget.settings.awayTeamName,
+                                      homeTeamColor: Color(widget.settings.homeTeamPrimary),
+                                      awayTeamColor: Color(widget.settings.awayTeamPrimary),
                                     ),
                                   ],
                                 ],
@@ -968,14 +976,14 @@ class _RosterPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           _RosterRow(
-            color: const Color(0xFF1E88E5),
+            color: Color(gs.settings.homeTeamPrimary),
             name: gs.settings.homeTeamName,
             onField: playerOnField,
             dead: playerDead,
           ),
           const SizedBox(height: 4),
           _RosterRow(
-            color: const Color(0xFFE53935),
+            color: Color(gs.settings.awayTeamPrimary),
             name: gs.settings.awayTeamName,
             onField: oppOnField,
             dead: oppDead,

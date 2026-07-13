@@ -64,10 +64,20 @@ class AiSystem {
       }
     }
 
-    // When a friendly pass is in-flight, one teammate should chase the ball
-    String? inFlightChaserId;
+    // When a friendly pass is in-flight, teammates should converge to catch it.
+    // FloodEndzone uses multiple catchers (all players already in the endzone area
+    // plus the closest overall); other strategies use only the single closest.
+    final inFlightChaserSet = <String>{};
     if (ball.isInFlight && ball.possessingTeamId == 'opponent') {
-      inFlightChaserId = _findClosestToPoint(opponents, ball.x, ball.y)?.id;
+      final closest = _findClosestToPoint(opponents, ball.x, ball.y);
+      if (closest != null) inFlightChaserSet.add(closest.id);
+      if (strategy == AiStrategy.floodEndzone) {
+        for (final o in opponents) {
+          if (o.isAlive && !o.isStunned && o.x >= 105.0) {
+            inFlightChaserSet.add(o.id);
+          }
+        }
+      }
     }
 
     // For NumericalEdge / FocusFire: pre-select the single weakest player-team target
@@ -90,7 +100,7 @@ class AiSystem {
         continue;
       }
 
-      final avoid = _getCreatureAvoidance(gs, opp);
+      final avoid = _getAvoidance(gs, opp);
 
       if (ball.holderId == null && !ball.isInFlight) {
         // ── Ball loose ──
@@ -107,7 +117,7 @@ class AiSystem {
         if (ball.holderId == opp.id) {
           _opponentHolderBehavior(opp, gs, avoid, opponents, playerTeam,
               holderPressure, policy, tactics, strategy);
-        } else if (inFlightChaserId == opp.id) {
+        } else if (inFlightChaserSet.contains(opp.id)) {
           // Chase in-flight ball to catch it
           _moveToward(opp, ball.x, ball.y, avoid);
         } else {
@@ -162,6 +172,47 @@ class AiSystem {
 
     final chargeRatio = gs.ball.chargeTimer / gs.ball.effectiveMaxCharge;
     final chargeDanger = chargeRatio > _chargeDangerFrac;
+
+    // ── FloodEndzone: throw-first strategy ──────────────────────────────────
+    // Find the most open receiver (endzone preferred), tolerating up to 2 nearby
+    // defenders so the team actually throws rather than running every time.
+    if (strategy == AiStrategy.floodEndzone) {
+      UltraballPlayer? floodTarget;
+      double floodBestScore = -double.infinity;
+
+      for (final tm in filteredTM) {
+        if (tm.x < opp.x + 3.0) continue; // must be at least 3m ahead
+        int nearDefs = 0;
+        double closestDefDistSq = double.infinity;
+        for (final d in defenders) {
+          if (!d.isAlive || d.isStunned) continue;
+          final dx = d.x - tm.x;
+          final dy = d.y - tm.y;
+          final dSq = dx * dx + dy * dy;
+          if (dSq < 49.0) nearDefs++; // 7m coverage radius
+          if (dSq < closestDefDistSq) closestDefDistSq = dSq;
+        }
+        if (nearDefs > 2) continue; // allow up to 2 defenders — flood beats coverage
+        final endzoneBonus  = tm.x >= 112.0 ? 25.0 : 0.0;
+        final advanceScore  = tm.x - opp.x;
+        final opennessScore = (math.sqrt(closestDefDistSq) / 10.0).clamp(0.0, 2.0);
+        final score = advanceScore + opennessScore + endzoneBonus;
+        if (score > floodBestScore) {
+          floodBestScore = score;
+          floodTarget    = tm;
+        }
+      }
+
+      if (floodTarget != null) {
+        _aiPassTo(gs, opp, floodTarget);
+      } else {
+        // No open receiver yet — advance toward endzone to close the gap
+        _moveToward(opp, targetX, _openLaneY(opp, defenders), avoid);
+      }
+      CombatSystem.tryAttack(gs, opp, 'tackle');
+      if (aggression > 0.5 && opp.redMana >= 20) CombatSystem.tryAttack(gs, opp, 'slam');
+      return;
+    }
 
     UltraballPlayer? bestPass;
     double bestScore = -double.infinity;
@@ -240,9 +291,8 @@ class AiSystem {
     final holder = gs.getPlayerById(gs.ball.holderId ?? '');
     if (holder == null) return;
 
-    final cohesion        = policy?.cohesion        as double? ?? 0.5;
-    final endzonePressure = policy?.endzonePressure as double? ?? 0.7;
-    final passEagerness   = policy?.passEagerness   as double? ?? 0.5;
+    final cohesion      = policy?.cohesion      as double? ?? 0.5;
+    final passEagerness = policy?.passEagerness as double? ?? 0.5;
 
     double targetX, targetY;
 
@@ -314,10 +364,33 @@ class AiSystem {
         targetY = laneY;
     }
 
-    // FloodEndzone strategy: some players run deep into endzone
-    // endzonePressure scales how deep they flood
-    if (strategy == AiStrategy.floodEndzone && opp.rosterIndex % 3 == 0) {
-      targetX = 120.0 + endzonePressure * 18.0;
+    // FloodEndzone: pre-position players at staggered endzone slots so there are
+    // always live receivers when the holder looks to throw.
+    if (strategy == AiStrategy.floodEndzone) {
+      // Six distinct positions — each support player occupies a different slot
+      // based on their roster index, creating spread coverage across the endzone.
+      const double deep  = 135.0;
+      const double mid   = 124.0;
+      const double near  = 114.0;
+      const double short = 10.0; // distance ahead of holder (used below)
+      final positions = [
+        (x: near,  y: laneY),            // 0: near-endzone entry point
+        (x: mid,   y:  5.0),             // 1: mid-endzone top lane
+        (x: deep,  y: 12.0),             // 2: deep endzone top
+        (x: mid,   y: 20.0),             // 3: mid-endzone center
+        (x: deep,  y: 28.0),             // 4: deep endzone bottom
+        (x: near,  y: 35.0),             // 5: near-endzone bottom lane
+      ];
+      final slot = opp.rosterIndex % positions.length;
+      final pos  = positions[slot];
+      // Outlet slot stays close to the holder for a safe short dump-off pass
+      if (slot == 0 && pos.x > holder.x + short) {
+        targetX = holder.x + short;
+        targetY = laneY;
+      } else {
+        targetX = pos.x;
+        targetY = pos.y;
+      }
     }
 
     // PossessionBleed: support stays closer to holder for safe dump-off passes
@@ -465,7 +538,7 @@ class AiSystem {
         continue;
       }
 
-      final avoid = _getCreatureAvoidance(gs, p);
+      final avoid = _getAvoidance(gs, p);
 
       if (ball.possessingTeamId == 'player') {
         final holder = gs.getPlayerById(ball.holderId ?? '');
@@ -1005,6 +1078,34 @@ class AiSystem {
       return _Vec2((dx / dist) * strength, (dy / dist) * strength);
     }
     return _Vec2.zero;
+  }
+
+  /// Soft separation force away from nearby players (same and opposing team).
+  /// Keeps AI paths from clumping before the hard CollisionSystem pass fires.
+  static const double _playerAvoidRadius   = 2.5;
+  static const double _playerAvoidRadiusSq = _playerAvoidRadius * _playerAvoidRadius;
+
+  static _Vec2 _getPlayerAvoidance(GameState gs, UltraballPlayer p) {
+    var ax = 0.0, ay = 0.0;
+    for (final other in gs.fieldPlayers) {
+      if (other.id == p.id || !other.isAlive) continue;
+      final dx = p.x - other.x;
+      final dy = p.y - other.y;
+      final sq = dx * dx + dy * dy;
+      if (sq < _playerAvoidRadiusSq && sq > 0) {
+        final dist     = math.sqrt(sq);
+        final strength = (1.0 - dist / _playerAvoidRadius) * 1.5;
+        ax += (dx / dist) * strength;
+        ay += (dy / dist) * strength;
+      }
+    }
+    return _Vec2(ax, ay);
+  }
+
+  static _Vec2 _getAvoidance(GameState gs, UltraballPlayer p) {
+    final c = _getCreatureAvoidance(gs, p);
+    final pl = _getPlayerAvoidance(gs, p);
+    return _Vec2(c.x + pl.x, c.y + pl.y);
   }
 
   /// Set velocity toward (tx, ty) at full speed, blended with creature avoidance.

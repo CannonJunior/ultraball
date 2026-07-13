@@ -1,0 +1,459 @@
+{
+  "title": "Ultraball Ability Balance",
+  "uid": "ultraball-ability-balance",
+  "tags": ["ultraball", "balance"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-30d", "to": "now" },
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "annotations": { "list": [] },
+
+  "templating": {
+    "list": [
+      {
+        "name": "player_class",
+        "label": "Class",
+        "type": "query",
+        "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+        "query": "SELECT DISTINCT player_class FROM ability_uses ORDER BY 1",
+        "multi": true,
+        "includeAll": true,
+        "allValue": null,
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "min_uses",
+        "label": "Min Uses",
+        "type": "textbox",
+        "current": { "text": "5", "value": "5" },
+        "query": "5"
+      }
+    ]
+  },
+
+  "panels": [
+
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Games Recorded",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "blue", "mode": "fixed" }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Games\" FROM games WHERE $__timeFilter(recorded_at)",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Total Ability Uses",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "purple", "mode": "fixed" }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Uses\" FROM ability_uses WHERE $__timeFilter(recorded_at)",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Avg Uses / Game",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "green", "mode": "fixed" },
+          "decimals": 0
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(COUNT(au.*)::numeric / NULLIF(COUNT(DISTINCT au.game_id), 0), 0) AS \"Avg Uses/Game\" FROM ability_uses au WHERE $__timeFilter(au.recorded_at)",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "AI Win Rate",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 50,   "color": "yellow" },
+              { "value": 65,   "color": "red" }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(100.0 * SUM(CASE WHEN winner = 'away' THEN 1 ELSE 0 END)::numeric / NULLIF(COUNT(*), 0), 1) AS \"AI Win %\" FROM games WHERE $__timeFilter(recorded_at)",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Impact Score Leaderboard",
+      "description": "Impact = avgDamage + fumbleRate×40 + ccRate×15  |  Filter: class variable + Min Uses textbox",
+      "gridPos": { "x": 0, "y": 4, "w": 24, "h": 14 },
+      "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+      "options": {
+        "sortBy": [{ "displayName": "Impact", "desc": true }],
+        "footer": { "show": false }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "center",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Impact" },
+            "properties": [
+              { "id": "custom.displayMode", "value": "color-background" },
+              { "id": "thresholds", "value": {
+                "mode": "absolute",
+                "steps": [
+                  { "value": null, "color": "red" },
+                  { "value": 10,   "color": "yellow" },
+                  { "value": 25,   "color": "green" }
+                ]
+              }},
+              { "id": "custom.width", "value": 90 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Ability" },
+            "properties": [{ "id": "custom.width", "value": 240 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Class" },
+            "properties": [{ "id": "custom.width", "value": 110 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Slot" },
+            "properties": [{ "id": "custom.width", "value": 55 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Uses" },
+            "properties": [{ "id": "custom.width", "value": 70 }]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+          "rawQuery": true,
+          "rawSql": "SELECT\n  player_class                                                              AS \"Class\",\n  ability_name                                                              AS \"Ability\",\n  slot                                                                      AS \"Slot\",\n  COUNT(*)                                                                  AS \"Uses\",\n  ROUND(AVG(damage_dealt)::numeric, 1)                                      AS \"Avg Dmg\",\n  ROUND(100.0 * SUM(hit_a_target::int)::numeric / COUNT(*), 1)             AS \"Hit%\",\n  ROUND(100.0 * SUM(caused_fumble::int)::numeric / COUNT(*), 1)            AS \"Fumble%\",\n  ROUND(100.0 * SUM(applied_cc::int)::numeric / COUNT(*), 1)               AS \"CC%\",\n  ROUND((\n    AVG(damage_dealt)\n    + (SUM(caused_fumble::int)::float / COUNT(*)) * 40.0\n    + (SUM(applied_cc::int)::float   / COUNT(*)) * 15.0\n  )::numeric, 2)                                                            AS \"Impact\"\nFROM ability_uses\nWHERE $__timeFilter(recorded_at)\n  AND player_class IN (${player_class:sqlstring})\nGROUP BY player_class, ability_name, slot\nHAVING COUNT(*) >= ${min_uses}\nORDER BY \"Impact\" DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 6,
+      "type": "barchart",
+      "title": "Total Uses by Class",
+      "gridPos": { "x": 0, "y": 18, "w": 12, "h": 9 },
+      "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+      "options": {
+        "xField": "Class",
+        "orientation": "vertical",
+        "fillOpacity": 80,
+        "legend": { "show": false }
+      },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+          "rawQuery": true,
+          "rawSql": "SELECT player_class AS \"Class\", COUNT(*) AS \"Uses\"\nFROM ability_uses\nWHERE $__timeFilter(recorded_at)\nGROUP BY player_class\nORDER BY \"Uses\" DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 7,
+      "type": "barchart",
+      "title": "AI Win Rate by Strategy",
+      "gridPos": { "x": 12, "y": 18, "w": 12, "h": 9 },
+      "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+      "options": {
+        "xField": "Strategy",
+        "orientation": "vertical",
+        "fillOpacity": 80,
+        "legend": { "show": false }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+          "rawQuery": true,
+          "rawSql": "SELECT\n  ai_strategy AS \"Strategy\",\n  ROUND(100.0 * SUM(CASE WHEN winner = 'away' THEN 1 ELSE 0 END)::numeric / NULLIF(COUNT(*), 0), 1) AS \"AI Win %\",\n  COUNT(*) AS \"Games\"\nFROM games\nWHERE $__timeFilter(recorded_at)\nGROUP BY ai_strategy\nORDER BY \"AI Win %\" DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 8,
+      "type": "barchart",
+      "title": "Top Abilities by Avg Damage",
+      "gridPos": { "x": 0, "y": 27, "w": 8, "h": 10 },
+      "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+      "options": {
+        "xField": "Ability",
+        "orientation": "horizontal",
+        "fillOpacity": 80,
+        "legend": { "show": false }
+      },
+      "fieldConfig": {
+        "defaults": { "color": { "fixedColor": "orange", "mode": "fixed" } }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+          "rawQuery": true,
+          "rawSql": "SELECT\n  player_class || '/' || ability_name AS \"Ability\",\n  ROUND(AVG(damage_dealt)::numeric, 1) AS \"Avg Damage\"\nFROM ability_uses\nWHERE $__timeFilter(recorded_at)\n  AND player_class IN (${player_class:sqlstring})\nGROUP BY player_class, ability_name\nHAVING COUNT(*) >= ${min_uses} AND AVG(damage_dealt) > 0\nORDER BY \"Avg Damage\" DESC\nLIMIT 20",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 9,
+      "type": "barchart",
+      "title": "CC Rate by Ability",
+      "gridPos": { "x": 8, "y": 27, "w": 8, "h": 10 },
+      "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+      "options": {
+        "xField": "Ability",
+        "orientation": "horizontal",
+        "fillOpacity": 80,
+        "legend": { "show": false }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "fixedColor": "purple", "mode": "fixed" }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+          "rawQuery": true,
+          "rawSql": "SELECT\n  player_class || '/' || ability_name AS \"Ability\",\n  ROUND(100.0 * SUM(applied_cc::int)::numeric / COUNT(*), 1) AS \"CC Rate\"\nFROM ability_uses\nWHERE $__timeFilter(recorded_at)\n  AND player_class IN (${player_class:sqlstring})\nGROUP BY player_class, ability_name\nHAVING COUNT(*) >= ${min_uses} AND SUM(applied_cc::int) > 0\nORDER BY \"CC Rate\" DESC\nLIMIT 20",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 10,
+      "type": "barchart",
+      "title": "Fumble Rate by Ability",
+      "gridPos": { "x": 16, "y": 27, "w": 8, "h": 10 },
+      "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+      "options": {
+        "xField": "Ability",
+        "orientation": "horizontal",
+        "fillOpacity": 80,
+        "legend": { "show": false }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "fixedColor": "yellow", "mode": "fixed" }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+          "rawQuery": true,
+          "rawSql": "SELECT\n  player_class || '/' || ability_name AS \"Ability\",\n  ROUND(100.0 * SUM(caused_fumble::int)::numeric / COUNT(*), 1) AS \"Fumble Rate\"\nFROM ability_uses\nWHERE $__timeFilter(recorded_at)\n  AND player_class IN (${player_class:sqlstring})\nGROUP BY player_class, ability_name\nHAVING COUNT(*) >= ${min_uses} AND SUM(caused_fumble::int) > 0\nORDER BY \"Fumble Rate\" DESC\nLIMIT 20",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Ability Uses per Day (Trend)",
+      "gridPos": { "x": 0, "y": 37, "w": 24, "h": 9 },
+      "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "show": true, "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 10, "lineWidth": 2 }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+          "rawQuery": true,
+          "rawSql": "SELECT\n  $__timeGroup(recorded_at, '1d') AS \"time\",\n  player_class AS metric,\n  COUNT(*) AS value\nFROM ability_uses\nWHERE $__timeFilter(recorded_at)\n  AND player_class IN (${player_class:sqlstring})\nGROUP BY 1, player_class\nORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 12,
+      "type": "barchart",
+      "title": "Ability Slot Usage Distribution",
+      "description": "Which slot numbers see the most action across all classes. Slot 10 = Ultra.",
+      "gridPos": { "x": 0, "y": 46, "w": 12, "h": 9 },
+      "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+      "options": {
+        "xField": "Slot",
+        "orientation": "vertical",
+        "fillOpacity": 80,
+        "legend": { "show": false }
+      },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+          "rawQuery": true,
+          "rawSql": "SELECT\n  slot::text AS \"Slot\",\n  COUNT(*) AS \"Uses\"\nFROM ability_uses\nWHERE $__timeFilter(recorded_at)\n  AND player_class IN (${player_class:sqlstring})\nGROUP BY slot\nORDER BY slot",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Avg HP Ratio at Time of Cast",
+      "description": "Low value = ability used as a panic/survival tool. High value = used aggressively. Mismatch with design intent flags tuning issues.",
+      "gridPos": { "x": 12, "y": 46, "w": 12, "h": 9 },
+      "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+      "options": {
+        "sortBy": [{ "displayName": "Avg HP", "desc": false }]
+      },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "center" } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Avg HP" },
+            "properties": [
+              { "id": "custom.displayMode", "value": "color-background" },
+              { "id": "unit", "value": "percentunit" },
+              { "id": "thresholds", "value": {
+                "mode": "absolute",
+                "steps": [
+                  { "value": null, "color": "red" },
+                  { "value": 0.4,  "color": "yellow" },
+                  { "value": 0.7,  "color": "green" }
+                ]
+              }}
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ultraball-postgres" },
+          "rawQuery": true,
+          "rawSql": "SELECT\n  player_class AS \"Class\",\n  ability_name AS \"Ability\",\n  ROUND(AVG(player_hp_ratio)::numeric, 3) AS \"Avg HP\",\n  COUNT(*) AS \"Uses\"\nFROM ability_uses\nWHERE $__timeFilter(recorded_at)\n  AND player_class IN (${player_class:sqlstring})\nGROUP BY player_class, ability_name\nHAVING COUNT(*) >= ${min_uses}\nORDER BY \"Avg HP\" ASC\nLIMIT 30",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    }
+
+  ]
+}

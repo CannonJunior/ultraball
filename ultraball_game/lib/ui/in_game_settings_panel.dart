@@ -10,8 +10,8 @@ const _kBorder    = Color(0xFF222244);
 const _kGold      = Color(0xFFFFCC00);
 const _kGoldDim   = Color(0xFF7A6200);
 const _kTabActive = Color(0xFF1A1A35);
-const _kBlue      = Color(0xFF1E88E5);
-const _kRed       = Color(0xFFE53935);
+const _kAccent    = Color(0xFF1E88E5); // section header accent
+const _kDanger    = Color(0xFFE53935); // danger/forfeit action
 const _kText      = Colors.white;
 const _kTextDim   = Color(0xAAFFFFFF);
 const _kTextFaint = Color(0x66FFFFFF);
@@ -217,6 +217,12 @@ class _InGameSettingsPanelState extends State<InGameSettingsPanel> {
             onChanged: (v) => setState(() => _gs.prefs.showPhaseLines = v),
           ),
           _buildToggleTile(
+            label: 'Show Queued Ability Range',
+            subtitle: 'Draw the range circle for the next ability in queue',
+            value: _gs.prefs.showNextQueuedAbilityRange,
+            onChanged: (v) => setState(() => _gs.prefs.showNextQueuedAbilityRange = v),
+          ),
+          _buildToggleTile(
             label: 'Debug: Scoreboard Heights',
             subtitle: 'Show live MainBar / BallDivider / Cards px values',
             value: _gs.prefs.showScoreboardDebugHeights,
@@ -235,7 +241,166 @@ class _InGameSettingsPanelState extends State<InGameSettingsPanel> {
             displayValue: '${_gs.prefs.targetIndicatorSize.toStringAsFixed(1)}×',
             onChanged: (v) => setState(() => _gs.prefs.targetIndicatorSize = v),
           ),
+          const SizedBox(height: 20),
+          _SectionHeader(label: 'COMBAT TEXT'),
+          const SizedBox(height: 10),
+          _buildCombatTextSection(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCombatTextSection() {
+    final prefs = _gs.prefs;
+
+    const fontOptions = [
+      (label: 'Bangers',  value: 'Bangers'),
+      (label: 'Default',  value: null),
+      (label: 'Mono',     value: 'monospace'),
+    ];
+
+    // Preset swatches for each color role
+    const damageSwatches = [
+      Color(0xFFFFDD00), Color(0xFFFFFFFF), Color(0xFFFF8800), Color(0xFF44EEFF),
+    ];
+    const healSwatches = [
+      Color(0xFF44FF88), Color(0xFF19E3E3), Color(0xFFFFFFFF), Color(0xFF88FF44),
+    ];
+    const killSwatches = [
+      Color(0xFFFF2222), Color(0xFFFF8800), Color(0xFFAA44FF), Color(0xFFFFDD00),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Font family
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: _kCard,
+              border: Border.all(color: _kBorder),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Font',
+                    style: TextStyle(color: _kText, fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                const Text('Typeface used for floating combat numbers and ability queue',
+                    style: TextStyle(color: _kTextFaint, fontSize: 11)),
+                const SizedBox(height: 8),
+                Row(
+                  children: fontOptions.map((opt) {
+                    final active = prefs.combatFontFamily == opt.value;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: GestureDetector(
+                        onTap: () => setState(() => prefs.combatFontFamily = opt.value),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 120),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: active ? _kGoldDim : _kBg,
+                            border: Border.all(color: active ? _kGold : _kBorder, width: active ? 1.5 : 1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            opt.label,
+                            style: TextStyle(
+                              fontFamily: opt.value,
+                              color: active ? _kGold : _kTextFaint,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Scale slider
+        _buildSliderTile(
+          label: 'Text Size',
+          subtitle: 'Scale for all combat floating text',
+          value: prefs.combatFontScale,
+          min: 0.5,
+          max: 2.0,
+          divisions: 15,
+          displayValue: '${prefs.combatFontScale.toStringAsFixed(1)}×',
+          onChanged: (v) => setState(() => prefs.combatFontScale = v),
+        ),
+
+        // Shadow toggle
+        _buildToggleTile(
+          label: 'Drop Shadow',
+          subtitle: 'Outline shadow behind floating numbers',
+          value: prefs.combatShadow,
+          onChanged: (v) => setState(() => prefs.combatShadow = v),
+        ),
+
+        // Color rows
+        _buildColorRow('Damage Color', damageSwatches, prefs.combatDamageColor,
+            (c) => setState(() => prefs.combatDamageColor = c)),
+        _buildColorRow('Heal Color', healSwatches, prefs.combatHealColor,
+            (c) => setState(() => prefs.combatHealColor = c)),
+        _buildColorRow('Kill Color', killSwatches, prefs.combatKillColor,
+            (c) => setState(() => prefs.combatKillColor = c)),
+      ],
+    );
+  }
+
+  Widget _buildColorRow(String label, List<Color> swatches, Color current,
+      ValueChanged<Color> onSelect) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: _kCard,
+          border: Border.all(color: _kBorder),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(label,
+                  style: const TextStyle(color: _kText, fontSize: 13, fontWeight: FontWeight.w600)),
+            ),
+            ...swatches.map((c) {
+              final selected = c.toARGB32() == current.toARGB32();
+              return Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: GestureDetector(
+                  onTap: () => onSelect(c),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(
+                      color: c,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: selected ? Colors.white : Colors.white.withValues(alpha: 0.2),
+                        width: selected ? 2.5 : 1,
+                      ),
+                      boxShadow: selected
+                          ? [BoxShadow(color: c.withValues(alpha: 0.7), blurRadius: 6)]
+                          : null,
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
       ),
     );
   }
@@ -667,7 +832,7 @@ class _SectionHeader extends StatelessWidget {
       children: [
         Text(label,
             style: const TextStyle(
-              color: _kBlue,
+              color: _kAccent,
               fontSize: 11,
               fontWeight: FontWeight.bold,
               letterSpacing: 1.5,
@@ -707,7 +872,7 @@ class _TextBtn extends StatelessWidget {
       onTap: onTap,
       child: Text(label,
           style: const TextStyle(
-            color: _kRed,
+            color: _kDanger,
             fontSize: 10,
             fontWeight: FontWeight.bold,
             letterSpacing: 1,
