@@ -5,7 +5,7 @@ export 'player_class.dart';
 
 enum PlayerState { idle, moving, attacking, stunned, dead }
 
-enum Team { player, opponent }
+enum Team { player, opponent, third }
 
 class UltraballPlayer {
   final String id;
@@ -35,6 +35,9 @@ class UltraballPlayer {
   bool isInactive = false; // excluded from match by class toggle — never subbed in
   int deploySlot = 0; // position in deployment order: 0 = first on field, 14 = last reserve
   bool isSelected = false;
+
+  double maxFieldX = 140.0;
+  double maxFieldY = 40.0;
 
   // State
   PlayerState state = PlayerState.idle;
@@ -137,8 +140,8 @@ class UltraballPlayer {
   double speedBoostMax = 0.0;
 
   // Red mana decay
-  static const double redDecayDelay = 3.0;
-  static const double redDecayRate = 3.0;
+  static const double redDecayDelay = 5.0;  // seconds of no-gain grace window
+  static const double redDecayRate  = 1.5;  // red/sec drain after delay
 
   // Jump physics
   double zHeight = 0.0;
@@ -247,8 +250,9 @@ class UltraballPlayer {
       redMana = math.max(0, redMana - redDecayRate * dt);
     }
 
-    // Blue mana regen
-    blueMana = math.min(100, blueMana + 8.0 * dt);
+    // Blue mana regen — faster when stationary
+    final blueRegenRate = (velX == 0 && velY == 0) ? 8.0 : 2.0;
+    blueMana = math.min(100, blueMana + blueRegenRate * dt);
 
     // Buff timers
     if (damageBoostTimer > 0) {
@@ -370,8 +374,8 @@ class UltraballPlayer {
       y += velY * dt;
     }
 
-    x = x.clamp(0.0, 140.0);
-    y = y.clamp(0.0, 40.0);
+    x = x.clamp(0.0, maxFieldX);
+    y = y.clamp(0.0, maxFieldY);
 
     if (!isPlayerControlled && (velX != 0 || velY != 0)) {
       facing = math.atan2(velY, velX);

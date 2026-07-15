@@ -175,10 +175,19 @@ class _ManaBarsState extends State<ManaBars> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Buff icons row
-                _EffectIcons(effects: _playerEffects(player).where((e) => e.isBuff).toList()),
-                // Debuff icons row
-                _EffectIcons(effects: _playerEffects(player).where((e) => !e.isBuff).toList()),
+                // Buff / debuff icons — compute once, partition by isBuff
+                Builder(builder: (_) {
+                  final allEffects = _playerEffects(player);
+                  final buffs   = allEffects.where((e) =>  e.isBuff).toList();
+                  final debuffs = allEffects.where((e) => !e.isBuff).toList();
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _EffectIcons(effects: buffs),
+                      _EffectIcons(effects: debuffs),
+                    ],
+                  );
+                }),
                 const SizedBox(height: 2),
                 // Ability row 1: slots 1–5
                 Row(
@@ -681,6 +690,10 @@ class _ProgressRingPainter extends CustomPainter {
   final double progress;
   const _ProgressRingPainter({required this.progress});
 
+  static final Paint _ringPaint = Paint()
+    ..color = Color.fromRGBO(0, 0, 0, 0.55)
+    ..style = PaintingStyle.fill;
+
   @override
   void paint(Canvas canvas, Size size) {
     if (progress >= 1.0) return;
@@ -692,7 +705,7 @@ class _ProgressRingPainter extends CustomPainter {
       -math.pi / 2,
       expiredSweep,
       true,
-      Paint()..color = Colors.black.withValues(alpha: 0.55)..style = PaintingStyle.fill,
+      _ringPaint,
     );
   }
 

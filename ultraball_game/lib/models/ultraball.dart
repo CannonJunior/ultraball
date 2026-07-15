@@ -25,6 +25,9 @@ class Ultraball {
   // Phase line state (5 lines, indexed 0–4 at x=30,50,70,90,110 in field coords)
   List<bool> phaseLineActive = [true, true, true, true, true];
 
+  // 3-team mode: 9 phase lines (3 per team: indices 0-2 player, 3-5 opponent, 6-8 third)
+  List<bool> phaseLineActive3 = List.filled(9, true);
+
   // UI explosion flash: set to 1.0 on explosion, decremented by game loop over ~0.6s
   double explosionFlash = 0.0;
 
@@ -59,9 +62,41 @@ class Ultraball {
     }
   }
 
+  void resetPhaseLines3() {
+    for (int i = 0; i < 9; i++) phaseLineActive3[i] = true;
+  }
+
+  // 3-team mode: check if ball crossed any of the 9 phase lines
+  // normals: [(nx,ny), ...] for each team; dists: [d1,d2,d3] phase line distances
+  // Returns index 0-8, or -1
+  int checkPhaseLineCrossing3(double prevX, double prevY, double newX, double newY,
+      double cx, double cy, List<(double, double)> normals, List<double> dists) {
+    const halfW = 20.0; // field3ArmHalfWidth
+    for (int t = 0; t < 3; t++) {
+      final (nx, ny) = normals[t];
+      final px = -ny; final py = nx;
+      for (int i = 0; i < 3; i++) {
+        final idx = t * 3 + i;
+        if (!phaseLineActive3[idx]) continue;
+        final d = dists[i];
+        final prevDot = (prevX - cx) * nx + (prevY - cy) * ny;
+        final newDot  = (newX  - cx) * nx + (newY  - cy) * ny;
+        if ((prevDot < d && newDot >= d) || (prevDot > d && newDot <= d)) {
+          // Only trigger if ball is within this arm's width
+          final perpDot = (newX - cx) * px + (newY - cy) * py;
+          if (perpDot.abs() <= halfW) {
+            return idx;
+          }
+        }
+      }
+    }
+    return -1;
+  }
+
   void changePossession(String? newTeamId) {
     possessingTeamId = newTeamId;
     resetPhaseLines();
+    resetPhaseLines3();
     chargeTimer = 0;
     cooldownBonus = 0;
   }

@@ -48,14 +48,19 @@ class GameState {
 
   // Cached filtered lists — rebuilt lazily when _rosterDirty is set
   List<UltraballPlayer> _cachedFieldPlayers = [];
+  List<UltraballPlayer> _cachedAllPlayers = [];
   List<UltraballPlayer> _cachedPlayerTeamOnField = [];
   List<UltraballPlayer> _cachedOpponentTeamOnField = [];
   int _playerDeadCount = 0;
   int _opponentDeadCount = 0;
+  List<UltraballPlayer> _cachedThirdTeamOnField = [];
+  int _thirdDeadCount = 0;
   bool _rosterDirty = true;
 
   late Ultraball ball;
   late Creature creature;
+  Creature? creature2;
+  List<UltraballPlayer> thirdRoster = [];
   ActState actState = ActState();
   List<DamageIndicator> indicators = [];
 
@@ -92,6 +97,28 @@ class GameState {
   static const double terrainAimRange = 10.0;
   static const double fieldWidth  = 140.0;
   static const double fieldHeight =  40.0;
+
+  // 3-team mode field geometry
+  static const double field3Size     = 220.0;
+  static const double field3CX       = 110.0;
+  static const double field3CY       = 110.0;
+  // inradius of equilateral triangle with side 40m: 40/(2*sqrt(3)) ≈ 11.547
+  static const double field3Inradius = 11.547005383792515;
+  static const double field3ArmHalfWidth = 20.0;
+  static const double field3ChanInner  = field3Inradius + 40.0;  // ≈ 51.547
+  static const double field3ChanOuter  = field3Inradius + 50.0;  // ≈ 61.547 (inner edge of endzone)
+  static const double field3ArmEnd     = field3Inradius + 70.0;  // ≈ 81.547 (far wall of endzone)
+  // Outward normals per team (player=bottom, opponent=upper-right, third=upper-left)
+  static const List<(double, double)> team3Normals = [
+    (0.0,                    1.0),   // player
+    ( 0.8660254037844387, -0.5),     // opponent
+    (-0.8660254037844387, -0.5),     // third
+  ];
+  static const List<double> field3PhaseDists = [
+    field3Inradius + 10.0,  // ≈ 21.547
+    field3Inradius + 20.0,  // ≈ 31.547
+    field3Inradius + 30.0,  // ≈ 41.547
+  ];
 
   // Accumulated match clock — incremented every active game tick; used for DPS calculation.
   double matchTimeElapsed = 0.0;
@@ -143,9 +170,11 @@ class GameState {
   void markRosterDirty() => _rosterDirty = true;
 
   void _rebuildRosterCaches() {
+    _cachedAllPlayers = [...playerRoster, ...opponentRoster, ...thirdRoster];
     _cachedFieldPlayers = [
-      for (final p in playerRoster) if (p.isOnField) p,
+      for (final p in playerRoster)   if (p.isOnField) p,
       for (final p in opponentRoster) if (p.isOnField) p,
+      for (final p in thirdRoster)    if (p.isOnField) p,
     ];
     _cachedPlayerTeamOnField = [
       for (final p in _cachedFieldPlayers)
@@ -155,10 +184,16 @@ class GameState {
       for (final p in _cachedFieldPlayers)
         if (p.team == Team.opponent && p.isAlive) p,
     ];
+    _cachedThirdTeamOnField = [
+      for (final p in _cachedFieldPlayers)
+        if (p.team == Team.third && p.isAlive) p,
+    ];
     _playerDeadCount =
         playerRoster.fold(0, (s, p) => p.isAlive ? s : s + 1);
     _opponentDeadCount =
         opponentRoster.fold(0, (s, p) => p.isAlive ? s : s + 1);
+    _thirdDeadCount =
+        thirdRoster.fold(0, (s, p) => p.isAlive ? s : s + 1);
     _rosterDirty = false;
   }
 
@@ -170,8 +205,10 @@ class GameState {
   }
 
   /// All players in both rosters — use sparingly; prefer fieldPlayers.
-  List<UltraballPlayer> get allPlayers =>
-      [...playerRoster, ...opponentRoster];
+  List<UltraballPlayer> get allPlayers {
+    if (_rosterDirty) _rebuildRosterCaches();
+    return _cachedAllPlayers;
+  }
 
   // ---- Roster count getters (used by UI, avoid 4× .where().length) ----
 
@@ -193,6 +230,16 @@ class GameState {
   int get opponentDeadCount {
     if (_rosterDirty) _rebuildRosterCaches();
     return _opponentDeadCount;
+  }
+
+  int get thirdAliveOnField {
+    if (_rosterDirty) _rebuildRosterCaches();
+    return _cachedThirdTeamOnField.length;
+  }
+
+  int get thirdDeadCount {
+    if (_rosterDirty) _rebuildRosterCaches();
+    return _thirdDeadCount;
   }
 
   void initialize() {
@@ -242,8 +289,18 @@ class GameState {
           PlayerClass.archon, PlayerClass.warden, PlayerClass.trickster,
           PlayerClass.wrecker,
         ][i % 7];
-        final startX = 80.0 + rand.nextDouble() * 20.0;
-        final startY = 5.0 + rand.nextDouble() * 30.0;
+        double startX, startY;
+        if (settings.matchMode == MatchMode.threeTeams) {
+          // Player team starts in bottom arm
+          final (nx, ny) = team3Normals[0];
+          final spreadPerp = ((i % 5) - 2) * 7.0 + rand.nextDouble() * 2 - 1;
+          final spreadNorm = (i ~/ 5) * 10.0 + 30.0 + rand.nextDouble() * 4 - 2;
+          startX = field3CX + nx * spreadNorm + (-ny) * spreadPerp;
+          startY = field3CY + ny * spreadNorm + nx * spreadPerp;
+        } else {
+          startX = 80.0 + rand.nextDouble() * 20.0;
+          startY = 5.0 + rand.nextDouble() * 30.0;
+        }
         final p = UltraballPlayer(
           id: 'p_$i',
           name: playerNames[i],
@@ -268,8 +325,18 @@ class GameState {
           PlayerClass.archon, PlayerClass.warden, PlayerClass.trickster,
           PlayerClass.wrecker,
         ][i % 7];
-        final startX = 40.0 + rand.nextDouble() * 20.0;
-        final startY = 5.0 + rand.nextDouble() * 30.0;
+        double startX, startY;
+        if (settings.matchMode == MatchMode.threeTeams) {
+          // Opponent team starts in upper-right arm
+          final (nx, ny) = team3Normals[1];
+          final spreadPerp = ((i % 5) - 2) * 7.0 + rand.nextDouble() * 2 - 1;
+          final spreadNorm = (i ~/ 5) * 10.0 + 30.0 + rand.nextDouble() * 4 - 2;
+          startX = field3CX + nx * spreadNorm + (-ny) * spreadPerp;
+          startY = field3CY + ny * spreadNorm + nx * spreadPerp;
+        } else {
+          startX = 40.0 + rand.nextDouble() * 20.0;
+          startY = 5.0 + rand.nextDouble() * 30.0;
+        }
         final p = UltraballPlayer(
           id: 'o_$i',
           name: opponentNames[i],
@@ -316,12 +383,61 @@ class GameState {
           awayActiveSlot++;
         }
       }
+
+      // Third team roster (3-team mode only)
+      if (settings.matchMode == MatchMode.threeTeams) {
+        thirdRoster = [];
+        final thirdNames = settings.thirdPlayerNames.isNotEmpty
+            ? settings.thirdPlayerNames
+            : List.generate(15, (i) => 'T${i + 1}');
+        for (int i = 0; i < 15; i++) {
+          final cls = const [
+            PlayerClass.spectre, PlayerClass.corsair, PlayerClass.geomancer,
+            PlayerClass.archon, PlayerClass.warden, PlayerClass.trickster,
+            PlayerClass.wrecker,
+          ][i % 7];
+          // Third team starts in upper-left arm
+          final (nx, ny) = team3Normals[2]; // third team normal
+          final spreadPerp = ((i % 5) - 2) * 7.0 + rand.nextDouble() * 2 - 1;
+          final spreadNorm = (i ~/ 5) * 10.0 + 30.0 + rand.nextDouble() * 4 - 2;
+          final startX = field3CX + nx * spreadNorm + (-ny) * spreadPerp;
+          final startY = field3CY + ny * spreadNorm + nx * spreadPerp;
+          final p = UltraballPlayer(
+            id: 't_$i',
+            name: thirdNames[i],
+            team: Team.third,
+            rosterIndex: i,
+            x: startX,
+            y: startY,
+          );
+          p.playerClass = cls;
+          p.baseSpeed = cls.baseSpeed;
+          p.maxHealth = cls.maxHealth;
+          p.health = cls.maxHealth;
+          p.maxFieldX = field3Size;
+          p.maxFieldY = field3Size;
+          thirdRoster.add(p);
+        }
+        // Apply roster order for third team (first 7 on field)
+        for (int slot = 0; slot < 15; slot++) {
+          final p = thirdRoster[slot];
+          p.deploySlot = slot;
+          p.isOnField = slot < 7;
+        }
+      }
+
+      // Update field bounds for all rosters in 3-team mode
+      if (settings.matchMode == MatchMode.threeTeams) {
+        for (final p in playerRoster) { p.maxFieldX = field3Size; p.maxFieldY = field3Size; }
+        for (final p in opponentRoster) { p.maxFieldX = field3Size; p.maxFieldY = field3Size; }
+      }
     }
 
     // Build O(1) player lookup map
     _playerById.clear();
     for (final p in playerRoster)  { _playerById[p.id] = p; }
     for (final p in opponentRoster) { _playerById[p.id] = p; }
+    for (final p in thirdRoster)    { _playerById[p.id] = p; }
 
     // Select the first on-field player by deploy slot (respects roster reordering and inactive classes)
     final onField = playerRoster.where((p) => p.isOnField && p.isAlive).toList();
@@ -335,10 +451,39 @@ class GameState {
     first.facing = math.pi;
 
     // Create ball at midfield
-    ball = Ultraball(x: 70, y: 20);
+    if (settings.matchMode == MatchMode.threeTeams) {
+      ball = Ultraball(x: field3CX, y: field3CY);
+    } else {
+      ball = Ultraball(x: 70, y: 20);
+    }
 
     // Create creature
     creature = Creature(type: settings.creatureType);
+    if (settings.matchMode == MatchMode.threeTeams) {
+      // Build 9-waypoint star perimeter for creature patrol.
+      // CW order: arm 0 (player/south), arm 2 (third/upper-left), arm 1 (opponent/upper-right).
+      // Each arm: inner corner (at inradius, ±chanPathHalfW), outer corners (at chanPathMid, ±chanPathHalfW).
+      // chanPathHalfW = halfW + 5 = center of the 10m side channel.
+      // chanPathMid = chanInner + 5 = center of the 10m endzone channel.
+      const chanPathHalfW = field3ArmHalfWidth + 5.0;
+      const chanPathMid   = field3ChanInner + 5.0;
+      final perim = <(double, double)>[];
+      for (int t in [0, 2, 1]) {
+        final (nx, ny) = team3Normals[t];
+        final px = -ny; final py = nx;
+        perim.add((field3CX + nx * field3Inradius - chanPathHalfW * px,
+                   field3CY + ny * field3Inradius - chanPathHalfW * py));
+        perim.add((field3CX + nx * chanPathMid - chanPathHalfW * px,
+                   field3CY + ny * chanPathMid - chanPathHalfW * py));
+        perim.add((field3CX + nx * chanPathMid + chanPathHalfW * px,
+                   field3CY + ny * chanPathMid + chanPathHalfW * py));
+      }
+      creature.setStarPatrol(perim);
+      creature2 = Creature(type: settings.thirdCreatureType)
+        ..setStarPatrol(perim, reversed: true);
+    } else {
+      creature2 = null;
+    }
 
     // Start act
     actState.isActive = true;
@@ -456,12 +601,18 @@ class GameState {
   /// Returns the alive on-field players for the given team (cached).
   List<UltraballPlayer> getTeamOnField(Team team) {
     if (_rosterDirty) _rebuildRosterCaches();
-    return team == Team.player
-        ? _cachedPlayerTeamOnField
-        : _cachedOpponentTeamOnField;
+    return switch (team) {
+      Team.player   => _cachedPlayerTeamOnField,
+      Team.opponent => _cachedOpponentTeamOnField,
+      Team.third    => _cachedThirdTeamOnField,
+    };
   }
 
   List<UltraballPlayer> getTeamRoster(Team team) {
-    return team == Team.player ? playerRoster : opponentRoster;
+    return switch (team) {
+      Team.player   => playerRoster,
+      Team.opponent => opponentRoster,
+      Team.third    => thirdRoster,
+    };
   }
 }

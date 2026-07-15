@@ -49,10 +49,10 @@ class CollisionSystem {
           b.y += ny * push;
 
           // Re-clamp to field bounds after push
-          a.x = a.x.clamp(0.0, GameState.fieldWidth);
-          a.y = a.y.clamp(0.0, GameState.fieldHeight);
-          b.x = b.x.clamp(0.0, GameState.fieldWidth);
-          b.y = b.y.clamp(0.0, GameState.fieldHeight);
+          a.x = a.x.clamp(0.0, a.maxFieldX);
+          a.y = a.y.clamp(0.0, a.maxFieldY);
+          b.x = b.x.clamp(0.0, b.maxFieldX);
+          b.y = b.y.clamp(0.0, b.maxFieldY);
         }
       }
     }

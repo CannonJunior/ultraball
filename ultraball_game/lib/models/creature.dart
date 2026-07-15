@@ -38,6 +38,11 @@ class Creature {
   double _ringSpawnTimer = 0.0;
   double reversedTimer = 0.0;
 
+  // 3-team star-perimeter patrol
+  List<(double, double)> starPatrolPath = const [];
+  int _starWptIdx = 0;
+  int _starWptStep = 1; // +1 = CW, -1 = CCW
+
   static const double _chaosMinY = -2.0;
   static const double _chaosMaxY = 42.0;
 
@@ -66,8 +71,20 @@ class Creature {
     CreatureType.chaos  => 3.0,
   };
 
+  void setStarPatrol(List<(double, double)> path, {bool reversed = false}) {
+    starPatrolPath = path;
+    _starWptStep = reversed ? -1 : 1;
+    _starWptIdx  = reversed ? path.length - 1 : 0;
+    if (path.isNotEmpty) {
+      x = path[_starWptIdx].$1;
+      y = path[_starWptIdx].$2;
+    }
+  }
+
   void update(double dt) {
-    if (type == CreatureType.chaos) {
+    if (starPatrolPath.isNotEmpty) {
+      _updateStarPatrol(dt);
+    } else if (type == CreatureType.chaos) {
       _updateChaos(dt);
     } else {
       _updateNormal(dt);
@@ -78,6 +95,24 @@ class Creature {
     reversedTimer = duration;
     // Chaos: flip direction on cast; _updateChaos re-flips when timer expires
     if (type == CreatureType.chaos) _chaosDir = -_chaosDir;
+  }
+
+  void _updateStarPatrol(double dt) {
+    final n = starPatrolPath.length;
+    if (n == 0) return;
+    final (tx, ty) = starPatrolPath[_starWptIdx];
+    final dx = tx - x; final dy = ty - y;
+    final dist = math.sqrt(dx * dx + dy * dy);
+    final step = reversedTimer > 0 ? -_starWptStep : _starWptStep;
+    if (dist < speed * dt + 0.1) {
+      x = tx; y = ty;
+      _starWptIdx = (_starWptIdx + step + n) % n;
+      if (reversedTimer > 0) reversedTimer -= dt;
+    } else {
+      if (reversedTimer > 0) reversedTimer -= dt;
+      x += (dx / dist) * speed * dt;
+      y += (dy / dist) * speed * dt;
+    }
   }
 
   void _updateNormal(double dt) {

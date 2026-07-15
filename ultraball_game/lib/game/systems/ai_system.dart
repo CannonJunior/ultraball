@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import '../../models/player.dart';
+import '../../models/game_settings.dart';
 import '../../ai/ai_strategy.dart';
 import '../game_state.dart';
 import 'combat_system.dart';
@@ -23,6 +24,14 @@ class AiSystem {
 
   static void update(GameState gs, double dt) {
     if (!gs.actState.isActive || gs.actState.gameOver) return;
+    if (gs.settings.matchMode == MatchMode.threeTeams) {
+      if (!gs.settings.testMode) {
+        _update3TeamAI(gs, dt, Team.opponent);
+        _update3TeamAI(gs, dt, Team.third);
+      }
+      _update3TeamFriendlyAI(gs, dt);
+      return;
+    }
     if (!gs.settings.testMode) _updateOpponentAI(gs, dt);
     _updateFriendlyAI(gs, dt);
   }
@@ -41,8 +50,7 @@ class AiSystem {
     final holderForSort = gs.getPlayerById(ball.holderId ?? '');
     Map<String, int>? defenseRankMap;
     if (ball.possessingTeamId != 'opponent' && holderForSort != null) {
-      final sorted = opponents.toList()
-        ..sort((a, b) {
+      final sorted = opponents..sort((a, b) {
           final ax = (a.x - holderForSort.x).abs() + (a.y - holderForSort.y).abs();
           final bx = (b.x - holderForSort.x).abs() + (b.y - holderForSort.y).abs();
           return ax.compareTo(bx);
@@ -474,6 +482,235 @@ class AiSystem {
     }
   }
 
+  // ─── 3-TEAM AI ───────────────────────────────────────────────────────────
+
+  static void _update3TeamAI(GameState gs, double dt, Team myTeam) {
+    final myPlayers = gs.getTeamOnField(myTeam);
+    final ball      = gs.ball;
+    final myTeamId  = myTeam == Team.opponent ? 'opponent' : 'third';
+
+    final enemies = [
+      if (myTeam != Team.player)   ...gs.getTeamOnField(Team.player),
+      if (myTeam != Team.opponent) ...gs.getTeamOnField(Team.opponent),
+      if (myTeam != Team.third)    ...gs.getTeamOnField(Team.third),
+    ];
+
+    final inFlightChaserSet = <String>{};
+    if (ball.isInFlight && ball.possessingTeamId == myTeamId) {
+      final closest = _findClosestToPoint(myPlayers, ball.x, ball.y);
+      if (closest != null) inFlightChaserSet.add(closest.id);
+    }
+
+    final enemyHolder = gs.getPlayerById(ball.holderId ?? '');
+    Map<String, int> defenseRankMap = {};
+    if (ball.possessingTeamId != myTeamId && enemyHolder != null) {
+      final sorted = myPlayers..sort((a, b) {
+          final ad = (a.x-enemyHolder.x).abs() + (a.y-enemyHolder.y).abs();
+          final bd = (b.x-enemyHolder.x).abs() + (b.y-enemyHolder.y).abs();
+          return ad.compareTo(bd);
+        });
+      defenseRankMap = {for (int i = 0; i < sorted.length; i++) sorted[i].id: i};
+    }
+
+    int holderPressure = 0;
+    if (ball.holderId != null && ball.possessingTeamId == myTeamId) {
+      final holder = gs.getPlayerById(ball.holderId!);
+      if (holder != null) {
+        for (final e in enemies) {
+          final dx = e.x - holder.x; final dy = e.y - holder.y;
+          if (dx * dx + dy * dy < _pressureRadiusSq) holderPressure++;
+        }
+      }
+    }
+
+    for (final p in myPlayers) {
+      if (!p.isAlive || p.isStunned) { p.velX = 0; p.velY = 0; continue; }
+      final avoid = _getAvoidance(gs, p);
+
+      if (ball.holderId == null && !ball.isInFlight) {
+        final closest = _findClosestToPoint(myPlayers, ball.x, ball.y);
+        if (closest?.id == p.id) {
+          _moveToward(p, ball.x, ball.y, avoid);
+        } else {
+          _moveToward3TeamSupport(p, gs, avoid, myPlayers, enemies);
+        }
+        _tryAttackNearest(gs, p, enemies, null);
+
+      } else if (ball.possessingTeamId == myTeamId) {
+        if (ball.holderId == p.id) {
+          _threeTeamHolderBehavior(p, gs, avoid, myPlayers, enemies, holderPressure);
+        } else if (inFlightChaserSet.contains(p.id)) {
+          _moveToward(p, ball.x, ball.y, avoid);
+        } else {
+          _moveToward3TeamSupport(p, gs, avoid, myPlayers, enemies);
+        }
+        _tryAttackNearest(gs, p, enemies, null);
+
+      } else {
+        final rank = defenseRankMap[p.id] ?? 0;
+        if (rank < 2 && enemyHolder != null) {
+          _moveToward(p, enemyHolder.x, enemyHolder.y, avoid);
+          CombatSystem.tryAttack(gs, p, 'tackle');
+        } else {
+          final midX = (p.x + GameState.field3CX) / 2;
+          final midY = (p.y + GameState.field3CY) / 2;
+          _moveToward(p, midX, midY, avoid);
+          _tryAttackNearest(gs, p, enemies, null);
+        }
+      }
+
+      _tryUseSprint(gs, p);
+      _tryUseHealing(gs, p);
+
+      p.x = p.x.clamp(0.0, GameState.field3Size);
+      p.y = p.y.clamp(0.0, GameState.field3Size);
+    }
+  }
+
+  static void _threeTeamHolderBehavior(
+    UltraballPlayer p,
+    GameState gs,
+    _Vec2 avoid,
+    List<UltraballPlayer> teammates,
+    List<UltraballPlayer> enemies,
+    int pressure,
+  ) {
+    // Endzone center points: cx + normal * (chanOuter + 10)
+    const endzoneTargets = [
+      (110.0, 181.547),   // player endzone
+      (171.96, 74.23),    // opponent endzone
+      (48.04, 74.23),     // third endzone
+    ];
+    double bestDist = double.infinity;
+    double targetX = endzoneTargets[0].$1;
+    double targetY = endzoneTargets[0].$2;
+    for (final (ex, ey) in endzoneTargets) {
+      final dx = ex - p.x; final dy = ey - p.y;
+      final d = dx*dx + dy*dy;
+      if (d < bestDist) { bestDist = d; targetX = ex; targetY = ey; }
+    }
+
+    final filteredTM = teammates.where((t) => t.id != p.id && t.isAlive && !t.isStunned).toList();
+    final chargeRatio  = gs.ball.chargeTimer / gs.ball.effectiveMaxCharge;
+    final chargeDanger = chargeRatio > _chargeDangerFrac;
+
+    UltraballPlayer? bestPass;
+    double bestScore = -double.infinity;
+    for (final tm in filteredTM) {
+      final dx = tm.x - targetX; final dy = tm.y - targetY;
+      final tmDistSq = dx*dx + dy*dy;
+      final dx2 = p.x - targetX; final dy2 = p.y - targetY;
+      final myDistSq = dx2*dx2 + dy2*dy2;
+      if (!chargeDanger && tmDistSq >= myDistSq - 100) continue;
+      int nearEnemies = 0;
+      for (final e in enemies) {
+        final ex = e.x - tm.x; final ey = e.y - tm.y;
+        if (ex*ex + ey*ey < 25.0) nearEnemies++;
+      }
+      if (!chargeDanger && nearEnemies > 0) continue;
+      final score = myDistSq - tmDistSq;
+      if (score > bestScore) { bestScore = score; bestPass = tm; }
+    }
+
+    if (bestPass != null) {
+      _aiPassTo(gs, p, bestPass);
+    } else {
+      _moveToward(p, targetX, targetY, avoid);
+    }
+    CombatSystem.tryAttack(gs, p, 'tackle');
+  }
+
+  static void _moveToward3TeamSupport(
+    UltraballPlayer p,
+    GameState gs,
+    _Vec2 avoid,
+    List<UltraballPlayer> teammates,
+    List<UltraballPlayer> enemies,
+  ) {
+    final holder = gs.getPlayerById(gs.ball.holderId ?? '');
+    if (holder == null) {
+      _moveToward(p, GameState.field3CX, GameState.field3CY, avoid);
+      return;
+    }
+    const endzoneTargets = [
+      (110.0, 181.547),
+      (171.96, 74.23),
+      (48.04, 74.23),
+    ];
+    double bestDist = double.infinity;
+    double ex = endzoneTargets[0].$1, ey = endzoneTargets[0].$2;
+    for (final (etx, ety) in endzoneTargets) {
+      final dx = etx - holder.x; final dy = ety - holder.y;
+      final d = dx*dx + dy*dy;
+      if (d < bestDist) { bestDist = d; ex = etx; ey = ety; }
+    }
+    final frac = 0.3 + (p.rosterIndex % 3) * 0.2;
+    final targetX = (holder.x + (ex - holder.x) * frac).clamp(0.0, GameState.field3Size);
+    final targetY = (holder.y + (ey - holder.y) * frac).clamp(0.0, GameState.field3Size);
+    _moveToward(p, targetX, targetY, avoid);
+  }
+
+  static void _update3TeamFriendlyAI(GameState gs, double dt) {
+    final players = gs.getTeamOnField(Team.player)
+        .where((p) => !p.isPlayerControlled)
+        .toList();
+    final ball = gs.ball;
+    final enemies = [
+      ...gs.getTeamOnField(Team.opponent),
+      ...gs.getTeamOnField(Team.third),
+    ];
+
+    final inFlightChaserId = (ball.isInFlight && ball.possessingTeamId == 'player')
+        ? _findClosestToPoint(players, ball.x, ball.y)?.id
+        : null;
+
+    int holderPressure = 0;
+    if (ball.holderId != null && ball.possessingTeamId == 'player') {
+      final holder = gs.getPlayerById(ball.holderId!);
+      if (holder != null) {
+        for (final e in enemies) {
+          final dx = e.x - holder.x; final dy = e.y - holder.y;
+          if (dx * dx + dy * dy < _pressureRadiusSq) holderPressure++;
+        }
+      }
+    }
+
+    for (final p in players) {
+      if (!p.isAlive || p.isStunned) { p.velX = 0; p.velY = 0; continue; }
+      final avoid = _getAvoidance(gs, p);
+
+      if (ball.possessingTeamId == 'player') {
+        if (ball.holderId == p.id) {
+          _threeTeamHolderBehavior(p, gs, avoid, players, enemies, holderPressure);
+        } else if (inFlightChaserId == p.id) {
+          _moveToward(p, ball.x, ball.y, avoid);
+        } else {
+          _moveToward3TeamSupport(p, gs, avoid, players, enemies);
+        }
+        _tryAttackNearest(gs, p, enemies, null);
+      } else if (ball.holderId == null && !ball.isInFlight) {
+        final nearest = _findClosestToPoint(players, ball.x, ball.y);
+        if (nearest?.id == p.id) {
+          _moveToward(p, ball.x, ball.y, avoid);
+        } else {
+          _moveToward(p, GameState.field3CX, GameState.field3CY, avoid);
+        }
+        _tryAttackNearest(gs, p, enemies, null);
+      } else {
+        final enemyHolder = gs.getPlayerById(ball.holderId ?? '');
+        if (enemyHolder != null) {
+          _moveToward(p, enemyHolder.x, enemyHolder.y, avoid);
+          CombatSystem.tryAttack(gs, p, 'tackle');
+        }
+      }
+
+      _tryUseSprint(gs, p);
+      _tryUseHealing(gs, p);
+      p.x = p.x.clamp(0.0, GameState.field3Size);
+      p.y = p.y.clamp(0.0, GameState.field3Size);
+    }
+  }
+
   // ─── FRIENDLY AI ─────────────────────────────────────────────────────────
 
   static void _updateFriendlyAI(GameState gs, double dt) {
@@ -509,8 +746,7 @@ class AiSystem {
     final oppHolder = gs.getPlayerById(ball.holderId ?? '');
     Map<String, int> friendlyDefenseRankMap = {};
     if (ball.possessingTeamId == 'opponent' && oppHolder != null) {
-      final sorted = players.toList()
-        ..sort((a, b) {
+      final sorted = players..sort((a, b) {
           final ax = (a.x - oppHolder.x).abs() + (a.y - oppHolder.y).abs();
           final bx = (b.x - oppHolder.x).abs() + (b.y - oppHolder.y).abs();
           return ax.compareTo(bx);
@@ -842,12 +1078,17 @@ class AiSystem {
 
     // Predict where the target will be when ball arrives
     final flightTime = dist / BallSystem.ballSpeed;
-    final rawPredX = (target.x + target.velX * flightTime).clamp(0.0, 140.0);
-    // Clamp so passes never land inside the thrower's own endzone buffer (x<30 for opponent, x>110 for player)
-    final predX = thrower.team == Team.opponent
-        ? rawPredX.clamp(30.0, 140.0)
-        : rawPredX.clamp(0.0, 110.0);
-    final predY = (target.y + target.velY * flightTime).clamp(0.0, 40.0);
+    final maxField = gs.settings.matchMode == MatchMode.threeTeams
+        ? GameState.field3Size : 140.0;
+    final maxFieldY = gs.settings.matchMode == MatchMode.threeTeams
+        ? GameState.field3Size : 40.0;
+    final rawPredX = (target.x + target.velX * flightTime).clamp(0.0, maxField);
+    final predX = gs.settings.matchMode == MatchMode.threeTeams
+        ? rawPredX
+        : (thrower.team == Team.opponent
+            ? rawPredX.clamp(30.0, 140.0)
+            : rawPredX.clamp(0.0, 110.0));
+    final predY = (target.y + target.velY * flightTime).clamp(0.0, maxFieldY);
 
     BallSystem.tryPass(gs, thrower, predX, predY, false);
   }
@@ -916,10 +1157,11 @@ class AiSystem {
 
     switch (p.playerClass) {
       case PlayerClass.archon:
+        final allies = gs.getTeamOnField(p.team);
         // Rally (slot 9): AoE heal if 2+ nearby allies are wounded
         if (p.ability9Cooldown <= 0 && p.blueMana >= 50) {
           int wounded = 0;
-          for (final a in gs.getTeamOnField(p.team)) {
+          for (final a in allies) {
             if (!a.isAlive) continue;
             final dx = a.x - p.x, dy = a.y - p.y;
             if (dx * dx + dy * dy <= 49.0 && a.health / a.maxHealth < 0.75) wounded++;
@@ -928,7 +1170,7 @@ class AiSystem {
         }
         // Mend (slot 5): heal nearest ally below 72% HP
         if (p.ability5Cooldown <= 0 && p.blueMana >= 30) {
-          final hasWounded = gs.getTeamOnField(p.team).any((a) {
+          final hasWounded = allies.any((a) {
             if (a.id == p.id || !a.isAlive) return false;
             final dx = a.x - p.x, dy = a.y - p.y;
             return dx * dx + dy * dy <= 25.0 && a.health / a.maxHealth < 0.72;
@@ -941,7 +1183,7 @@ class AiSystem {
         }
         // Fortify (slot 8): shield nearby ally who is taking heavy damage
         if (p.ability8Cooldown <= 0 && p.blueMana >= 30) {
-          final hasLow = gs.getTeamOnField(p.team).any((a) {
+          final hasLow = allies.any((a) {
             if (a.id == p.id || !a.isAlive) return false;
             final dx = a.x - p.x, dy = a.y - p.y;
             return dx * dx + dy * dy <= 25.0 && a.health / a.maxHealth < 0.60;
@@ -954,7 +1196,7 @@ class AiSystem {
         }
         // Cleanse (slot 6): remove CC from nearby stunned/snared ally
         if (p.ability6Cooldown <= 0 && p.blueMana >= 20) {
-          final hasCCd = gs.getTeamOnField(p.team).any((a) {
+          final hasCCd = allies.any((a) {
             if (!a.isAlive) return false;
             if (a.snareTimer <= 0 && !a.isStunned) return false;
             final dx = a.x - p.x, dy = a.y - p.y;
@@ -964,9 +1206,10 @@ class AiSystem {
         }
 
       case PlayerClass.warden:
+        final allies = gs.getTeamOnField(p.team);
         // Trauma Pack (slot 7): emergency heal critical ally
         if (p.ability7Cooldown <= 0 && p.blueMana >= 45) {
-          final hasCritical = gs.getTeamOnField(p.team).any((a) {
+          final hasCritical = allies.any((a) {
             if (a.id == p.id || !a.isAlive) return false;
             final dx = a.x - p.x, dy = a.y - p.y;
             return dx * dx + dy * dy <= 25.0 && a.health / a.maxHealth < 0.40;
@@ -975,7 +1218,7 @@ class AiSystem {
         }
         // Field Medic (slot 4): heal wounded ally below 68% HP
         if (p.ability4Cooldown <= 0 && p.blueMana >= 30) {
-          final hasWounded = gs.getTeamOnField(p.team).any((a) {
+          final hasWounded = allies.any((a) {
             if (a.id == p.id || !a.isAlive) return false;
             final dx = a.x - p.x, dy = a.y - p.y;
             return dx * dx + dy * dy <= 25.0 && a.health / a.maxHealth < 0.68;

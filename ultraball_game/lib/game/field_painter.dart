@@ -274,6 +274,10 @@ class FieldPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (gs.settings.matchMode == MatchMode.threeTeams) {
+      _paintFlat3Team(canvas, size);
+      return;
+    }
     if (viewMode == ViewMode.threeQuarter) { _paint3D(canvas, size); return; }
     if (viewMode == ViewMode.full3D) { _paintFull3D(canvas, size); return; }
 
@@ -341,6 +345,212 @@ class FieldPainter extends CustomPainter {
 
     // 14. Ability queue overlay (above selected player)
     _drawAbilityQueueOverlay(canvas, size);
+  }
+
+  // ── 3-Team flat paint ────────────────────────────────────────────────────
+
+  void _paintFlat3Team(Canvas canvas, Size size) {
+    const cx = GameState.field3CX;
+    const cy = GameState.field3CY;
+    const inr = GameState.field3Inradius;
+    const chanIn  = GameState.field3ChanInner;
+    const chanOut = GameState.field3ChanOuter;
+    const armEnd  = GameState.field3ArmEnd;
+    const halfW   = GameState.field3ArmHalfWidth;
+
+    // Background
+    canvas.drawRect(Offset.zero & size, _bgPaint);
+
+    final homeColor  = Color(gs.settings.homeTeamPrimary);
+    final awayColor  = Color(gs.settings.awayTeamPrimary);
+    final thirdColor = Color(gs.settings.thirdTeamPrimary);
+    final teamPrimaries = [homeColor, awayColor, thirdColor];
+
+    // 1. Draw central triangle (main field tint)
+    _fp.color = _mainFieldPaint.color;
+    final triPath = Path();
+    for (int t = 0; t < 3; t++) {
+      final (nx, ny) = GameState.team3Normals[t];
+      // Triangle vertex opposite arm t is in direction (-nx,-ny) at circumradius = 2*inr
+      final vx = cx + (-nx) * 2 * inr;
+      final vy = cy + (-ny) * 2 * inr;
+      if (t == 0) triPath.moveTo(sx(vx), sy(vy));
+      else triPath.lineTo(sx(vx), sy(vy));
+    }
+    triPath.close();
+    canvas.drawPath(triPath, _fp);
+
+    // 2. Draw each arm
+    const chanWidth = 10.0; // outer channel is 10m wide on each side of the playing field
+    for (int t = 0; t < 3; t++) {
+      final (nx, ny) = GameState.team3Normals[t];
+      final px = -ny; final py = nx;
+      final tint = teamPrimaries[t];
+
+      // Playing field — full arm width (inradius → chanInner, ±halfW = ±20m)
+      _fp.color = tint.withValues(alpha: 0.12);
+      canvas.drawPath(_armPath3(cx, cy, nx, ny, px, py, inr, chanIn, halfW), _fp);
+
+      // Side channels — 10m OUTSIDE the playing field on each long side, extending to chanOut
+      _fp.color = _channelPaint.color;
+      canvas.drawPath(_armStripPath(cx, cy, nx, ny, px, py, inr, chanOut, -(halfW + chanWidth), -halfW), _fp);
+      canvas.drawPath(_armStripPath(cx, cy, nx, ny, px, py, inr, chanOut,  halfW,  halfW + chanWidth), _fp);
+
+      // Pre-endzone channel (full arm width, chanInner → chanOuter)
+      _fp.color = _channelPaint.color;
+      canvas.drawPath(_armPath3(cx, cy, nx, ny, px, py, chanIn, chanOut, halfW), _fp);
+
+      // Endzone (full arm width, chanOuter → armEnd)
+      _fp.color = tint.withValues(alpha: 0.28);
+      canvas.drawPath(_armPath3(cx, cy, nx, ny, px, py, chanOut, armEnd, halfW), _fp);
+    }
+
+    // 3. Phase lines (perpendicular lines across each arm)
+    _sp.color = const Color(0xFF334433);
+    _sp.strokeWidth = sm(0.35);
+    for (int t = 0; t < 3; t++) {
+      final (nx, ny) = GameState.team3Normals[t];
+      final px = -ny; final py = nx;
+      for (final d in GameState.field3PhaseDists) {
+        canvas.drawLine(
+          Offset(sx(cx + nx*d - px*halfW), sy(cy + ny*d - py*halfW)),
+          Offset(sx(cx + nx*d + px*halfW), sy(cy + ny*d + py*halfW)),
+          _sp,
+        );
+      }
+    }
+
+    // 4. Channel boundary line (inner edge of channel)
+    _sp.color = const Color(0xFF553355);
+    _sp.strokeWidth = sm(0.4);
+    for (int t = 0; t < 3; t++) {
+      final (nx, ny) = GameState.team3Normals[t];
+      final px = -ny; final py = nx;
+      canvas.drawLine(
+        Offset(sx(cx + nx*chanIn - px*halfW), sy(cy + ny*chanIn - py*halfW)),
+        Offset(sx(cx + nx*chanIn + px*halfW), sy(cy + ny*chanIn + py*halfW)),
+        _sp,
+      );
+    }
+
+    // 5. Arm outlines
+    _sp.color = const Color(0xFF2A3A2A);
+    _sp.strokeWidth = sm(0.3);
+    for (int t = 0; t < 3; t++) {
+      final (nx, ny) = GameState.team3Normals[t];
+      final px = -ny; final py = nx;
+      // Left edge
+      canvas.drawLine(
+        Offset(sx(cx + nx*inr - px*halfW), sy(cy + ny*inr - py*halfW)),
+        Offset(sx(cx + nx*armEnd - px*halfW), sy(cy + ny*armEnd - py*halfW)),
+        _sp,
+      );
+      // Right edge
+      canvas.drawLine(
+        Offset(sx(cx + nx*inr + px*halfW), sy(cy + ny*inr + py*halfW)),
+        Offset(sx(cx + nx*armEnd + px*halfW), sy(cy + ny*armEnd + py*halfW)),
+        _sp,
+      );
+      // Far end (endzone wall)
+      canvas.drawLine(
+        Offset(sx(cx + nx*armEnd - px*halfW), sy(cy + ny*armEnd - py*halfW)),
+        Offset(sx(cx + nx*armEnd + px*halfW), sy(cy + ny*armEnd + py*halfW)),
+        _sp,
+      );
+    }
+
+    // Triangle outline edges
+    _sp.color = const Color(0xFF336633);
+    _sp.strokeWidth = sm(0.4);
+    final triVerts = <Offset>[];
+    for (int t = 0; t < 3; t++) {
+      final (nx, ny) = GameState.team3Normals[t];
+      triVerts.add(Offset(sx(cx - nx * 2 * inr), sy(cy - ny * 2 * inr)));
+    }
+    canvas.drawLine(triVerts[0], triVerts[1], _sp);
+    canvas.drawLine(triVerts[1], triVerts[2], _sp);
+    canvas.drawLine(triVerts[2], triVerts[0], _sp);
+
+    // 6. Center circle
+    _fp.color = const Color(0xFF336633);
+    canvas.drawCircle(Offset(sx(cx), sy(cy)), sm(1.0), _fp);
+
+    // 7. Creatures
+    _drawCreature3Team(canvas, gs.creature);
+    if (gs.creature2 != null) _drawCreature3Team(canvas, gs.creature2!);
+
+    // 8. Players (all 3 teams)
+    for (final p in gs.fieldPlayers) {
+      if (!p.isAlive) continue;
+      final col = switch (p.team) {
+        Team.player   => homeColor,
+        Team.opponent => awayColor,
+        Team.third    => thirdColor,
+      };
+      _fp.color = col.withValues(alpha: 0.9);
+      final pos = Offset(sx(p.x), sy(p.y));
+      canvas.drawCircle(pos, sm(1.5), _fp);
+      if (p.isSelected) {
+        _sp.color = Colors.white;
+        _sp.strokeWidth = sm(0.3);
+        canvas.drawCircle(pos, sm(1.8), _sp);
+      }
+      // HP bar
+      final barW = sm(3.0); final barH = sm(0.4);
+      final barX = pos.dx - barW / 2; final barY = pos.dy - sm(2.2);
+      _fp.color = const Color(0xFF333333);
+      canvas.drawRect(Rect.fromLTWH(barX, barY, barW, barH), _fp);
+      final hpFrac = p.health / p.maxHealth;
+      _fp.color = hpFrac > 0.5 ? _hpGoodPaint.color : _hpBadPaint.color;
+      canvas.drawRect(Rect.fromLTWH(barX, barY, barW * hpFrac, barH), _fp);
+    }
+
+    // 9. Ball
+    final ball = gs.ball;
+    final charge = ball.chargePercent;
+    Color ballColor3;
+    if (charge < 0.5) {
+      ballColor3 = Color.lerp(const Color(0xFF88FF88), const Color(0xFFFFFF00), charge * 2)!;
+    } else if (charge < 0.75) {
+      ballColor3 = Color.lerp(const Color(0xFFFFFF00), const Color(0xFFFF8800), (charge - 0.5) * 4)!;
+    } else if (charge < 0.9) {
+      ballColor3 = Color.lerp(const Color(0xFFFF8800), const Color(0xFFFF2200), (charge - 0.75) * 6.67)!;
+    } else {
+      ballColor3 = const Color(0xFFFF0000);
+    }
+    _fp.color = ballColor3;
+    canvas.drawCircle(Offset(sx(ball.x), sy(ball.y)), sm(ball.isHeld ? 0.8 : 1.2), _fp);
+  }
+
+  Path _armPath3(double cx, double cy, double nx, double ny,
+                 double px, double py, double dIn, double dOut, double halfW) {
+    return Path()
+      ..moveTo(sx(cx + nx*dIn  - px*halfW), sy(cy + ny*dIn  - py*halfW))
+      ..lineTo(sx(cx + nx*dIn  + px*halfW), sy(cy + ny*dIn  + py*halfW))
+      ..lineTo(sx(cx + nx*dOut + px*halfW), sy(cy + ny*dOut + py*halfW))
+      ..lineTo(sx(cx + nx*dOut - px*halfW), sy(cy + ny*dOut - py*halfW))
+      ..close();
+  }
+
+  // Strip from perpMin to perpMax across the arm, dIn to dOut along arm
+  Path _armStripPath(double cx, double cy, double nx, double ny,
+                     double px, double py,
+                     double dIn, double dOut,
+                     double perpMin, double perpMax) {
+    return Path()
+      ..moveTo(sx(cx + nx*dIn  + perpMin*px), sy(cy + ny*dIn  + perpMin*py))
+      ..lineTo(sx(cx + nx*dIn  + perpMax*px), sy(cy + ny*dIn  + perpMax*py))
+      ..lineTo(sx(cx + nx*dOut + perpMax*px), sy(cy + ny*dOut + perpMax*py))
+      ..lineTo(sx(cx + nx*dOut + perpMin*px), sy(cy + ny*dOut + perpMin*py))
+      ..close();
+  }
+
+  void _drawCreature3Team(Canvas canvas, Creature c) {
+    _fp.color = const Color(0x80FF3300);
+    canvas.drawCircle(Offset(sx(c.x), sy(c.y)), sm(c.size), _fp);
+    _sp.color = const Color(0xCCFF3300);
+    _sp.strokeWidth = sm(0.5);
+    canvas.drawCircle(Offset(sx(c.x), sy(c.y)), sm(c.size), _sp);
   }
 
   void _drawTerrainOverlay(Canvas canvas) {
@@ -1205,8 +1415,8 @@ class FieldPainter extends CustomPainter {
   }
 
   void _drawCreatureConnectingStrips(Canvas canvas) {
-    _drawRect(canvas, 30, -5, 80, 5, _channelPaint);
-    _drawRect(canvas, 30, 40, 80, 5, _channelPaint);
+    _drawRect(canvas, 20, -5, 100, 5, _channelPaint);
+    _drawRect(canvas, 20, 40, 100, 5, _channelPaint);
 
     _sp
       ..color = const Color(0xFF991133).withValues(alpha: 0.55)
@@ -2243,5 +2453,6 @@ class FieldPainter extends CustomPainter {
   }
 
   @override
+  // Repaints are driven by the Listenable passed to super() — this override is never reached.
   bool shouldRepaint(FieldPainter old) => false;
 }

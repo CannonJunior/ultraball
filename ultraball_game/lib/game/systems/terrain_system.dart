@@ -156,8 +156,8 @@ class TerrainSystem {
           final dist = math.sqrt(dx * dx + dy * dy);
           if (dist < event.radius && dist > 0) {
             final force = (1.0 - dist / event.radius) * event.intensity * 8.0;
-            p.x = (p.x + (dx / dist) * force).clamp(0.0, 140.0);
-            p.y = (p.y + (dy / dist) * force).clamp(0.0, 40.0);
+            p.x = (p.x + (dx / dist) * force).clamp(0.0, p.maxFieldX);
+            p.y = (p.y + (dy / dist) * force).clamp(0.0, p.maxFieldY);
           }
         }
 

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../game/game_state.dart';
 import '../game/highlight_recorder.dart';
+import '../models/game_settings.dart';
 import 'scoreboard.dart';
 
 // ── Design constants ──────────────────────────────────────────────────────────
@@ -38,22 +39,26 @@ class _ScoreboardRowState extends State<ScoreboardRow>
     with TickerProviderStateMixin {
   late final AnimationController _leftCtrl;
   late final AnimationController _rightCtrl;
+  late final AnimationController _thirdCtrl;
   late final Animation<double>   _leftAnim;
   late final Animation<double>   _rightAnim;
 
   // GlobalKeys give imperative access to each panel's video element.
   final GlobalKey<_HighlightPanelState> _leftPanelKey  = GlobalKey();
   final GlobalKey<_HighlightPanelState> _rightPanelKey = GlobalKey();
+  final GlobalKey<_HighlightPanelState> _thirdPanelKey = GlobalKey();
 
   // Track last-seen clip URLs to detect which team just scored.
   String? _lastPlayerUrl;
   String? _lastOpponentUrl;
+  String? _lastThirdUrl;
 
   @override
   void initState() {
     super.initState();
     _leftCtrl  = AnimationController(vsync: this, duration: _kAnimDuration);
     _rightCtrl = AnimationController(vsync: this, duration: _kAnimDuration);
+    _thirdCtrl = AnimationController(vsync: this, duration: _kAnimDuration);
     _leftAnim  = CurvedAnimation(parent: _leftCtrl,  curve: Curves.easeOutQuart);
     _rightAnim = CurvedAnimation(parent: _rightCtrl, curve: Curves.easeOutQuart);
     widget.recorder?.clipVersion.addListener(_onNewClip);
@@ -66,7 +71,22 @@ class _ScoreboardRowState extends State<ScoreboardRow>
     widget.recorder?.onPlayClipRequest = null;
     _leftCtrl.dispose();
     _rightCtrl.dispose();
+    _thirdCtrl.dispose();
     super.dispose();
+  }
+
+  bool get _isThreeTeam =>
+      widget.gs.settings.matchMode == MatchMode.threeTeams;
+
+  void _playClip(GlobalKey<_HighlightPanelState> panelKey,
+                 AnimationController ctrl, String url) {
+    if (_isThreeTeam) {
+      // Panels are always open in 3-team mode — play directly.
+      panelKey.currentState?.playUrl(url);
+      panelKey.currentState?.forcePlay();
+    } else {
+      _playOnPanel(panelKey: panelKey, ctrl: ctrl, url: url);
+    }
   }
 
   // Called when HighlightRecorder finalizes a new clip.
@@ -76,23 +96,30 @@ class _ScoreboardRowState extends State<ScoreboardRow>
 
     final playerUrl = rec.getLatestClip('player');
     final oppUrl    = rec.getLatestClip('opponent');
+    final thirdUrl  = rec.getLatestClip('third');
 
     if (oppUrl != null && oppUrl != _lastOpponentUrl) {
       _lastOpponentUrl = oppUrl;
-      _playOnPanel(panelKey: _leftPanelKey, ctrl: _leftCtrl, url: oppUrl);
+      _playClip(_leftPanelKey, _leftCtrl, oppUrl);
     }
     if (playerUrl != null && playerUrl != _lastPlayerUrl) {
       _lastPlayerUrl = playerUrl;
-      _playOnPanel(panelKey: _rightPanelKey, ctrl: _rightCtrl, url: playerUrl);
+      _playClip(_rightPanelKey, _rightCtrl, playerUrl);
+    }
+    if (thirdUrl != null && thirdUrl != _lastThirdUrl) {
+      _lastThirdUrl = thirdUrl;
+      _playClip(_thirdPanelKey, _thirdCtrl, thirdUrl);
     }
   }
 
   // Called directly (synchronous callback) when the user taps a clip in the list.
   void _handlePlayClipRequest(HighlightClip clip) {
     if (clip.teamId == 'opponent') {
-      _playOnPanel(panelKey: _leftPanelKey, ctrl: _leftCtrl, url: clip.clipUrl);
+      _playClip(_leftPanelKey, _leftCtrl, clip.clipUrl);
+    } else if (clip.teamId == 'third') {
+      _playClip(_thirdPanelKey, _thirdCtrl, clip.clipUrl);
     } else {
-      _playOnPanel(panelKey: _rightPanelKey, ctrl: _rightCtrl, url: clip.clipUrl);
+      _playClip(_rightPanelKey, _rightCtrl, clip.clipUrl);
     }
   }
 
@@ -126,23 +153,56 @@ class _ScoreboardRowState extends State<ScoreboardRow>
     }
   }
 
+// Always-open fraction for 3-team embedded video panels.
+  static const _kFullOpen = AlwaysStoppedAnimation<double>(1.0);
+
   @override
   Widget build(BuildContext context) {
-    final gs        = widget.gs;
-    final away      = gs.settings.awayTeamName;
-    final home      = gs.settings.homeTeamName;
-    final awayColor = Color(gs.settings.awayTeamPrimary);
-    final homeColor = Color(gs.settings.homeTeamPrimary);
+    final gs          = widget.gs;
+    final isThreeTeam = gs.settings.matchMode == MatchMode.threeTeams;
+    final away        = gs.settings.awayTeamName;
+    final home        = gs.settings.homeTeamName;
+    final third       = gs.settings.thirdTeamName;
+    final awayColor   = Color(gs.settings.awayTeamPrimary);
+    final homeColor   = Color(gs.settings.homeTeamPrimary);
+    final thirdColor  = Color(gs.settings.thirdTeamPrimary);
 
+    // ── 3-team: full-width scoreboard with video panels interleaved ──────────
+    if (isThreeTeam) {
+      return ValueListenableBuilder<int>(
+        valueListenable: widget.repaint,
+        builder: (_, __, ___) => Scoreboard(
+          gs: gs,
+          awayVideoPanel: _HighlightPanel(
+            key:          _leftPanelKey,
+            teamName:     away,
+            teamColor:    awayColor,
+            labelRight:   false,
+            openFraction: _kFullOpen,
+          ),
+          thirdVideoPanel: _HighlightPanel(
+            key:          _thirdPanelKey,
+            teamName:     third,
+            teamColor:    thirdColor,
+            labelRight:   false,
+            openFraction: _kFullOpen,
+          ),
+          homeVideoPanel: _HighlightPanel(
+            key:          _rightPanelKey,
+            teamName:     home,
+            teamColor:    homeColor,
+            labelRight:   true,
+            openFraction: _kFullOpen,
+          ),
+        ),
+      );
+    }
+
+    // ── 2-team: side panels with slide-in highlight panels ───────────────────
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ── Left side (away / opponent) ─────────────────────────────────────
-        // Stack+Positioned(top:0,bottom:0) propagates the tight row height
-        // (set by IntrinsicHeight + crossAxisAlignment.stretch) into the inner
-        // Row, so the panel fills the full scoreboard height. Align(centerRight)
-        // was replaced because Align always converts tight constraints to loose,
-        // making the inner Row size to its children's intrinsic height instead.
+        // Left side (away / opponent)
         Expanded(
           flex: 33,
           child: Stack(
@@ -183,7 +243,7 @@ class _ScoreboardRowState extends State<ScoreboardRow>
           ),
         ),
 
-        // ── Scoreboard (center ~34%) ────────────────────────────────────────
+        // Scoreboard (center)
         Expanded(
           flex: 34,
           child: ValueListenableBuilder<int>(
@@ -192,7 +252,7 @@ class _ScoreboardRowState extends State<ScoreboardRow>
           ),
         ),
 
-        // ── Right side (home / player) ──────────────────────────────────────
+        // Right side (home / player)
         Expanded(
           flex: 33,
           child: Stack(
@@ -335,6 +395,7 @@ class _HighlightPanelState extends State<_HighlightPanel> {
     return AnimatedBuilder(
       animation: widget.openFraction,
       builder: (_, __) {
+        if (widget.openFraction.value == 0) return const SizedBox.shrink();
         final panelOpen = widget.openFraction.value > 0.01;
         return Stack(
       children: [

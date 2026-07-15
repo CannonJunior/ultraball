@@ -2,6 +2,7 @@
 import 'dart:html' as html;
 import 'dart:js_util' as js_util;
 import 'package:flutter/foundation.dart';
+import '../models/game_settings.dart';
 import '../models/player.dart';
 import 'game_state.dart';
 
@@ -79,6 +80,7 @@ class HighlightRecorder {
 
   String? _latestPlayerClipUrl;
   String? _latestOpponentClipUrl;
+  String? _latestThirdClipUrl;
 
   // ────────────────────────────────────────────────────────────────────────
   HighlightRecorder() {
@@ -109,6 +111,13 @@ class HighlightRecorder {
 
   void checkBallCarrierCrossing(GameState gs) {
     if (_capturingPost) return;
+
+    // 3-team field geometry doesn't use the 2-team threshold lines — scoring
+    // notifications via notifyUltraScored are sufficient to trigger recording.
+    if (gs.settings.matchMode == MatchMode.threeTeams) {
+      if (_armed) _cancelAutoRecording();
+      return;
+    }
 
     final ball = gs.ball;
     if (!ball.isHeld) {
@@ -229,6 +238,8 @@ class HighlightRecorder {
 
     if (teamId == 'player') {
       _latestPlayerClipUrl = url;
+    } else if (teamId == 'third') {
+      _latestThirdClipUrl = url;
     } else {
       _latestOpponentClipUrl = url;
     }
@@ -244,7 +255,6 @@ class HighlightRecorder {
 
     _addClip(clip);
     _clearPending();
-    downloadClip(clip);
   }
 
   void _clearPending() {
@@ -335,7 +345,6 @@ class HighlightRecorder {
     );
 
     _addClip(clip);
-    downloadClip(clip);
   }
 
   // ── Shared helpers ───────────────────────────────────────────────────────
@@ -350,8 +359,11 @@ class HighlightRecorder {
     clipVersion.value++;
   }
 
-  String? getLatestClip(String teamId) =>
-      teamId == 'player' ? _latestPlayerClipUrl : _latestOpponentClipUrl;
+  String? getLatestClip(String teamId) => switch (teamId) {
+    'player'   => _latestPlayerClipUrl,
+    'third'    => _latestThirdClipUrl,
+    _          => _latestOpponentClipUrl,
+  };
 
   static void downloadClip(HighlightClip clip) {
     try {

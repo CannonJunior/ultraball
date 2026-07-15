@@ -2,7 +2,8 @@ class ActResult {
   final int act;
   final int playerScore;
   final int opponentScore;
-  ActResult(this.act, this.playerScore, this.opponentScore);
+  final int thirdScore;
+  ActResult(this.act, this.playerScore, this.opponentScore, [this.thirdScore = 0]);
 }
 
 class ActState {
@@ -35,10 +36,17 @@ class ActState {
   bool playerForfeit = false;
   bool opponentForfeit = false;
 
+  // Third team (3-team mode only)
+  int thirdScore = 0;
+  int thirdKills = 0;
+  bool thirdSubUsed = false;
+  bool thirdForfeit = false;
+
   bool get isAct5 => currentAct == 5;
   bool get gameOver =>
       playerForfeit ||
       opponentForfeit ||
+      thirdForfeit ||
       (actEnded && currentAct >= 5);
 
   String get timerDisplay {

@@ -3,6 +3,8 @@ import '../ai/ai_strategy.dart';
 
 enum ViewMode { flat, threeQuarter, full3D }
 
+enum MatchMode { twoTeams, threeTeams }
+
 class TeamDefinition {
   final String name;
   final CreatureType creatureType;
@@ -78,6 +80,8 @@ class TeamDefinition {
 }
 
 class GameSettings {
+  final MatchMode matchMode;
+
   final String homeTeamName;
   final String awayTeamName;
   final List<String> homePlayerNames;
@@ -103,6 +107,13 @@ class GameSettings {
   final int awayTeamPrimary;
   final int awayTeamSecondary;
 
+  // Third team (3-team mode only)
+  final String thirdTeamName;
+  final List<String> thirdPlayerNames;
+  final int thirdTeamPrimary;
+  final int thirdTeamSecondary;
+  final CreatureType thirdCreatureType;
+
   static List<String> _namesFor(String teamName) {
     final match = TeamDefinition.teams.where((t) => t.name == teamName).firstOrNull;
     return match?.playerNames ?? List.generate(15, (i) => 'P${i + 1}');
@@ -119,6 +130,7 @@ class GameSettings {
   }
 
   GameSettings({
+    this.matchMode = MatchMode.twoTeams,
     required this.homeTeamName,
     required this.awayTeamName,
     List<String>? homePlayerNames,
@@ -139,6 +151,11 @@ class GameSettings {
     int? homeTeamSecondary,
     int? awayTeamPrimary,
     int? awayTeamSecondary,
+    String? thirdTeamName,
+    List<String>? thirdPlayerNames,
+    int? thirdTeamPrimary,
+    int? thirdTeamSecondary,
+    CreatureType? thirdCreatureType,
   })  : homePlayerNames   = homePlayerNames   ?? _namesFor(homeTeamName),
         awayPlayerNames   = awayPlayerNames   ?? _namesFor(awayTeamName),
         homeRosterOrder   = homeRosterOrder   ?? List.generate(15, (i) => i),
@@ -147,5 +164,10 @@ class GameSettings {
         homeTeamPrimary   = homeTeamPrimary   ?? _primaryFor(homeTeamName),
         homeTeamSecondary = homeTeamSecondary ?? _secondaryFor(homeTeamName),
         awayTeamPrimary   = awayTeamPrimary   ?? _primaryFor(awayTeamName),
-        awayTeamSecondary = awayTeamSecondary ?? _secondaryFor(awayTeamName);
+        awayTeamSecondary = awayTeamSecondary ?? _secondaryFor(awayTeamName),
+        thirdTeamName     = thirdTeamName     ?? '',
+        thirdPlayerNames  = thirdPlayerNames  ?? const [],
+        thirdTeamPrimary  = thirdTeamPrimary  ?? 0xFF888888,
+        thirdTeamSecondary= thirdTeamSecondary?? 0xFF444444,
+        thirdCreatureType = thirdCreatureType ?? CreatureType.chaos;
 }

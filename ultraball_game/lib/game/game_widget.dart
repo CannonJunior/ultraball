@@ -222,6 +222,12 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     // Update all players — iterate rosters directly to avoid allPlayers allocation
     for (final p in _gs.playerRoster)   { p.update(dt); }
     for (final p in _gs.opponentRoster) { p.update(dt); }
+    for (final p in _gs.thirdRoster)    { p.update(dt); }
+
+    // Clamp players to star field boundary in 3-team mode
+    if (_gs.settings.matchMode == MatchMode.threeTeams) {
+      for (final p in _gs.fieldPlayers) { _clampToStarField(p); }
+    }
 
     // Drain ability queue for selected player
     final selForQueue = _gs.selectedPlayer;
@@ -288,6 +294,43 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
   // E = strafe right (move perpendicular-right without turning)
 
   static const double _turnSpeed = 150.0 * (math.pi / 180.0); // 150 deg/sec in radians
+
+  bool _isInsideStarField(double wx, double wy) {
+    const cx = GameState.field3CX, cy = GameState.field3CY;
+    const inr = GameState.field3Inradius;
+    const armEnd = GameState.field3ArmEnd;
+    const halfW = GameState.field3ArmHalfWidth;
+    final dx = wx - cx, dy = wy - cy;
+    double maxD = double.negativeInfinity;
+    for (final (nx, ny) in GameState.team3Normals) {
+      final d = dx * nx + dy * ny;
+      final perp = dx * (-ny) + dy * nx;
+      if (d >= inr && d <= armEnd && perp.abs() <= halfW) return true;
+      if (d > maxD) maxD = d;
+    }
+    return maxD <= inr; // inside central triangle
+  }
+
+  void _clampToStarField(UltraballPlayer p) {
+    if (_isInsideStarField(p.x, p.y)) return;
+    const cx = GameState.field3CX, cy = GameState.field3CY;
+    const inr = GameState.field3Inradius;
+    const armEnd = GameState.field3ArmEnd;
+    const halfW = GameState.field3ArmHalfWidth;
+    final dx = p.x - cx, dy = p.y - cy;
+    double bestDSq = double.infinity;
+    double bestX = p.x, bestY = p.y;
+    for (final (nx, ny) in GameState.team3Normals) {
+      final px = -ny, py = nx;
+      final d    = (dx * nx + dy * ny).clamp(inr, armEnd);
+      final perp = (dx * px + dy * py).clamp(-halfW, halfW);
+      final nearX = cx + nx * d + px * perp;
+      final nearY = cy + ny * d + py * perp;
+      final dSq = (nearX - p.x) * (nearX - p.x) + (nearY - p.y) * (nearY - p.y);
+      if (dSq < bestDSq) { bestDSq = dSq; bestX = nearX; bestY = nearY; }
+    }
+    p.x = bestX; p.y = bestY;
+  }
 
   void _handlePlayerMovement(double dt) {
     final player = _gs.selectedPlayer;
@@ -637,7 +680,8 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       }
       return;
     }
-    CombatSystem.useClassAbility(_gs, player, slot);
+    final executed = CombatSystem.useClassAbility(_gs, player, slot);
+    if (!executed) return; // mana failure: indicator shown, no GCD
     // Direct-fire breaks any queue combo chain
     player.abilityComboStreak = 0;
     player.lastExecutedComboStreak = 0;
@@ -680,17 +724,34 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     }
     _lastLayoutSize = size;
 
-    // Field is 140m x 40m. Creature channels extend 5m above (y=-5)
-    // and 5m below (y=45), giving a 50m total world height. Add 2m
-    // padding on each side of that world extent.
-    const fieldW = 144.0; // 140 + 2 padding each side
-    const fieldH = 54.0;  // 50m world + 2m padding each side
-    final scaleX = size.width / fieldW;
-    final scaleY = size.height / fieldH;
-    _scale   = math.min(scaleX, scaleY);
-    _offsetX = (size.width  - 140 * _scale) / 2;
-    // Center the 50m world (y=-5..45); field y=0 is 5m down from world top.
-    _offsetY = (size.height - 50  * _scale) / 2 + 5 * _scale;
+    if (widget.settings.matchMode == MatchMode.threeTeams) {
+      // Zoom to the actual star bounding box (arm outer corners) + 8m padding.
+      // Star bounds: x [29.38..190.62], y [51.91..191.55] — centered at (110, 121.73).
+      const starW  = 161.24;  // max_x - min_x
+      const starH  = 139.64;  // max_y - min_y
+      const pad    = 8.0;
+      const displayW = starW + pad * 2;
+      const displayH = starH + pad * 2;
+      const starCX = 110.0;
+      const starCY = 121.73;  // visual centroid of star
+      final scaleX = size.width  / displayW;
+      final scaleY = size.height / displayH;
+      _scale   = math.min(scaleX, scaleY);
+      _offsetX = size.width  / 2 - starCX * _scale;
+      _offsetY = size.height / 2 - starCY * _scale;
+    } else {
+      // Field is 140m x 40m. Creature channels extend 5m above (y=-5)
+      // and 5m below (y=45), giving a 50m total world height. Add 2m
+      // padding on each side of that world extent.
+      const fieldW = 144.0; // 140 + 2 padding each side
+      const fieldH = 54.0;  // 50m world + 2m padding each side
+      final scaleX = size.width / fieldW;
+      final scaleY = size.height / fieldH;
+      _scale   = math.min(scaleX, scaleY);
+      _offsetX = (size.width  - 140 * _scale) / 2;
+      // Center the 50m world (y=-5..45); field y=0 is 5m down from world top.
+      _offsetY = (size.height - 50  * _scale) / 2 + 5 * _scale;
+    }
 
     _fieldPainter.scale   = _scale;
     _fieldPainter.offsetX = _offsetX;
@@ -769,42 +830,55 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
                         ),
                       ),
 
-                      // All dynamic overlays subscribe to _canvasRepaint so they
-                      // update each tick without a full GameWidget setState().
-                      ValueListenableBuilder<int>(
-                        valueListenable: _canvasRepaint,
-                        builder: (_, __, ___) => Stack(
-                          children: [
-                            // Event message (center top)
-                            if (_gs.lastEventMessage != null)
-                              Positioned(
+                      // Each tick-sensitive overlay has its own ValueListenableBuilder
+                      // so only the minimal subtree rebuilds each game tick.
+                      Stack(
+                        children: [
+                          // Event message — appears/disappears from game state
+                          ValueListenableBuilder<int>(
+                            valueListenable: _canvasRepaint,
+                            builder: (_, __, ___) {
+                              if (_gs.lastEventMessage == null) return const SizedBox.shrink();
+                              return Positioned(
                                 top: 16,
                                 left: 0,
                                 right: 0,
                                 child: _EventMessage(message: _gs.lastEventMessage!),
+                              );
+                            },
+                          ),
+
+                          // Combo display (center bottom)
+                          Positioned(
+                            bottom: 120,
+                            left: 0,
+                            right: 0,
+                            child: ValueListenableBuilder<int>(
+                              valueListenable: _canvasRepaint,
+                              builder: (_, __, ___) => ComboDisplay(gs: _gs),
+                            ),
+                          ),
+
+                          // Throw charge bar (bottom center, above mana bars)
+                          Positioned(
+                            bottom: 80,
+                            left: 0,
+                            right: 0,
+                            child: Center(
+                              child: ValueListenableBuilder<int>(
+                                valueListenable: _canvasRepaint,
+                                builder: (_, __, ___) => ThrowChargeBar(gs: _gs),
                               ),
-
-                            // Combo display (center bottom)
-                            Positioned(
-                              bottom: 120,
-                              left: 0,
-                              right: 0,
-                              child: ComboDisplay(gs: _gs),
                             ),
+                          ),
 
-                            // Throw charge bar (bottom center, above mana bars)
-                            Positioned(
-                              bottom: 80,
-                              left: 0,
-                              right: 0,
-                              child: Center(child: ThrowChargeBar(gs: _gs)),
-                            ),
-
-                            // Target frame + target-of-target + mana bars (bottom left)
-                            Positioned(
-                              bottom: 12,
-                              left: 12,
-                              child: Column(
+                          // Target frame + target-of-target + mana bars (bottom left)
+                          Positioned(
+                            bottom: 12,
+                            left: 12,
+                            child: ValueListenableBuilder<int>(
+                              valueListenable: _canvasRepaint,
+                              builder: (_, __, ___) => Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -822,91 +896,109 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
                                 ],
                               ),
                             ),
+                          ),
 
-                            // Team roster panel + highlight clip list (right side, stacked)
-                            Positioned(
-                              top: 8,
-                              right: 8,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _RosterPanel(gs: _gs),
-                                  if (_highlightRecorder != null) ...[
-                                    const SizedBox(height: 8),
-                                    HighlightClipList(
-                                      recorder:      _highlightRecorder!,
-                                      homeTeamName:  widget.settings.homeTeamName,
-                                      awayTeamName:  widget.settings.awayTeamName,
-                                      homeTeamColor: Color(widget.settings.homeTeamPrimary),
-                                      awayTeamColor: Color(widget.settings.awayTeamPrimary),
-                                    ),
-                                  ],
+                          // Team roster panel (right side) — tick-sensitive; HighlightClipList is not
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ValueListenableBuilder<int>(
+                                  valueListenable: _canvasRepaint,
+                                  builder: (_, __, ___) => _RosterPanel(gs: _gs),
+                                ),
+                                if (_highlightRecorder != null) ...[
+                                  const SizedBox(height: 8),
+                                  HighlightClipList(
+                                    recorder:      _highlightRecorder!,
+                                    homeTeamName:  widget.settings.homeTeamName,
+                                    awayTeamName:  widget.settings.awayTeamName,
+                                    homeTeamColor: Color(widget.settings.homeTeamPrimary),
+                                    awayTeamColor: Color(widget.settings.awayTeamPrimary),
+                                  ),
                                 ],
-                              ),
+                              ],
                             ),
+                          ),
 
-                            // Settings gear button (top-left)
-                            Positioned(
-                              top: 8,
-                              left: 8,
-                              child: _SettingsButton(onTap: () {
-                                setState(() {
-                                  _showSettingsPanel = true;
-                                  _gs.paused = true;
-                                });
-                              }),
-                            ),
+                          // Settings gear button (top-left) — static, no VLB needed
+                          Positioned(
+                            top: 8,
+                            left: 8,
+                            child: _SettingsButton(onTap: () {
+                              setState(() {
+                                _showSettingsPanel = true;
+                                _gs.paused = true;
+                              });
+                            }),
+                          ),
 
-                            // Damage / healing meter (bottom-right, toggled by [M])
-                            if (_showDamageMeter && !_gs.actState.gameOver)
-                              Positioned(
+                          // Damage / healing meter (bottom-right, toggled by [M])
+                          ValueListenableBuilder<int>(
+                            valueListenable: _canvasRepaint,
+                            builder: (_, __, ___) {
+                              if (!_showDamageMeter || _gs.actState.gameOver) return const SizedBox.shrink();
+                              return Positioned(
                                 bottom: 12,
                                 right: 8,
                                 child: DamageMeter(gs: _gs),
-                              ),
+                              );
+                            },
+                          ),
 
-                            // Pause overlay
-                            if (_gs.paused && !_showSettingsPanel)
-                              _PauseOverlay(onResume: () {
-                                setState(() => _gs.paused = false);
+                          // Pause overlay — setState-driven, no VLB needed
+                          if (_gs.paused && !_showSettingsPanel)
+                            _PauseOverlay(onResume: () {
+                              setState(() => _gs.paused = false);
+                              _focusNode.requestFocus();
+                            }),
+
+                          // Game state screens — shared VLB; early-exit when none are active
+                          ValueListenableBuilder<int>(
+                            valueListenable: _canvasRepaint,
+                            builder: (_, __, ___) {
+                              if (!_gs.actState.gameOver && !_gs.showingActTransition && !_gs.showingRosterScreen) {
+                                return const SizedBox.shrink();
+                              }
+                              return Stack(
+                                children: [
+                                  if (_gs.actState.gameOver)
+                                    GameSummaryScreen(
+                                      gs: _gs,
+                                      onBack: () => Navigator.of(context).pop(),
+                                    ),
+                                  if (_gs.showingActTransition)
+                                    _ActTransitionOverlay(gs: _gs),
+                                  if (_gs.showingRosterScreen)
+                                    RosterScreen(
+                                      gs: _gs,
+                                      onConfirm: _applyRosterAndBeginNextAct,
+                                    ),
+                                ],
+                              );
+                            },
+                          ),
+
+                          // In-game settings panel — setState-driven, no VLB needed
+                          if (_showSettingsPanel)
+                            InGameSettingsPanel(
+                              gs: _gs,
+                              onClose: () {
+                                setState(() {
+                                  _showSettingsPanel = false;
+                                  _gs.paused = false;
+                                });
                                 _focusNode.requestFocus();
-                              }),
-
-                            // Game summary (replaces bare game-over box)
-                            if (_gs.actState.gameOver)
-                              GameSummaryScreen(
-                                gs: _gs,
-                                onBack: () => Navigator.of(context).pop(),
-                              ),
-
-                            // Act transition overlay
-                            if (_gs.showingActTransition)
-                              _ActTransitionOverlay(gs: _gs),
-                            if (_gs.showingRosterScreen)
-                              RosterScreen(
-                                gs: _gs,
-                                onConfirm: _applyRosterAndBeginNextAct,
-                              ),
-
-                            // In-game settings panel
-                            if (_showSettingsPanel)
-                              InGameSettingsPanel(
-                                gs: _gs,
-                                onClose: () {
-                                  setState(() {
-                                    _showSettingsPanel = false;
-                                    _gs.paused = false;
-                                  });
-                                  _focusNode.requestFocus();
-                                },
-                                onViewModeChanged: (mode) {
-                                  _fieldPainter.viewMode = mode;
-                                  _canvasRepaint.value++;
-                                },
-                              ),
-                          ],
-                        ),
+                              },
+                              onViewModeChanged: (mode) {
+                                _fieldPainter.viewMode = mode;
+                                _canvasRepaint.value++;
+                              },
+                            ),
+                        ],
                       ),
                     ],
                   );

@@ -19,8 +19,10 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  int _homeTeamIdx = 0;
-  int _awayTeamIdx = 1;
+  MatchMode _matchMode   = MatchMode.twoTeams;
+  int _homeTeamIdx  = 0;
+  int _awayTeamIdx  = 1;
+  int _thirdTeamIdx = 2;
   bool _isNeutralSite = false;
   CreatureType _neutralCreatureType = CreatureType.chaos;
   bool _fastMode = false;
@@ -83,12 +85,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _startMatch() {
-    final home = TeamDefinition.teams[_homeTeamIdx];
-    final away = TeamDefinition.teams[_awayTeamIdx];
+    final home  = TeamDefinition.teams[_homeTeamIdx];
+    final away  = TeamDefinition.teams[_awayTeamIdx];
+    final third = TeamDefinition.teams[_thirdTeamIdx];
     final creatureType = _isNeutralSite
         ? _neutralCreatureType
         : home.creatureType;
     final settings = GameSettings(
+      matchMode: _matchMode,
       homeTeamName: home.name,
       awayTeamName: away.name,
       homePlayerNames: home.playerNames,
@@ -104,7 +108,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       homeRosterOrder: List.from(_homeRosterOrder),
       inactiveClasses: Set.from(_inactiveClasses),
       testMode: _testMode,
+      thirdTeamName:    _matchMode == MatchMode.threeTeams ? third.name        : null,
+      thirdPlayerNames: _matchMode == MatchMode.threeTeams ? third.playerNames : null,
+      thirdCreatureType:_matchMode == MatchMode.threeTeams ? third.creatureType : null,
     );
+
+    // Debug: verify settings are captured correctly (visible in browser console)
+    // ignore: avoid_print
+    print('[Ultraball] _startMatch: home=${settings.homeTeamName}'
+        ' away=${settings.awayTeamName}'
+        ' inactive=${settings.inactiveClasses}'
+        ' rosterOrder=${settings.homeRosterOrder.take(5).toList()}...'
+        ' ai=${settings.aiStrategy.name}/${settings.aiTactics.name}'
+        ' fast=${settings.fastMode}');
 
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -219,11 +235,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _SectionHeader(label: 'MATCH CONFIGURATION'),
           const SizedBox(height: 16),
 
-          // Teams side by side
+          // ── Match Mode ───────────────────────────────────────
+          _SettingCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _FieldLabel('MATCH MODE'),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _SpeedButton(
+                        label: '2 TEAMS',
+                        sublabel: 'Classic — linear field',
+                        selected: _matchMode == MatchMode.twoTeams,
+                        onTap: () => setState(() => _matchMode = MatchMode.twoTeams),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _SpeedButton(
+                        label: '3 TEAMS',
+                        sublabel: 'Triangle field',
+                        selected: _matchMode == MatchMode.threeTeams,
+                        onTap: () => setState(() {
+                          _matchMode = MatchMode.threeTeams;
+                          _viewMode = ViewMode.flat;
+                          // Auto-pick a valid third team that doesn't collide
+                          if (_thirdTeamIdx == _homeTeamIdx ||
+                              _thirdTeamIdx == _awayTeamIdx) {
+                            _thirdTeamIdx = Iterable.generate(
+                              TeamDefinition.teams.length,
+                            ).firstWhere(
+                              (i) => i != _homeTeamIdx && i != _awayTeamIdx,
+                              orElse: () => 0,
+                            );
+                          }
+                        }),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // ── Teams ────────────────────────────────────────────
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Home column ──────────────────────────────────
               Expanded(
                 child: _SettingCard(
                   child: Column(
@@ -233,7 +295,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const SizedBox(height: 6),
                       _TeamDropdown(
                         selected: _homeTeamIdx,
-                        excludeIdx: _awayTeamIdx,
+                        excludeIdxs: _matchMode == MatchMode.threeTeams
+                            ? {_awayTeamIdx, _thirdTeamIdx}
+                            : {_awayTeamIdx},
                         onChanged: (i) => setState(() {
                           _homeTeamIdx = i;
                           _homeRosterOrder = List.generate(15, (j) => j);
@@ -244,10 +308,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ),
-
-              const SizedBox(width: 12),
-
-              // ── Away column ──────────────────────────────────
+              const SizedBox(width: 8),
               Expanded(
                 child: _SettingCard(
                   child: Column(
@@ -257,7 +318,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const SizedBox(height: 6),
                       _TeamDropdown(
                         selected: _awayTeamIdx,
-                        excludeIdx: _homeTeamIdx,
+                        excludeIdxs: _matchMode == MatchMode.threeTeams
+                            ? {_homeTeamIdx, _thirdTeamIdx}
+                            : {_homeTeamIdx},
                         onChanged: (i) => setState(() => _awayTeamIdx = i),
                         accentColor: Color(TeamDefinition.teams[_awayTeamIdx].primaryColor),
                       ),
@@ -267,6 +330,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
+          if (_matchMode == MatchMode.threeTeams) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _SettingCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _FieldLabel('THIRD TEAM'),
+                        const SizedBox(height: 6),
+                        _TeamDropdown(
+                          selected: _thirdTeamIdx,
+                          excludeIdxs: {_homeTeamIdx, _awayTeamIdx},
+                          onChanged: (i) => setState(() => _thirdTeamIdx = i),
+                          accentColor: Color(TeamDefinition.teams[_thirdTeamIdx].primaryColor),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const Spacer(),
+              ],
+            ),
+          ],
 
           const SizedBox(height: 12),
 
@@ -725,22 +813,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _RosterEditor(
             homeTeamIdx: _homeTeamIdx,
             awayTeamIdx: _awayTeamIdx,
+            thirdTeamIdx: _thirdTeamIdx,
+            matchMode: _matchMode,
             homeRosterOrder: _homeRosterOrder,
             onHomeReorder: (newOrder) => setState(() => _homeRosterOrder = newOrder),
             inactiveClasses: _inactiveClasses,
           ),
           const SizedBox(height: 12),
-          _RuleSection(
-            icon: '🏟',
-            title: 'THE FIELD',
-            rules: [
-              'Total field: 140m × 40m',
-              'Left & Right endzones: 20m deep — score here!',
-              'Left & Right channels: 10m — patrolled by the creature',
-              'Main field: 80m with 5 PHASE LINES at 20m intervals',
-              'Phase lines reset ball charge when crossed',
-            ],
-          ),
+          if (_matchMode == MatchMode.twoTeams)
+            _RuleSection(
+              icon: '🏟',
+              title: 'THE FIELD',
+              rules: [
+                'Total field: 140m × 40m',
+                'Left & Right endzones: 20m deep — score here!',
+                'Left & Right channels: 10m — patrolled by the creature',
+                'Main field: 80m with 5 PHASE LINES at 20m intervals',
+                'Phase lines reset ball charge when crossed',
+              ],
+            )
+          else
+            _RuleSection(
+              icon: '🏟',
+              title: 'THE FIELD — 3 TEAMS',
+              rules: [
+                'Triangular field: equilateral triangle, 40m per side',
+                'Ball spawns at the centroid of the triangle',
+                'Each side of the triangle = Phase Line 1 for one team',
+                'Two more phase lines per team, each 20m further out',
+                'Phase lines reset ball charge when crossed',
+                '10m creature channel rings the entire outer field',
+                'Each team has a 20m deep endzone beyond the channel',
+                'Two creatures patrol the channel (Home + Third team types)',
+              ],
+            ),
           _RuleSection(
             icon: '🏆',
             title: 'SCORING',
@@ -940,13 +1046,13 @@ class _SpeedButton extends StatelessWidget {
 
 class _TeamDropdown extends StatelessWidget {
   final int selected;
-  final int excludeIdx;
+  final Set<int> excludeIdxs;
   final ValueChanged<int> onChanged;
   final Color accentColor;
 
   const _TeamDropdown({
     required this.selected,
-    required this.excludeIdx,
+    required this.excludeIdxs,
     required this.onChanged,
     required this.accentColor,
   });
@@ -975,7 +1081,7 @@ class _TeamDropdown extends StatelessWidget {
         underline: const SizedBox(),
         onChanged: (v) { if (v != null) onChanged(v); },
         items: List.generate(TeamDefinition.teams.length, (i) {
-          if (i == excludeIdx) return null;
+          if (excludeIdxs.contains(i)) return null;
           final team = TeamDefinition.teams[i];
           final (emoji, _) = _creatureInfo(team.creatureType);
           return DropdownMenuItem(
@@ -1266,6 +1372,8 @@ class _RuleSection extends StatelessWidget {
 class _RosterEditor extends StatelessWidget {
   final int homeTeamIdx;
   final int awayTeamIdx;
+  final int thirdTeamIdx;
+  final MatchMode matchMode;
   final List<int> homeRosterOrder;
   final ValueChanged<List<int>> onHomeReorder;
   final Set<int> inactiveClasses;
@@ -1276,6 +1384,8 @@ class _RosterEditor extends StatelessWidget {
     required this.homeRosterOrder,
     required this.onHomeReorder,
     required this.inactiveClasses,
+    this.thirdTeamIdx = 2,
+    this.matchMode = MatchMode.twoTeams,
   });
 
   static Color _classColor(int playerIdx) => switch (playerIdx % 7) {
@@ -1359,16 +1469,22 @@ class _RosterEditor extends StatelessWidget {
   Widget build(BuildContext context) {
     final homeDef      = TeamDefinition.teams[homeTeamIdx];
     final awayDef      = TeamDefinition.teams[awayTeamIdx];
+    final thirdDef     = TeamDefinition.teams[thirdTeamIdx];
     final homeNames    = homeDef.playerNames;
     final homeTeamName = homeDef.name;
     final awayNames    = awayDef.playerNames;
     final awayTeamName = awayDef.name;
+    final thirdNames   = thirdDef.playerNames;
+    final thirdTeamName = thirdDef.name;
     final homeColor    = Color(homeDef.primaryColor);
     final awayColor    = Color(awayDef.primaryColor);
+    final thirdColor   = Color(thirdDef.primaryColor);
+    final isThree      = matchMode == MatchMode.threeTeams;
 
-    // Inactive player indices for each team (home uses roster order, away uses 0-14)
-    final homeInactive = homeRosterOrder.where((i) => inactiveClasses.contains(i % 7)).toList();
-    final awayInactive = List.generate(15, (i) => i)
+    final homeInactive  = homeRosterOrder.where((i) => inactiveClasses.contains(i % 7)).toList();
+    final awayInactive  = List.generate(15, (i) => i)
+        .where((i) => inactiveClasses.contains(i % 7)).toList();
+    final thirdInactive = List.generate(15, (i) => i)
         .where((i) => inactiveClasses.contains(i % 7)).toList();
 
     return Container(
@@ -1401,7 +1517,6 @@ class _RosterEditor extends StatelessWidget {
           iconColor: const Color(0xFFFFCC00),
           collapsedIconColor: const Color(0x66FFFFFF),
           children: [
-            // Active sections side-by-side
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1420,10 +1535,18 @@ class _RosterEditor extends StatelessWidget {
                   names: awayNames,
                   inactiveClasses: inactiveClasses,
                 )),
+                if (isThree) ...[
+                  const SizedBox(width: 12),
+                  Expanded(child: _ReadonlyTeamRoster(
+                    teamName: thirdTeamName,
+                    color: thirdColor,
+                    names: thirdNames,
+                    inactiveClasses: inactiveClasses,
+                    sublabel: 'THIRD — AI controlled',
+                  )),
+                ],
               ],
             ),
-            // Inactive sections side-by-side — rendered at the same level so
-            // they always share the same top edge regardless of active-section height.
             if (inactiveClasses.isNotEmpty) ...[
               const SizedBox(height: 4),
               Row(
@@ -1446,6 +1569,17 @@ class _RosterEditor extends StatelessWidget {
                         _inactiveRow(idx, awayNames[idx]),
                     ],
                   )),
+                  if (isThree) ...[
+                    const SizedBox(width: 12),
+                    Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _inactiveDivider(),
+                        for (final idx in thirdInactive)
+                          _inactiveRow(idx, thirdNames[idx]),
+                      ],
+                    )),
+                  ],
                 ],
               ),
             ],
@@ -1719,12 +1853,14 @@ class _ReadonlyTeamRoster extends StatefulWidget {
   final Color color;
   final List<String> names;
   final Set<int> inactiveClasses;
+  final String sublabel;
 
   const _ReadonlyTeamRoster({
     required this.teamName,
     required this.color,
     required this.names,
     required this.inactiveClasses,
+    this.sublabel = 'AWAY — AI controlled',
   });
 
   @override
@@ -1876,7 +2012,7 @@ class _ReadonlyTeamRosterState extends State<_ReadonlyTeamRoster> {
             color: widget.color, fontSize: 14,
             fontWeight: FontWeight.bold, letterSpacing: 1.5,
           )),
-        Text('AWAY — AI controlled',
+        Text(widget.sublabel,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 10)),
         const SizedBox(height: 6),
         for (final (displaySlot, slot) in activeEntries) ...[

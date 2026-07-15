@@ -263,15 +263,18 @@ extension PlayerClassInfo on PlayerClass {
   };
 
   // Mana cost per slot. Format: 'NR' = N Red, 'NB' = N Blue, 'NU' = N Ultra, '—' = free.
+  // Tier costs: slot 2 (1.5s CD): 5R/15B · slots 3–5 (5s): 7–10R/20–30B ·
+  //             slots 6–7 (10s): 13–17R/40–50B · slots 8–9 (20s): 20–25R/60–70B
+  // Red ≈ 1/3 of blue at the same tier. Corsair only uses both mana types.
   List<String> get abilityManaCosts => switch (this) {
-    //                  1     2     3     4     5     6     7     8     9    10
-    PlayerClass.spectre    => ['—', '20R', '15B', '20B', '25R', '30R', '30B', '25B', '40R', '5U'],
-    PlayerClass.geomancer  => ['—', '20R', '15R', '20B', '25R', '30B', '35B', '35R', '30R', '5U'],
-    PlayerClass.archon     => ['—', '20R', '20B', '25B', '20B', '25R', '35B', '30R', '50B', '5U'],
-    PlayerClass.warden     => ['—', '20R', '20B', '25B', '15B', '25R', '35B', '30R', '45B', '5U'],
-    PlayerClass.corsair    => ['—', '20R', '15B', '20R', '25R', '30R', '20B', '30B', '30R', '5U'],
-    PlayerClass.trickster  => ['—', '20B', '15B', '25R', '20B', '35R', '25B', '20B', '30R', '5U'],
-    PlayerClass.wrecker    => ['—', '20R', '25R', '25R', '20R', '30R', '30R', '35R', '40R', '5U'],
+    //                  1     2      3      4      5      6      7      8      9     10
+    PlayerClass.spectre    => ['—',  '5R',  '7R',  '8R', '10R', '13R', '17R', '20R', '25R', '5U'],
+    PlayerClass.geomancer  => ['—', '15B', '20B', '25B', '30B', '40B', '50B', '60B', '70B', '5U'],
+    PlayerClass.archon     => ['—', '15B', '20B', '25B', '30B', '40B', '50B', '60B', '70B', '5U'],
+    PlayerClass.warden     => ['—', '15B', '20B', '25B', '30B', '40B', '50B', '60B', '70B', '5U'],
+    PlayerClass.corsair    => ['—',  '5R', '20B', '10R', '12R', '15R', '40B', '60B', '20R', '5U'],
+    PlayerClass.trickster  => ['—', '15B', '20B', '25B', '30B', '40B', '50B', '60B', '70B', '5U'],
+    PlayerClass.wrecker    => ['—',  '5R',  '7R',  '8R', '10R', '13R', '17R', '20R', '25R', '5U'],
   };
 
   // Spatial extent / targeting range per slot.

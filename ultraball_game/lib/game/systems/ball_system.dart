@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import '../../models/player.dart';
 import '../../models/damage_indicator.dart';
+import '../../models/game_settings.dart';
 import '../game_state.dart';
 import 'combat_system.dart';
 import 'act_system.dart';
@@ -12,6 +13,8 @@ class BallSystem {
   static const double catchRadius = 2.5;
   static const double throwHorizontalSpeed = 20.0;
   static const double throwBallGravity = 20.0;
+  static const double _pickupRadiusSq = pickupRadius * pickupRadius;   // 1.0
+  static const double _catchRadiusSq  = catchRadius  * catchRadius;    // 6.25
 
   static void update(GameState gs, double dt) {
     final ball = gs.ball;
@@ -32,13 +35,23 @@ class BallSystem {
       final prevX = ball.x;
       ball.x += ball.velX * dt;
       ball.y += ball.velY * dt;
-      ball.x = ball.x.clamp(0.0, 140.0);
-      ball.y = ball.y.clamp(0.0, 40.0);
-
-      // Check phase line crossing while loose
-      final lineIdx = ball.checkPhaseLineCrossing(prevX, ball.x);
-      if (lineIdx >= 0 && ball.phaseLineActive[lineIdx]) {
-        ball.phaseLineActive[lineIdx] = false;
+      if (gs.settings.matchMode == MatchMode.threeTeams) {
+        ball.x = ball.x.clamp(0.0, GameState.field3Size);
+        ball.y = ball.y.clamp(0.0, GameState.field3Size);
+        final lineIdx = ball.checkPhaseLineCrossing3(prevX, ball.y - ball.velY * dt,
+            ball.x, ball.y, GameState.field3CX, GameState.field3CY,
+            GameState.team3Normals, GameState.field3PhaseDists);
+        if (lineIdx >= 0 && ball.phaseLineActive3[lineIdx]) {
+          ball.phaseLineActive3[lineIdx] = false;
+        }
+      } else {
+        ball.x = ball.x.clamp(0.0, 140.0);
+        ball.y = ball.y.clamp(0.0, 40.0);
+        // Check phase line crossing while loose
+        final lineIdx = ball.checkPhaseLineCrossing(prevX, ball.x);
+        if (lineIdx >= 0 && ball.phaseLineActive[lineIdx]) {
+          ball.phaseLineActive[lineIdx] = false;
+        }
       }
 
       // Check if any player can pick up the ball
@@ -46,7 +59,7 @@ class BallSystem {
         if (!p.isAlive || p.isStunned) continue;
         final dx = p.x - ball.x;
         final dy = p.y - ball.y;
-        if (math.sqrt(dx * dx + dy * dy) < pickupRadius) {
+        if (dx * dx + dy * dy < _pickupRadiusSq) {
           tryPickup(gs, p);
           break;
         }
@@ -57,6 +70,7 @@ class BallSystem {
   static void _updateFlight(GameState gs, double dt) {
     final ball = gs.ball;
     final prevX = ball.x;
+    final prevY = ball.y;
 
     // Charged throw: arc physics determine landing, no horizontal drag
     if (ball.isChargedThrow) {
@@ -81,23 +95,47 @@ class BallSystem {
     ball.y += ball.velY * dt;
 
     // Bounce off field boundaries
-    if (ball.y < 0 || ball.y > 40) {
-      ball.velY = -ball.velY;
-      ball.y = ball.y.clamp(0.0, 40.0);
-    }
-    if (ball.x < 0) {
-      ball.x = 0;
-      ball.velX = -ball.velX * 0.5;
-    }
-    if (ball.x > 140) {
-      ball.x = 140;
-      ball.velX = -ball.velX * 0.5;
+    if (gs.settings.matchMode == MatchMode.threeTeams) {
+      if (ball.y < 0 || ball.y > GameState.field3Size) {
+        ball.velY = -ball.velY;
+        ball.y = ball.y.clamp(0.0, GameState.field3Size);
+      }
+      if (ball.x < 0 || ball.x > GameState.field3Size) {
+        ball.velX = -ball.velX * 0.5;
+        ball.x = ball.x.clamp(0.0, GameState.field3Size);
+      }
+    } else {
+      if (ball.y < 0 || ball.y > 40) {
+        ball.velY = -ball.velY;
+        ball.y = ball.y.clamp(0.0, 40.0);
+      }
+      if (ball.x < 0) {
+        ball.x = 0;
+        ball.velX = -ball.velX * 0.5;
+      }
+      if (ball.x > 140) {
+        ball.x = 140;
+        ball.velX = -ball.velX * 0.5;
+      }
     }
 
     // Check phase line crossing during flight
-    final lineIdx = ball.checkPhaseLineCrossing(prevX, ball.x);
-    if (lineIdx >= 0 && ball.phaseLineActive[lineIdx]) {
-      ball.phaseLineActive[lineIdx] = false;
+    if (gs.settings.matchMode == MatchMode.threeTeams) {
+      final lineIdx = ball.checkPhaseLineCrossing3(prevX, prevY,
+          ball.x, ball.y, GameState.field3CX, GameState.field3CY,
+          GameState.team3Normals, GameState.field3PhaseDists);
+      if (lineIdx >= 0 && ball.phaseLineActive3[lineIdx]) {
+        ball.phaseLineActive3[lineIdx] = false;
+        ball.chargeTimer = 0;
+        ball.cooldownBonus = 0;
+      }
+    } else {
+      final lineIdx = ball.checkPhaseLineCrossing(prevX, ball.x);
+      if (lineIdx >= 0 && ball.phaseLineActive[lineIdx]) {
+        ball.phaseLineActive[lineIdx] = false;
+        ball.chargeTimer = 0;
+        ball.cooldownBonus = 0;
+      }
     }
 
     // Check if a player catches the ball
@@ -110,7 +148,7 @@ class BallSystem {
       if (ball.isChargedThrow && ball.zHeight > 1.5) continue;
       final dx = p.x - ball.x;
       final dy = p.y - ball.y;
-      if (math.sqrt(dx * dx + dy * dy) < catchRadius) {
+      if (dx * dx + dy * dy < _catchRadiusSq) {
         final wasPlayerTeam = ball.possessingTeamId == 'player';
         final catcherIsPlayer = p.team == Team.player;
         final friendlyCatch = (wasPlayerTeam && catcherIsPlayer) ||
@@ -154,8 +192,8 @@ class BallSystem {
 
   static void _handleInterception(GameState gs, UltraballPlayer catcher) {
     // Enemy caught our pass — stun original team
-    final originalTeam =
-        gs.ball.possessingTeamId == 'player' ? Team.player : Team.opponent;
+    final originalTeam = gs.ball.possessingTeamId == 'player' ? Team.player
+        : gs.ball.possessingTeamId == 'opponent' ? Team.opponent : Team.third;
     for (final p in gs.fieldPlayers) {
       if (p.team == originalTeam && p.isAlive) {
         p.stun(1.0);
@@ -172,7 +210,8 @@ class BallSystem {
     // New team picks up ball
     gs.ball.isInFlight = false;
     gs.ball.holderId = catcher.id;
-    gs.ball.changePossession(catcher.team == Team.player ? 'player' : 'opponent');
+    gs.ball.changePossession(catcher.team == Team.player ? 'player'
+        : catcher.team == Team.opponent ? 'opponent' : 'third');
     gs.ball.chargeTimer = 0;
     gs.ball.cooldownBonus = 0;
 
@@ -180,12 +219,12 @@ class BallSystem {
   }
 
   static void _handleFailedPass(GameState gs) {
-    // Stun the passing team
-    final originalTeam =
-        gs.ball.possessingTeamId == 'player' ? Team.player : Team.opponent;
+    final stunDuration = math.max(1.5, gs.ball.chargeTimer);
+    final originalTeam = gs.ball.possessingTeamId == 'player' ? Team.player
+        : gs.ball.possessingTeamId == 'opponent' ? Team.opponent : Team.third;
     for (final p in gs.fieldPlayers) {
       if (p.team == originalTeam && p.isAlive) {
-        p.stun(1.0);
+        p.stun(stunDuration);
         CombatSystem.addIndicator(
           gs,
           p.x,
@@ -218,17 +257,30 @@ class BallSystem {
 
     // Check phase line crossing
     final prevX = holder.x - holder.velX * dt;
-    final lineIdx = ball.checkPhaseLineCrossing(prevX, holder.x);
-    if (lineIdx >= 0 && ball.phaseLineActive[lineIdx]) {
-      // Don't reset charge when the carrier is entering their own scoring endzone:
-      // player team crosses x=30 leftward (lineIdx 0), opponent crosses x=110 rightward (lineIdx 4).
-      final enteringOwnEndzone =
-          (holder.team == Team.player  && lineIdx == 0 && holder.velX < 0) ||
-          (holder.team == Team.opponent && lineIdx == 4 && holder.velX > 0);
-      if (enteringOwnEndzone) {
-        ball.phaseLineActive[lineIdx] = false; // deactivate without resetting charge
-      } else {
-        handlePhaseLineCrossing(gs, lineIdx);
+    final prevY = holder.y - holder.velY * dt;
+    if (gs.settings.matchMode == MatchMode.threeTeams) {
+      final lineIdx = ball.checkPhaseLineCrossing3(prevX, prevY, holder.x, holder.y,
+          GameState.field3CX, GameState.field3CY,
+          GameState.team3Normals, GameState.field3PhaseDists);
+      if (lineIdx >= 0 && ball.phaseLineActive3[lineIdx]) {
+        ball.phaseLineActive3[lineIdx] = false;
+        ball.chargeTimer = 0;
+        ball.cooldownBonus = 0;
+        CombatSystem.addIndicator(gs, ball.x, ball.y - 2, 'PHASE!', IndicatorType.event);
+      }
+    } else {
+      final lineIdx = ball.checkPhaseLineCrossing(prevX, holder.x);
+      if (lineIdx >= 0 && ball.phaseLineActive[lineIdx]) {
+        // Don't reset charge when the carrier is entering their own scoring endzone:
+        // player team crosses x=30 leftward (lineIdx 0), opponent crosses x=110 rightward (lineIdx 4).
+        final enteringOwnEndzone =
+            (holder.team == Team.player  && lineIdx == 0 && holder.velX < 0) ||
+            (holder.team == Team.opponent && lineIdx == 4 && holder.velX > 0);
+        if (enteringOwnEndzone) {
+          ball.phaseLineActive[lineIdx] = false; // deactivate without resetting charge
+        } else {
+          handlePhaseLineCrossing(gs, lineIdx);
+        }
       }
     }
 
@@ -242,6 +294,10 @@ class BallSystem {
   }
 
   static void _checkEndzoneSCoring(GameState gs, UltraballPlayer holder) {
+    if (gs.settings.matchMode == MatchMode.threeTeams) {
+      _check3TeamEndzone(gs, holder);
+      return;
+    }
     // Player team attacks left endzone (x=0-20), opponent team attacks right endzone (x=120-140)
     if (holder.team == Team.player && holder.x <= 20) {
       // Player scored Ultra (reached opponent's left endzone)
@@ -274,6 +330,29 @@ class BallSystem {
     }
   }
 
+  static void _check3TeamEndzone(GameState gs, UltraballPlayer holder) {
+    const cx = GameState.field3CX;
+    const cy = GameState.field3CY;
+    for (int t = 0; t < 3; t++) {
+      final (nx, ny) = GameState.team3Normals[t];
+      final dot = (holder.x - cx) * nx + (holder.y - cy) * ny;
+      if (dot >= GameState.field3ChanOuter) {
+        // Ensure carrier is within this arm's width
+        final px = -ny; final py = nx;
+        final perp = (holder.x - cx) * px + (holder.y - cy) * py;
+        if (perp.abs() > GameState.field3ArmHalfWidth) continue;
+
+        final teamId = holder.team == Team.player ? 'player'
+            : holder.team == Team.opponent ? 'opponent' : 'third';
+        ActSystem.scoreUltra(gs, teamId, holder);
+        holder.gainUltraMana(7.0);
+        CombatSystem.addIndicator(gs, holder.x, holder.y, 'ULTRA!', IndicatorType.event);
+        _resetAfterScore(gs);
+        return;
+      }
+    }
+  }
+
   static void handlePhaseLineCrossing(GameState gs, int lineIndex) {
     gs.ball.phaseLineActive[lineIndex] = false;
     gs.ball.chargeTimer = 0;
@@ -288,7 +367,9 @@ class BallSystem {
   }
 
   static void handleExplosion(GameState gs) {
-    final holderTeam = gs.getPlayerById(gs.ball.holderId!)?.team == Team.player ? 'player' : 'opponent';
+    final holderTeamEnum = gs.getPlayerById(gs.ball.holderId!)?.team;
+    final holderTeam = holderTeamEnum == Team.player ? 'player'
+        : holderTeamEnum == Team.opponent ? 'opponent' : 'third';
     gs.dataCollector?.onExplosion(holderTeam);
     final ball = gs.ball;
     ball.explosionFlash = 1.0;
@@ -310,8 +391,10 @@ class BallSystem {
     gs.showEvent('BALL EXPLODED! ${holder.name} is DEAD!');
 
     // Award Killa to opposite team
-    final killaTeam = holder.team == Team.player ? 'opponent' : 'player';
+    final killaTeam = holder.team == Team.player ? 'opponent'
+        : holder.team == Team.opponent ? 'third' : 'player';
     ActSystem.scoreKilla(gs, killaTeam);
+    CombatSystem.handlePlayerDeath(gs, holder);
 
     // Stun surviving teammates
     for (final p in gs.fieldPlayers) {
@@ -342,6 +425,31 @@ class BallSystem {
     final dy = player.y - ball.y;
     if (math.sqrt(dx * dx + dy * dy) > pickupRadius) return;
 
+    // 3-team meta: catching ball while already in any endzone
+    if (gs.settings.matchMode == MatchMode.threeTeams) {
+      const cx = GameState.field3CX;
+      const cy = GameState.field3CY;
+      for (int t = 0; t < 3; t++) {
+        final (nx, ny) = GameState.team3Normals[t];
+        final dot = (player.x - cx) * nx + (player.y - cy) * ny;
+        if (dot >= GameState.field3ChanOuter) {
+          final px = -ny; final py = nx;
+          final perp = (player.x - cx) * px + (player.y - cy) * py;
+          if (perp.abs() > GameState.field3ArmHalfWidth) continue;
+
+          ball.holderId = player.id;
+          ball.changePossession(player.team == Team.player ? 'player'
+              : player.team == Team.opponent ? 'opponent' : 'third');
+          final teamId = ball.possessingTeamId!;
+          ActSystem.scoreMeta(gs, teamId, player);
+          player.gainUltraMana(3.0);
+          CombatSystem.addIndicator(gs, player.x, player.y, 'META!', IndicatorType.event);
+          gs.showEvent('META! +3 POINTS!');
+          _resetAfterScore(gs);
+          return;
+        }
+      }
+    }
     // Check if this is a Meta score (player already in endzone catches ball)
     if (player.team == Team.player && player.x <= 20) {
       ball.holderId = player.id;
@@ -378,7 +486,8 @@ class BallSystem {
     // Normal pickup
     ball.holderId = player.id;
     ball.cooldownBonus = 0;
-    final newTeam = player.team == Team.player ? 'player' : 'opponent';
+    final newTeam = player.team == Team.player ? 'player'
+        : player.team == Team.opponent ? 'opponent' : 'third';
     if (ball.possessingTeamId != newTeam) {
       ball.changePossession(newTeam);
     }
@@ -403,7 +512,7 @@ class BallSystem {
     ball.isChargedThrow = true;
     ball.isPowerPass = false;
     ball.cooldownBonus = 0;
-    ball.chargeTimer = 0;
+    // chargeTimer preserved in flight; phase line crossing resets it.
 
     thrower.passCooldown = 0.5;
     thrower.throwChargeTime = 0.0;
@@ -431,7 +540,8 @@ class BallSystem {
       thrower.blueMana -= 30;
     }
 
-    gs.dataCollector?.onPass(thrower.team == Team.player ? 'player' : 'opponent');
+    gs.dataCollector?.onPass(thrower.team == Team.player ? 'player'
+        : thrower.team == Team.opponent ? 'opponent' : 'third');
     thrower.passCooldown = 0.5;
 
     final speed = isPowerPass ? powerBallSpeed : ballSpeed;
@@ -443,14 +553,19 @@ class BallSystem {
     ball.flightDistance = dist; // ball stops at target if uncaught
 
     ball.cooldownBonus = 0;
-    ball.chargeTimer = 0;
+    // chargeTimer preserved in flight; phase line crossing resets it.
   }
 
   /// Reset the ball to the midfield start state — used at the top of each act.
   static void resetForAct(GameState gs) {
     final ball = gs.ball;
-    ball.x = 70;
-    ball.y = 20;
+    if (gs.settings.matchMode == MatchMode.threeTeams) {
+      ball.x = GameState.field3CX;
+      ball.y = GameState.field3CY;
+    } else {
+      ball.x = 70;
+      ball.y = 20;
+    }
     ball.velX = 0;
     ball.velY = 0;
     ball.holderId = null;
@@ -462,6 +577,7 @@ class BallSystem {
     ball.cooldownBonus = 0;
     ball.flightDistance = 0;
     ball.resetPhaseLines();
+    ball.resetPhaseLines3();
     ball.possessingTeamId = null;
   }
 
