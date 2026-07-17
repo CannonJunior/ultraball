@@ -50,7 +50,7 @@ class AiSystem {
     final holderForSort = gs.getPlayerById(ball.holderId ?? '');
     Map<String, int>? defenseRankMap;
     if (ball.possessingTeamId != 'opponent' && holderForSort != null) {
-      final sorted = opponents..sort((a, b) {
+      final sorted = opponents.toList()..sort((a, b) {
           final ax = (a.x - holderForSort.x).abs() + (a.y - holderForSort.y).abs();
           final bx = (b.x - holderForSort.x).abs() + (b.y - holderForSort.y).abs();
           return ax.compareTo(bx);
@@ -504,7 +504,7 @@ class AiSystem {
     final enemyHolder = gs.getPlayerById(ball.holderId ?? '');
     Map<String, int> defenseRankMap = {};
     if (ball.possessingTeamId != myTeamId && enemyHolder != null) {
-      final sorted = myPlayers..sort((a, b) {
+      final sorted = myPlayers.toList()..sort((a, b) {
           final ad = (a.x-enemyHolder.x).abs() + (a.y-enemyHolder.y).abs();
           final bd = (b.x-enemyHolder.x).abs() + (b.y-enemyHolder.y).abs();
           return ad.compareTo(bd);

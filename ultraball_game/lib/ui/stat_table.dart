@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../game/game_state.dart';
+import '../models/game_settings.dart';
 import '../models/player.dart';
 
 // ── Design palette ────────────────────────────────────────────────────────────
@@ -74,11 +75,15 @@ class _StatTableState extends State<StatTable> {
   Widget build(BuildContext context) {
     final gs = widget.gs;
 
-    final homeColor = Color(gs.settings.homeTeamPrimary);
-    final awayColor = Color(gs.settings.awayTeamPrimary);
+    final homeColor  = Color(gs.settings.homeTeamPrimary);
+    final awayColor  = Color(gs.settings.awayTeamPrimary);
+    final thirdColor = Color(gs.settings.thirdTeamPrimary);
+    final isThreeTeam = gs.settings.matchMode == MatchMode.threeTeams;
     final rows = [
       ...gs.playerRoster.map((p) => _Row(p, isHome: true,  color: homeColor)),
       ...gs.opponentRoster.map((p) => _Row(p, isHome: false, color: awayColor)),
+      if (isThreeTeam)
+        ...gs.thirdRoster.map((p) => _Row(p, isHome: false, color: thirdColor)),
     ];
 
     rows.sort((a, b) {

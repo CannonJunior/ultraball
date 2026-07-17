@@ -447,8 +447,10 @@ class GameState {
     selectedPlayer = first;
     first.isSelected = true;
     first.isPlayerControlled = true;
-    // Face right (toward opponents) at start
-    first.facing = math.pi;
+    // Face toward opponents at start.
+    // 3-team: player arm goes in +y direction; face toward center = -π/2.
+    // 2-team: opponents are to the left; face = π.
+    first.facing = settings.matchMode == MatchMode.threeTeams ? -math.pi / 2 : math.pi;
 
     // Create ball at midfield
     if (settings.matchMode == MatchMode.threeTeams) {
@@ -489,6 +491,7 @@ class GameState {
     actState.isActive = true;
     actState.actEnded = false;
     actState.timerSeconds = settings.fastMode ? 60.0 : 180.0;
+    actState.isThreeTeams = settings.matchMode == MatchMode.threeTeams;
 
     abilityStats = AbilityStatsCollector();
 
@@ -532,13 +535,14 @@ class GameState {
   /// ordered list. Wraps around and clears target after the last one.
   void tabToNextEnemyTarget() {
     if (_rosterDirty) _rebuildRosterCaches();
-    if (_cachedOpponentTeamOnField.isEmpty) {
+    final isThreeTeam = settings.matchMode == MatchMode.threeTeams;
+    final enemies = isThreeTeam
+        ? [..._cachedOpponentTeamOnField, ..._cachedThirdTeamOnField]
+        : _cachedOpponentTeamOnField.toList();
+    if (enemies.isEmpty) {
       currentTargetId = null;
       return;
     }
-
-    // Work on a copy so we can sort without mutating the cache
-    final enemies = _cachedOpponentTeamOnField.toList();
 
     final anchor = selectedPlayer;
     if (anchor != null) {
@@ -582,7 +586,11 @@ class GameState {
   UltraballPlayer? get currentTarget {
     if (currentTargetId == null) return null;
     final p = _playerById[currentTargetId!];
-    return (p != null && p.team == Team.opponent) ? p : null;
+    if (p == null || !p.isAlive) return null;
+    if (settings.matchMode == MatchMode.threeTeams) {
+      return (p.team == Team.opponent || p.team == Team.third) ? p : null;
+    }
+    return p.team == Team.opponent ? p : null;
   }
 
   void showEvent(String message, {double duration = 2.5}) {

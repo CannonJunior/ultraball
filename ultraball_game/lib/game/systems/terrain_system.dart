@@ -4,33 +4,26 @@ import '../../models/terrain_event.dart';
 import '../../models/damage_indicator.dart';
 import '../../models/player.dart';
 import '../game_state.dart';
+import 'ball_system.dart';
 import 'combat_system.dart';
 import 'act_system.dart';
 
 class TerrainSystem {
   static void update(GameState gs, double dt) {
-    _tickHeightLerp(gs, dt);
-    _tickHazards(gs, dt);
+    _tickCells(gs, dt);
     _applyTerrainEffectsToPlayers(gs, dt);
   }
 
-  static void _tickHeightLerp(GameState gs, double dt) {
+  static void _tickCells(GameState gs, double dt) {
     gs.terrain.forEach((_, __, cell) {
       if ((cell.height - cell.targetHeight).abs() > 0.001) {
         cell.height += (cell.targetHeight - cell.height) * (cell.lerpSpeed * dt).clamp(0.0, 1.0);
       } else {
         cell.height = cell.targetHeight;
       }
-    });
-  }
-
-  static void _tickHazards(GameState gs, double dt) {
-    gs.terrain.forEach((_, __, cell) {
       if (cell.hazardTimer > 0) {
         cell.hazardTimer -= dt;
-        if (cell.hazardTimer <= 0) {
-          cell.reset();
-        }
+        if (cell.hazardTimer <= 0) cell.reset();
       }
     });
   }
@@ -49,14 +42,10 @@ class TerrainSystem {
         p.isOnField = false;
         gs.markRosterDirty();
         CombatSystem.addIndicator(gs, p.x, p.y - 1, 'FELL IN!', IndicatorType.kill);
-        if (gs.ball.holderId == p.id) {
-          gs.ball.holderId = null;
-          gs.ball.isInFlight = false;
-          gs.ball.velX = 0;
-          gs.ball.velY = 0;
-        }
+        if (gs.ball.holderId == p.id) BallSystem.dropBall(gs);
         if (gs.selectedPlayer?.id == p.id) gs.selectNextPlayer();
-        final killaTeam = p.team == Team.player ? 'opponent' : 'player';
+        final killaTeam = p.team == Team.player ? 'opponent'
+            : p.team == Team.opponent ? 'player' : 'opponent';
         ActSystem.scoreKilla(gs, killaTeam);
         CombatSystem.handlePlayerDeath(gs, p);
         continue;
@@ -70,14 +59,10 @@ class TerrainSystem {
           p.die();
           gs.markRosterDirty();
           CombatSystem.addIndicator(gs, p.x, p.y, 'DEAD', IndicatorType.kill);
-          if (gs.ball.holderId == p.id) {
-            gs.ball.holderId = null;
-            gs.ball.isInFlight = false;
-            gs.ball.velX = 0;
-            gs.ball.velY = 0;
-          }
+          if (gs.ball.holderId == p.id) BallSystem.dropBall(gs);
           if (gs.selectedPlayer?.id == p.id) gs.selectNextPlayer();
-          final killaTeam = p.team == Team.player ? 'opponent' : 'player';
+          final killaTeam = p.team == Team.player ? 'opponent'
+              : p.team == Team.opponent ? 'player' : 'opponent';
           ActSystem.scoreKilla(gs, killaTeam);
           CombatSystem.handlePlayerDeath(gs, p);
         }

@@ -255,6 +255,7 @@ class HighlightRecorder {
 
     _addClip(clip);
     _clearPending();
+    downloadClip(clip);
   }
 
   void _clearPending() {
@@ -345,6 +346,7 @@ class HighlightRecorder {
     );
 
     _addClip(clip);
+    downloadClip(clip);
   }
 
   // ── Shared helpers ───────────────────────────────────────────────────────

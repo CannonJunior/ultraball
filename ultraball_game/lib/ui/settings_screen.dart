@@ -2,12 +2,19 @@
 import 'dart:html' as html;
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../models/creature.dart';
 import '../models/game_settings.dart';
 import '../models/player_class.dart';
 import '../game/game_widget.dart';
 import '../ai/ai_strategy.dart';
 import 'ui_assets.dart';
+
+// ── Design palette (matches scoreboard) ──────────────────────────────────────
+const _kBg   = Color(0xFF04050A);
+const _kSurf = Color(0xFF08080F);
+const _kGold = Color(0xFFFFCB3D);
+const _kBorder = Color(0xFF1A1A2E);
 
 const _kInactiveKey = 'ultraball_inactive_classes';
 
@@ -132,19 +139,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF020208),
+      backgroundColor: _kBg,
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF020210),
-              Color(0xFF0A020A),
-              Color(0xFF100202),
-            ],
-          ),
-        ),
+        color: _kBg,
         child: SafeArea(
           child: Column(
             children: [
@@ -165,7 +162,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             child: _buildSettingsPanel(),
                           ),
                           const VerticalDivider(
-                            color: Color(0xFF333355),
+                            color: Color(0xFF1A1A2E),
                             width: 1,
                           ),
                           Expanded(child: _buildRulesPanel()),
@@ -176,7 +173,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         child: Column(
                           children: [
                             _buildSettingsPanel(),
-                            const Divider(color: Color(0xFF333355)),
+                            const Divider(color: Color(0xFF1A1A2E)),
                             _buildRulesPanel(),
                           ],
                         ),
@@ -204,9 +201,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const Text(
               'ULTRABALL',
               style: TextStyle(
-                fontSize: 56,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 8,
+                fontFamily: 'Bangers',
+                fontSize: 72,
+                letterSpacing: 10,
                 color: Colors.white,
               ),
             ),
@@ -214,11 +211,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 6),
           Text(
             'A COMPETITIVE RAPID CHAOTIC SPORTS COMBAT GAME',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.5),
-              fontSize: 11,
+            style: GoogleFonts.chakraPetch(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontSize: 10,
               letterSpacing: 3,
-              fontWeight: FontWeight.w300,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
@@ -576,6 +573,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         label: '3/4',
                         sublabel: 'Isometric',
                         selected: _viewMode == ViewMode.threeQuarter,
+                        enabled: _matchMode != MatchMode.threeTeams,
                         onTap: () => setState(() => _viewMode = ViewMode.threeQuarter),
                       ),
                     ),
@@ -585,6 +583,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         label: '3D',
                         sublabel: 'Perspective',
                         selected: _viewMode == ViewMode.full3D,
+                        enabled: _matchMode != MatchMode.threeTeams,
                         onTap: () => setState(() => _viewMode = ViewMode.full3D),
                       ),
                     ),
@@ -600,21 +599,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'CHARACTER MODELS',
-                              style: TextStyle(
-                                color: Color(0xFF8888AA),
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 1.2,
+                              style: GoogleFonts.chakraPetch(
+                                color: Colors.white.withValues(alpha: 0.45),
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 1.5,
                               ),
                             ),
                             const SizedBox(height: 2),
                             Text(
                               _useCubeModels ? 'Default cubes' : 'Character rigs',
-                              style: const TextStyle(
+                              style: GoogleFonts.barlowCondensed(
                                 color: Colors.white,
-                                fontSize: 13,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
@@ -711,13 +711,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'TEST MODE',
-                        style: TextStyle(
-                          color: Color(0xFF8888AA),
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.2,
+                        style: GoogleFonts.chakraPetch(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 9,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.5,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -725,9 +725,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _testMode
                             ? '1v1 dummy — C key cycles class'
                             : 'Full match (7v7)',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6),
-                          fontSize: 13,
+                        style: GoogleFonts.barlowCondensed(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ],
@@ -777,20 +778,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ],
                 ),
-                child: const Text(
+                child: Text(
                   'START MATCH',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 4,
+                  style: const TextStyle(
+                    fontFamily: 'Bangers',
+                    fontSize: 30,
+                    letterSpacing: 6,
                     color: Colors.white,
                     shadows: [
-                      Shadow(
-                        color: Colors.black,
-                        blurRadius: 4,
-                        offset: Offset(1, 1),
-                      ),
+                      Shadow(color: Colors.black, blurRadius: 6, offset: Offset(1, 2)),
                     ],
                   ),
                 ),
@@ -933,18 +930,18 @@ class _SectionHeader extends StatelessWidget {
     return Row(
       children: [
         Container(
-          width: 4,
-          height: 20,
-          color: const Color(0xFFFFCC00),
+          width: 3,
+          height: 18,
+          color: _kGold,
           margin: const EdgeInsets.only(right: 8),
         ),
         Text(
           label,
-          style: const TextStyle(
-            color: Color(0xFFFFCC00),
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 2.5,
+          style: GoogleFonts.chakraPetch(
+            color: _kGold,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 3,
           ),
         ),
       ],
@@ -960,11 +957,11 @@ class _FieldLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
-      style: TextStyle(
-        color: Colors.white.withValues(alpha: 0.5),
+      style: GoogleFonts.chakraPetch(
+        color: Colors.white.withValues(alpha: 0.45),
         fontSize: 9,
-        letterSpacing: 1.5,
-        fontWeight: FontWeight.bold,
+        letterSpacing: 2,
+        fontWeight: FontWeight.w600,
       ),
     );
   }
@@ -980,9 +977,9 @@ class _SettingCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D0D1A),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF222244), width: 1),
+        color: _kSurf,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: _kBorder, width: 1),
       ),
       child: child,
     );
@@ -993,51 +990,56 @@ class _SpeedButton extends StatelessWidget {
   final String label;
   final String sublabel;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final bool enabled;
 
   const _SpeedButton({
     required this.label,
     required this.sublabel,
     required this.selected,
     required this.onTap,
+    this.enabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFF1A1A2E) : Colors.transparent,
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(
-            color: selected ? const Color(0xFFFFCC00) : const Color(0xFF333355),
-            width: selected ? 1.5 : 1,
+      onTap: enabled ? onTap : null,
+      child: Opacity(
+        opacity: enabled ? 1.0 : 0.35,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFF1A1A2E) : Colors.transparent,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+              color: selected ? const Color(0xFFFFCC00) : const Color(0xFF333355),
+              width: selected ? 1.5 : 1,
+            ),
           ),
-        ),
-        child: Column(
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                color: selected
-                    ? const Color(0xFFFFCC00)
-                    : Colors.white.withValues(alpha: 0.6),
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-                letterSpacing: 1,
+          child: Column(
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.barlowCondensed(
+                  color: selected ? _kGold : Colors.white.withValues(alpha: 0.6),
+                  fontWeight: FontWeight.w700,
+                  fontStyle: FontStyle.italic,
+                  fontSize: 15,
+                  letterSpacing: 1,
+                ),
               ),
-            ),
-            Text(
-              sublabel,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.35),
-                fontSize: 9,
+              Text(
+                sublabel,
+                style: GoogleFonts.chakraPetch(
+                  color: Colors.white.withValues(alpha: 0.35),
+                  fontSize: 8,
+                  letterSpacing: 0.5,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1124,9 +1126,9 @@ class _CreatureDisplay extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A2E),
+        color: _kBorder,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: const Color(0xFF333355)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
       child: Row(
         children: [
@@ -1135,23 +1137,24 @@ class _CreatureDisplay extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(name, style: const TextStyle(
-                color: Color(0xFFCCDDFF),
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
+              Text(name, style: GoogleFonts.barlowCondensed(
+                color: Colors.white.withValues(alpha: 0.9),
+                fontWeight: FontWeight.w700,
+                fontStyle: FontStyle.italic,
+                fontSize: 14,
                 letterSpacing: 1,
               )),
-              Text(desc, style: TextStyle(
+              Text(desc, style: GoogleFonts.chakraPetch(
                 color: Colors.white.withValues(alpha: 0.4),
-                fontSize: 10,
+                fontSize: 8.5,
               )),
             ],
           ),
           const Spacer(),
-          Text('HOME TEAM', style: TextStyle(
+          Text('HOME TEAM', style: GoogleFonts.chakraPetch(
             color: Colors.white.withValues(alpha: 0.25),
-            fontSize: 8,
-            letterSpacing: 1,
+            fontSize: 7,
+            letterSpacing: 1.5,
           )),
         ],
       ),
@@ -1259,20 +1262,19 @@ class _ChoiceRadio extends StatelessWidget {
                 children: [
                   Text(
                     label,
-                    style: TextStyle(
-                      color: selected
-                          ? const Color(0xFFFFCC00)
-                          : Colors.white.withValues(alpha: 0.7),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11,
-                      letterSpacing: 1,
+                    style: GoogleFonts.barlowCondensed(
+                      color: selected ? _kGold : Colors.white.withValues(alpha: 0.75),
+                      fontWeight: FontWeight.w700,
+                      fontStyle: FontStyle.italic,
+                      fontSize: 13,
+                      letterSpacing: 0.5,
                     ),
                   ),
                   Text(
                     description,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4),
-                      fontSize: 9.5,
+                    style: GoogleFonts.chakraPetch(
+                      color: Colors.white.withValues(alpha: 0.38),
+                      fontSize: 8.5,
                     ),
                   ),
                 ],
@@ -1304,11 +1306,11 @@ class _RuleSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D0D1A),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF222244), width: 1),
+        color: _kSurf,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: _kBorder, width: 1),
       ),
       child: Theme(
         data: Theme.of(context).copyWith(
@@ -1318,18 +1320,19 @@ class _RuleSection extends StatelessWidget {
           initiallyExpanded: false,
           tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          leading: Text(icon, style: const TextStyle(fontSize: 20)),
+          leading: Text(icon, style: const TextStyle(fontSize: 18)),
           title: Text(
             title,
-            style: const TextStyle(
-              color: Color(0xFFCCDDFF),
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-              letterSpacing: 1.5,
+            style: GoogleFonts.barlowCondensed(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontWeight: FontWeight.w700,
+              fontStyle: FontStyle.italic,
+              fontSize: 15,
+              letterSpacing: 1,
             ),
           ),
-          iconColor: const Color(0xFFFFCC00),
-          collapsedIconColor: Colors.white.withValues(alpha: 0.4),
+          iconColor: _kGold,
+          collapsedIconColor: Colors.white.withValues(alpha: 0.35),
           children: rules
               .map(
                 (rule) => Padding(
@@ -1349,10 +1352,11 @@ class _RuleSection extends StatelessWidget {
                       Expanded(
                         child: Text(
                           rule,
-                          style: TextStyle(
+                          style: GoogleFonts.barlowCondensed(
                             color: Colors.white.withValues(alpha: 0.7),
-                            fontSize: 11.5,
-                            height: 1.4,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            height: 1.35,
                           ),
                         ),
                       ),
@@ -1490,9 +1494,9 @@ class _RosterEditor extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 0),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D0D1A),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF222244), width: 1),
+        color: _kSurf,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: _kBorder, width: 1),
       ),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -1500,22 +1504,26 @@ class _RosterEditor extends StatelessWidget {
           initiallyExpanded: false,
           tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          leading: const Text('👥', style: TextStyle(fontSize: 20)),
-          title: const Text(
+          leading: const Text('👥', style: TextStyle(fontSize: 18)),
+          title: Text(
             'TEAM ROSTERS',
-            style: TextStyle(
-              color: Color(0xFFCCDDFF),
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-              letterSpacing: 1.5,
+            style: GoogleFonts.barlowCondensed(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontWeight: FontWeight.w700,
+              fontStyle: FontStyle.italic,
+              fontSize: 15,
+              letterSpacing: 1,
             ),
           ),
           subtitle: Text(
             'Drag to set home team lineup order',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 9),
+            style: GoogleFonts.chakraPetch(
+              color: Colors.white.withValues(alpha: 0.3),
+              fontSize: 8,
+            ),
           ),
-          iconColor: const Color(0xFFFFCC00),
-          collapsedIconColor: const Color(0x66FFFFFF),
+          iconColor: _kGold,
+          collapsedIconColor: Colors.white.withValues(alpha: 0.35),
           children: [
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2114,9 +2122,9 @@ class _ClassesSection extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D0D1A),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF222244), width: 1),
+        color: _kSurf,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: _kBorder, width: 1),
       ),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -2124,18 +2132,19 @@ class _ClassesSection extends StatelessWidget {
           initiallyExpanded: false,
           tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          leading: const Text('🧬', style: TextStyle(fontSize: 20)),
-          title: const Text(
+          leading: const Text('🧬', style: TextStyle(fontSize: 18)),
+          title: Text(
             'CLASSES',
-            style: TextStyle(
-              color: Color(0xFFCCDDFF),
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-              letterSpacing: 1.5,
+            style: GoogleFonts.barlowCondensed(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontWeight: FontWeight.w700,
+              fontStyle: FontStyle.italic,
+              fontSize: 15,
+              letterSpacing: 1,
             ),
           ),
-          iconColor: const Color(0xFFFFCC00),
-          collapsedIconColor: Color.fromRGBO(255, 255, 255, 0.4),
+          iconColor: _kGold,
+          collapsedIconColor: Colors.white.withValues(alpha: 0.35),
           children: [
             for (int i = 0; i < _entries.length; i++)
               _ClassCard(
@@ -2201,23 +2210,24 @@ class _ClassCard extends StatelessWidget {
                 const SizedBox(width: 10),
                 Text(
                   cls.displayName,
-                  style: TextStyle(
+                  style: GoogleFonts.barlowCondensed(
                     color: isInactive ? color.withValues(alpha: 0.35) : color,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                    letterSpacing: 2,
+                    fontWeight: FontWeight.w700,
+                    fontStyle: FontStyle.italic,
+                    fontSize: 15,
+                    letterSpacing: 1.5,
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     cls.description,
-                    style: TextStyle(
+                    style: GoogleFonts.chakraPetch(
                       color: isInactive
-                          ? color.withValues(alpha: 0.25)
-                          : color.withValues(alpha: 0.7),
-                      fontSize: 10,
-                      letterSpacing: 1,
+                          ? color.withValues(alpha: 0.22)
+                          : color.withValues(alpha: 0.65),
+                      fontSize: 9,
+                      letterSpacing: 0.5,
                     ),
                   ),
                 ),
@@ -2242,9 +2252,9 @@ class _ClassCard extends StatelessWidget {
                       ),
                       child: Text(
                         isInactive ? 'INACTIVE' : 'ACTIVE',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
+                        style: GoogleFonts.chakraPetch(
+                          fontSize: 8,
+                          fontWeight: FontWeight.w600,
                           letterSpacing: 1.5,
                           color: isInactive
                               ? const Color(0xFFFF6666)

@@ -15,7 +15,6 @@ import 'systems/ai_system.dart';
 import 'systems/terrain_system.dart';
 import 'systems/collision_system.dart';
 import '../models/terrain_event.dart';
-import '../ui/scoreboard.dart';
 import '../ui/scoreboard_row.dart';
 import '../ui/combo_display.dart';
 import '../ui/mana_bars.dart';
@@ -241,6 +240,12 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     // Resolve player-to-player collisions (post-move, pre-ball)
     CollisionSystem.resolvePlayerCollisions(_gs);
 
+    // Re-clamp to star field after combat dashes and collision pushes may have moved
+    // players into dead zones between arms.
+    if (_gs.settings.matchMode == MatchMode.threeTeams) {
+      for (final p in _gs.fieldPlayers) { _clampToStarField(p); }
+    }
+
     // Update ball
     BallSystem.update(_gs, dt);
 
@@ -342,7 +347,10 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     // the screen, inverting perceived left/right vs the flat view — flip to compensate.
     // The full3D renderer's yaw formula already bakes in this inversion, so no flip
     // is needed there (it would double-invert).
-    final flip = widget.settings.viewMode == ViewMode.threeQuarter ? -1.0 : 1.0;
+    // 3-team mode always renders flat regardless of viewMode, so never invert.
+    final isThreeTeam = _gs.settings.matchMode == MatchMode.threeTeams;
+    final effectiveViewMode = _gs.prefs.viewModeOverride ?? widget.settings.viewMode;
+    final flip = (!isThreeTeam && effectiveViewMode == ViewMode.threeQuarter) ? -1.0 : 1.0;
 
     // A/D: rotate facing angle (turning, not moving).
     // Under confusion the turn direction is reversed so left/right are swapped.
@@ -558,16 +566,18 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       return;
     }
 
-    // V: toggle 3D camera mode; Shift+V: toggle ball-cam (all view modes)
+    // V: toggle 3D camera mode; Shift+V: toggle ball-cam (2-team only — 3-team always flat)
     if (key == LogicalKeyboardKey.keyV) {
-      final isShift = _gs.pressedKeys.contains(LogicalKeyboardKey.shiftLeft) ||
-          _gs.pressedKeys.contains(LogicalKeyboardKey.shiftRight);
-      if (isShift) {
-        _fieldPainter.ballCam = !_fieldPainter.ballCam;
-        _renderSystem?.setBallCam(_fieldPainter.ballCam);
-        _canvasRepaint.value++;
-      } else {
-        _renderSystem?.toggleCameraMode();
+      if (_gs.settings.matchMode != MatchMode.threeTeams) {
+        final isShift = _gs.pressedKeys.contains(LogicalKeyboardKey.shiftLeft) ||
+            _gs.pressedKeys.contains(LogicalKeyboardKey.shiftRight);
+        if (isShift) {
+          _fieldPainter.ballCam = !_fieldPainter.ballCam;
+          _renderSystem?.setBallCam(_fieldPainter.ballCam);
+          _canvasRepaint.value++;
+        } else {
+          _renderSystem?.toggleCameraMode();
+        }
       }
       return;
     }
@@ -832,7 +842,11 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
 
                       // Each tick-sensitive overlay has its own ValueListenableBuilder
                       // so only the minimal subtree rebuilds each game tick.
-                      Stack(
+                      // Positioned.fill ensures the Stack fills the canvas so that
+                      // Positioned children (ManaBars, roster panel, etc.) lay out
+                      // relative to the full canvas size rather than a 0×0 box.
+                      Positioned.fill(
+                        child: Stack(
                         children: [
                           // Event message — appears/disappears from game state
                           ValueListenableBuilder<int>(
@@ -913,11 +927,13 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
                                 if (_highlightRecorder != null) ...[
                                   const SizedBox(height: 8),
                                   HighlightClipList(
-                                    recorder:      _highlightRecorder!,
-                                    homeTeamName:  widget.settings.homeTeamName,
-                                    awayTeamName:  widget.settings.awayTeamName,
-                                    homeTeamColor: Color(widget.settings.homeTeamPrimary),
-                                    awayTeamColor: Color(widget.settings.awayTeamPrimary),
+                                    recorder:       _highlightRecorder!,
+                                    homeTeamName:   widget.settings.homeTeamName,
+                                    awayTeamName:   widget.settings.awayTeamName,
+                                    thirdTeamName:  widget.settings.thirdTeamName,
+                                    homeTeamColor:  Color(widget.settings.homeTeamPrimary),
+                                    awayTeamColor:  Color(widget.settings.awayTeamPrimary),
+                                    thirdTeamColor: Color(widget.settings.thirdTeamPrimary),
                                   ),
                                 ],
                               ],
@@ -999,6 +1015,7 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
                               },
                             ),
                         ],
+                        ),
                       ),
                     ],
                   );
@@ -1054,6 +1071,7 @@ class _RosterPanel extends StatelessWidget {
     final playerDead    = gs.playerDeadCount;
     final oppOnField    = gs.opponentAliveOnField;
     final oppDead       = gs.opponentDeadCount;
+    final isThreeTeam   = gs.settings.matchMode == MatchMode.threeTeams;
 
     return Container(
       padding: const EdgeInsets.all(8),
@@ -1080,6 +1098,15 @@ class _RosterPanel extends StatelessWidget {
             onField: oppOnField,
             dead: oppDead,
           ),
+          if (isThreeTeam) ...[
+            const SizedBox(height: 4),
+            _RosterRow(
+              color: Color(gs.settings.thirdTeamPrimary),
+              name: gs.settings.thirdTeamName,
+              onField: gs.thirdAliveOnField,
+              dead: gs.thirdDeadCount,
+            ),
+          ],
         ],
       ),
     );

@@ -403,13 +403,10 @@ class BallSystem {
       }
     }
 
-    // Drop ball
-    ball.holderId = null;
-    ball.isInFlight = false;
+    // Drop ball and reset charge state
+    dropBall(gs);
     ball.chargeTimer = 0;
     ball.cooldownBonus = 0;
-    ball.velX = 0;
-    ball.velY = 0;
 
     // Select next player if this was selected
     if (gs.selectedPlayer?.id == holder.id) {
@@ -423,7 +420,7 @@ class BallSystem {
 
     final dx = player.x - ball.x;
     final dy = player.y - ball.y;
-    if (math.sqrt(dx * dx + dy * dy) > pickupRadius) return;
+    if (dx * dx + dy * dy > _pickupRadiusSq) return;
 
     // 3-team meta: catching ball while already in any endzone
     if (gs.settings.matchMode == MatchMode.threeTeams) {
@@ -582,4 +579,12 @@ class BallSystem {
   }
 
   static void _resetAfterScore(GameState gs) => resetForAct(gs);
+
+  /// Drop the ball in place — clears holder, stops velocity, leaves position unchanged.
+  static void dropBall(GameState gs) {
+    gs.ball.holderId = null;
+    gs.ball.isInFlight = false;
+    gs.ball.velX = 0;
+    gs.ball.velY = 0;
+  }
 }

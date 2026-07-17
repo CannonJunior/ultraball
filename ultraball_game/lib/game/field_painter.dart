@@ -405,18 +405,30 @@ class FieldPainter extends CustomPainter {
       canvas.drawPath(_armPath3(cx, cy, nx, ny, px, py, chanOut, armEnd, halfW), _fp);
     }
 
-    // 3. Phase lines (perpendicular lines across each arm)
-    _sp.color = const Color(0xFF334433);
-    _sp.strokeWidth = sm(0.35);
+    // 3. Phase lines (perpendicular lines across each arm) — highlighted until crossed
     for (int t = 0; t < 3; t++) {
       final (nx, ny) = GameState.team3Normals[t];
       final px = -ny; final py = nx;
-      for (final d in GameState.field3PhaseDists) {
-        canvas.drawLine(
-          Offset(sx(cx + nx*d - px*halfW), sy(cy + ny*d - py*halfW)),
-          Offset(sx(cx + nx*d + px*halfW), sy(cy + ny*d + py*halfW)),
-          _sp,
-        );
+      final teamColor = teamPrimaries[t];
+      for (int i = 0; i < GameState.field3PhaseDists.length; i++) {
+        final d = GameState.field3PhaseDists[i];
+        final isActive = gs.ball.phaseLineActive3[t * 3 + i];
+        final p1 = Offset(sx(cx + nx*d - px*halfW), sy(cy + ny*d - py*halfW));
+        final p2 = Offset(sx(cx + nx*d + px*halfW), sy(cy + ny*d + py*halfW));
+        if (isActive) {
+          // Glow pass
+          _sp.color = teamColor.withValues(alpha: 0.12);
+          _sp.strokeWidth = sm(1.4);
+          canvas.drawLine(p1, p2, _sp);
+          // Solid bright line
+          _sp.color = teamColor.withValues(alpha: 0.75);
+          _sp.strokeWidth = sm(0.2);
+        } else {
+          // Crossed — dim and thin
+          _sp.color = const Color(0xFF444444).withValues(alpha: 0.35);
+          _sp.strokeWidth = sm(0.1);
+        }
+        canvas.drawLine(p1, p2, _sp);
       }
     }
 
@@ -487,20 +499,29 @@ class FieldPainter extends CustomPainter {
         Team.opponent => awayColor,
         Team.third    => thirdColor,
       };
+      final r = sm(1.5);
       _fp.color = col.withValues(alpha: 0.9);
       final pos = Offset(sx(p.x), sy(p.y));
-      canvas.drawCircle(pos, sm(1.5), _fp);
+      canvas.drawCircle(pos, r, _fp);
+      // Facing indicator (white arrow)
+      _drawFacingIndicator(canvas, p, pos, r);
       if (p.isSelected) {
-        _sp.color = Colors.white;
+        _sp.color = const Color(0xFF4cc9f0).withValues(alpha: 0.95);
+        _sp.strokeWidth = sm(0.28);
+        canvas.drawCircle(pos, r + sm(0.6), _sp);
+      }
+      final isTarget = p.id == gs.currentTargetId;
+      if (isTarget) {
+        _sp.color = const Color(0xFFFF6B6B).withValues(alpha: 0.92);
         _sp.strokeWidth = sm(0.3);
-        canvas.drawCircle(pos, sm(1.8), _sp);
+        canvas.drawCircle(pos, r + sm(0.9), _sp);
       }
       // HP bar
       final barW = sm(3.0); final barH = sm(0.4);
-      final barX = pos.dx - barW / 2; final barY = pos.dy - sm(2.2);
+      final barX = pos.dx - barW / 2; final barY = pos.dy - r - barH - sm(0.3);
       _fp.color = const Color(0xFF333333);
       canvas.drawRect(Rect.fromLTWH(barX, barY, barW, barH), _fp);
-      final hpFrac = p.health / p.maxHealth;
+      final hpFrac = (p.health / p.maxHealth).clamp(0.0, 1.0);
       _fp.color = hpFrac > 0.5 ? _hpGoodPaint.color : _hpBadPaint.color;
       canvas.drawRect(Rect.fromLTWH(barX, barY, barW * hpFrac, barH), _fp);
     }
@@ -510,13 +531,11 @@ class FieldPainter extends CustomPainter {
     final charge = ball.chargePercent;
     Color ballColor3;
     if (charge < 0.5) {
-      ballColor3 = Color.lerp(const Color(0xFF88FF88), const Color(0xFFFFFF00), charge * 2)!;
-    } else if (charge < 0.75) {
-      ballColor3 = Color.lerp(const Color(0xFFFFFF00), const Color(0xFFFF8800), (charge - 0.5) * 4)!;
+      ballColor3 = Color.lerp(const Color(0xFFFFCC00), const Color(0xFFFF6600), charge * 2)!;
     } else if (charge < 0.9) {
-      ballColor3 = Color.lerp(const Color(0xFFFF8800), const Color(0xFFFF2200), (charge - 0.75) * 6.67)!;
+      ballColor3 = Color.lerp(const Color(0xFFFF6600), const Color(0xFFFF0044), (charge - 0.5) / 0.4)!;
     } else {
-      ballColor3 = const Color(0xFFFF0000);
+      ballColor3 = const Color(0xFFFF0044);
     }
     _fp.color = ballColor3;
     canvas.drawCircle(Offset(sx(ball.x), sy(ball.y)), sm(ball.isHeld ? 0.8 : 1.2), _fp);
@@ -949,10 +968,14 @@ class FieldPainter extends CustomPainter {
     final px = sx(player.x);
     final py = sy(player.y);
 
+    final isThreeTeam = gs.settings.matchMode == MatchMode.threeTeams;
+    final fieldMaxX = isThreeTeam ? GameState.field3Size : 140.0;
+    final fieldMaxY = isThreeTeam ? GameState.field3Size : 40.0;
+
     if (isFissure) {
       // Fissure: show a dash-path preview in the facing direction (5m)
-      final dashEndX = (player.x + math.cos(player.facing) * 5.0).clamp(0.0, 140.0);
-      final dashEndY = (player.y + math.sin(player.facing) * 5.0).clamp(0.0, 40.0);
+      final dashEndX = (player.x + math.cos(player.facing) * 5.0).clamp(0.0, fieldMaxX);
+      final dashEndY = (player.y + math.sin(player.facing) * 5.0).clamp(0.0, fieldMaxY);
       final ex = sx(dashEndX), ey = sy(dashEndY);
 
       // Dash arrow
@@ -981,9 +1004,9 @@ class FieldPainter extends CustomPainter {
       canvas.drawCircle(Offset(sx(midX), sy(midY)), sm(3.0), _sp);
     } else {
       final tx = (player.x + math.cos(player.facing) * GameState.terrainAimRange)
-          .clamp(0.0, 140.0);
+          .clamp(0.0, fieldMaxX);
       final ty = (player.y + math.sin(player.facing) * GameState.terrainAimRange)
-          .clamp(0.0, 40.0);
+          .clamp(0.0, fieldMaxY);
       final radius = sm(isPit ? 4.0 : 5.0);
 
       // Outer reticle circle
@@ -1833,15 +1856,12 @@ class FieldPainter extends CustomPainter {
     Color ballColor;
     if (charge < 0.5) {
       ballColor = Color.lerp(
-          const Color(0xFF88FF88), const Color(0xFFFFFF00), charge * 2)!;
-    } else if (charge < 0.75) {
-      ballColor = Color.lerp(
-          const Color(0xFFFFFF00), const Color(0xFFFF8800), (charge - 0.5) * 4)!;
+          const Color(0xFFFFCC00), const Color(0xFFFF6600), charge * 2)!;
     } else if (charge < 0.9) {
       ballColor = Color.lerp(
-          const Color(0xFFFF8800), const Color(0xFFFF2200), (charge - 0.75) * 6.67)!;
+          const Color(0xFFFF6600), const Color(0xFFFF0044), (charge - 0.5) / 0.4)!;
     } else {
-      ballColor = const Color(0xFFFF0000);
+      ballColor = const Color(0xFFFF0044);
     }
 
     // Glow
@@ -2390,15 +2410,12 @@ class FieldPainter extends CustomPainter {
     final Color ballColor;
     if (charge < 0.5) {
       ballColor = Color.lerp(
-          const Color(0xFF88FF88), const Color(0xFFFFFF00), charge * 2)!;
-    } else if (charge < 0.75) {
-      ballColor = Color.lerp(
-          const Color(0xFFFFFF00), const Color(0xFFFF8800), (charge - 0.5) * 4)!;
+          const Color(0xFFFFCC00), const Color(0xFFFF6600), charge * 2)!;
     } else if (charge < 0.9) {
       ballColor = Color.lerp(
-          const Color(0xFFFF8800), const Color(0xFFFF2200), (charge - 0.75) * 6.67)!;
+          const Color(0xFFFF6600), const Color(0xFFFF0044), (charge - 0.5) / 0.4)!;
     } else {
-      ballColor = const Color(0xFFFF0000);
+      ballColor = const Color(0xFFFF0044);
     }
 
     if (ball.isHeld || ball.isInFlight) {

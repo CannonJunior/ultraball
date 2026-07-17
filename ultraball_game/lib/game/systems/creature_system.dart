@@ -2,6 +2,7 @@ import '../../models/player.dart';
 import '../../models/creature.dart';
 import '../../models/damage_indicator.dart';
 import '../game_state.dart';
+import 'ball_system.dart';
 import 'combat_system.dart';
 import 'act_system.dart';
 
@@ -43,17 +44,12 @@ class CreatureSystem {
 
         // Award killa to opposite team
         final killaTeam = p.team == Team.player ? 'opponent'
-            : p.team == Team.opponent ? 'player' : 'player';
+            : p.team == Team.opponent ? 'player' : 'opponent';
         ActSystem.scoreKilla(gs, killaTeam);
         gs.showEvent('${creature.name} KILLED ${p.name}! KILLA!');
 
         // Drop ball if this player had it
-        if (hadBall) {
-          gs.ball.holderId = null;
-          gs.ball.isInFlight = false;
-          gs.ball.velX = 0;
-          gs.ball.velY = 0;
-        }
+        if (hadBall) BallSystem.dropBall(gs);
 
         // Update selected player if needed
         if (gs.selectedPlayer?.id == p.id) {

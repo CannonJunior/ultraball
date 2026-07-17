@@ -81,9 +81,8 @@ class _ScoreboardRowState extends State<ScoreboardRow>
   void _playClip(GlobalKey<_HighlightPanelState> panelKey,
                  AnimationController ctrl, String url) {
     if (_isThreeTeam) {
-      // Panels are always open in 3-team mode — play directly.
+      // Panels are always open in 3-team mode; onCanPlay handles playback.
       panelKey.currentState?.playUrl(url);
-      panelKey.currentState?.forcePlay();
     } else {
       _playOnPanel(panelKey: panelKey, ctrl: ctrl, url: url);
     }
@@ -357,19 +356,20 @@ class _HighlightPanelState extends State<_HighlightPanel> {
     ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
       final el = html.VideoElement()
         ..muted    = true
+        ..autoplay = true
         ..loop     = true
         ..controls = false
-        ..setAttribute('playsinline', '')
-        ..style.width     = '100%'
-        ..style.height    = '100%'
-        ..style.objectFit = 'cover';
+        ..setAttribute('playsinline', '');
+      el.style
+        ..width     = '100%'
+        ..height    = '100%'
+        ..objectFit = 'cover';
+      // Reliable play: fire on every canplay event (covers async load + src changes).
+      el.onCanPlay.listen((_) => el.play().catchError((_) {}));
       _videoEl = el;
-      // Play any URL that arrived before the factory was called.
       if (_pendingUrl != null) {
         el.src = _pendingUrl!;
         el.load();
-        el.play().catchError((_) {});
-        if (mounted) setState(() => _hasClip = true);
       }
       return el;
     });
@@ -378,11 +378,11 @@ class _HighlightPanelState extends State<_HighlightPanel> {
   /// Start playing [url] in this panel. Safe to call before the factory fires.
   void playUrl(String url) {
     _pendingUrl = url;
+    if (!_hasClip && mounted) setState(() => _hasClip = true);
     if (_videoEl != null) {
       _videoEl!.src = url;
       _videoEl!.load();
       _videoEl!.play().catchError((_) {});
-      if (!_hasClip && mounted) setState(() => _hasClip = true);
     }
     // If _videoEl is null, factory not yet called — _pendingUrl is consumed there.
   }

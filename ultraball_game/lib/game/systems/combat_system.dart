@@ -5,6 +5,7 @@ import '../../models/terrain_event.dart';
 import '../game_state.dart';
 import '../ability_stats_collector.dart';
 import 'act_system.dart';
+import 'ball_system.dart';
 import 'terrain_system.dart';
 
 class CombatSystem {
@@ -587,7 +588,7 @@ class CombatSystem {
       for (final enemy in gs.fieldPlayers) {
         if (enemy.team == p.team || !enemy.isAlive) continue;
         final dx = enemy.x - p.x, dy = enemy.y - p.y;
-        if (math.sqrt(dx * dx + dy * dy) <= 2.5) {
+        if (dx * dx + dy * dy <= 6.25) {
           enemy.stun(1.5);
           applyDamage(gs, enemy, 10.0, p);
           addIndicator(gs, enemy.x, enemy.y - 1, 'BLINDSIDE!', IndicatorType.event);
@@ -641,10 +642,7 @@ class CombatSystem {
       t.stun(1.5);
       // Force fumble if target survived with ball (applyDamage may have cleared holderId on death)
       if (hadBall && t.isAlive && gs.ball.holderId == t.id) {
-        gs.ball.holderId = null;
-        gs.ball.isInFlight = false;
-        gs.ball.velX = 0;
-        gs.ball.velY = 0;
+        BallSystem.dropBall(gs);
         gs.showEvent('STRIP TACKLE! Ball fumbled by ${t.name}!');
         addIndicator(gs, t.x, t.y - 1, 'STRIPPED!', IndicatorType.kill);
       }
@@ -927,17 +925,13 @@ class CombatSystem {
       addIndicator(gs, victim.x, victim.y, 'DEAD', IndicatorType.kill);
 
       if (attacker != null) {
-        final killaTeam = attacker.team;
-        ActSystem.scoreKilla(gs, killaTeam == Team.player ? 'player' : 'opponent', attacker);
+        final killaTeamId = attacker.team == Team.player ? 'player'
+            : attacker.team == Team.opponent ? 'opponent' : 'third';
+        ActSystem.scoreKilla(gs, killaTeamId, attacker);
         gs.showEvent('KILLA! +1pt');
       }
 
-      if (hadBall) {
-        gs.ball.holderId = null;
-        gs.ball.isInFlight = false;
-        gs.ball.velX = 0;
-        gs.ball.velY = 0;
-      }
+      if (hadBall) BallSystem.dropBall(gs);
 
       if (gs.selectedPlayer?.id == victim.id) {
         gs.selectNextPlayer();
@@ -1055,10 +1049,7 @@ class CombatSystem {
       t.applyConfusion(2.5);
       addIndicator(gs, t.x, t.y - 1, 'CONFUSED!', IndicatorType.kill);
       if (gs.ball.holderId == t.id) {
-        gs.ball.holderId = null;
-        gs.ball.isInFlight = false;
-        gs.ball.velX = 0;
-        gs.ball.velY = 0;
+        BallSystem.dropBall(gs);
         addIndicator(gs, t.x, t.y - 2, 'FUMBLE!', IndicatorType.kill);
         gs.showEvent('BEFUDDLE! ${t.name} drops the ball in confusion!');
       }
@@ -1163,10 +1154,7 @@ class CombatSystem {
       if (t == null) return;
       p.ability9Cooldown = 20.0;
       if (gs.ball.holderId == t.id) {
-        gs.ball.holderId = null;
-        gs.ball.isInFlight = false;
-        gs.ball.velX = 0;
-        gs.ball.velY = 0;
+        BallSystem.dropBall(gs);
         t.stun(1.5);
         addIndicator(gs, t.x, t.y - 1, 'CHAOS!', IndicatorType.kill);
         gs.showEvent('CHAOS FUMBLE! ${t.name} loses the ball!');

@@ -22,6 +22,8 @@ enum AbilityTag {
 }
 
 extension PlayerClassInfo on PlayerClass {
+  static final _rangeRe = RegExp(r'^(\d+(?:\.\d+)?)m');
+  static const List<double> _defaultSlotCooldowns = [1.5, 1.5, 5.0, 5.0, 5.0, 10.0, 10.0, 20.0, 20.0, 0.0];
   String get displayName => switch (this) {
     PlayerClass.spectre    => 'SPECTRE',
     PlayerClass.geomancer  => 'GEOMANCER',
@@ -295,7 +297,7 @@ extension PlayerClassInfo on PlayerClass {
     if (slot < 1 || slot > 10) return 0.0;
     final str = abilityRanges[slot - 1];
     if (str == 'self' || str == 'global' || str == 'aimed') return 0.0;
-    final m = RegExp(r'^(\d+(?:\.\d+)?)m').firstMatch(str);
+    final m = _rangeRe.firstMatch(str);
     return m != null ? double.parse(m.group(1)!) : 0.0;
   }
 
@@ -306,15 +308,7 @@ extension PlayerClassInfo on PlayerClass {
   //   slots 6–7 → 10.0s (utility / combo enders)
   //   slots 8–9 → 20.0s (major CC / finishers)
   //   slot  10  → 0.0s  (APEX — gated by ultra mana only)
-  List<double> get slotMaxCooldowns => switch (this) {
-    PlayerClass.spectre    => [1.5, 1.5, 5.0, 5.0, 5.0, 10.0, 10.0, 20.0, 20.0, 0.0],
-    PlayerClass.geomancer  => [1.5, 1.5, 5.0, 5.0, 5.0, 10.0, 10.0, 20.0, 20.0, 0.0],
-    PlayerClass.archon     => [1.5, 1.5, 5.0, 5.0, 5.0, 10.0, 10.0, 20.0, 20.0, 0.0],
-    PlayerClass.warden     => [1.5, 1.5, 5.0, 5.0, 5.0, 10.0, 10.0, 20.0, 20.0, 0.0],
-    PlayerClass.corsair    => [1.5, 1.5, 5.0, 5.0, 5.0, 10.0, 10.0, 20.0, 20.0, 0.0],
-    PlayerClass.trickster  => [1.5, 1.5, 5.0, 5.0, 5.0, 10.0, 10.0, 20.0, 20.0, 0.0],
-    PlayerClass.wrecker    => [1.5, 1.5, 5.0, 5.0, 5.0, 10.0, 10.0, 20.0, 20.0, 0.0],
-  };
+  List<double> get slotMaxCooldowns => _defaultSlotCooldowns;
 
   // ─── Semantic ability metadata ────────────────────────────────────────────
   // Based on what each slot actually does in combat_system.dart (slots 1–10).

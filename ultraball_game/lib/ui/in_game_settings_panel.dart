@@ -407,6 +407,7 @@ class _InGameSettingsPanelState extends State<InGameSettingsPanel> {
 
   Widget _buildViewModeSelector() {
     final current = _gs.prefs.viewModeOverride ?? widget.gs.settings.viewMode;
+    final isThreeTeam = _gs.settings.matchMode == MatchMode.threeTeams;
     return Row(
       children: [
         _ViewModeBtn(
@@ -420,14 +421,14 @@ class _InGameSettingsPanelState extends State<InGameSettingsPanel> {
           label: '3/4',
           icon: Icons.view_in_ar_outlined,
           active: current == ViewMode.threeQuarter,
-          onTap: () => _setViewMode(ViewMode.threeQuarter),
+          onTap: isThreeTeam ? null : () => _setViewMode(ViewMode.threeQuarter),
         ),
         const SizedBox(width: 8),
         _ViewModeBtn(
           label: '3D',
           icon: Icons.threed_rotation,
           active: current == ViewMode.full3D,
-          onTap: () => _setViewMode(ViewMode.full3D),
+          onTap: isThreeTeam ? null : () => _setViewMode(ViewMode.full3D),
         ),
       ],
     );
@@ -781,7 +782,7 @@ class _ViewModeBtn extends StatelessWidget {
   final String label;
   final IconData icon;
   final bool active;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _ViewModeBtn({
     required this.label,
@@ -792,6 +793,7 @@ class _ViewModeBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final disabled = onTap == null;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -802,18 +804,21 @@ class _ViewModeBtn extends StatelessWidget {
           border: Border.all(color: active ? _kGold : _kBorder, width: active ? 1.5 : 1),
           borderRadius: BorderRadius.circular(4),
         ),
-        child: Column(
-          children: [
-            Icon(icon, size: 18, color: active ? _kGold : _kTextFaint),
-            const SizedBox(height: 4),
-            Text(label,
-                style: TextStyle(
-                  color: active ? _kGold : _kTextFaint,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1,
-                )),
-          ],
+        child: Opacity(
+          opacity: disabled ? 0.35 : 1.0,
+          child: Column(
+            children: [
+              Icon(icon, size: 18, color: active ? _kGold : _kTextFaint),
+              const SizedBox(height: 4),
+              Text(label,
+                  style: TextStyle(
+                    color: active ? _kGold : _kTextFaint,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
+                  )),
+            ],
+          ),
         ),
       ),
     );

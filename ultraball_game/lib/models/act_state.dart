@@ -42,12 +42,19 @@ class ActState {
   bool thirdSubUsed = false;
   bool thirdForfeit = false;
 
+  // Set to true when initialized in 3-team mode so gameOver requires 2 forfeits
+  bool isThreeTeams = false;
+
   bool get isAct5 => currentAct == 5;
-  bool get gameOver =>
-      playerForfeit ||
-      opponentForfeit ||
-      thirdForfeit ||
-      (actEnded && currentAct >= 5);
+  bool get gameOver {
+    if (isThreeTeams) {
+      final forfeits = (playerForfeit ? 1 : 0)
+          + (opponentForfeit ? 1 : 0)
+          + (thirdForfeit ? 1 : 0);
+      return forfeits >= 2 || (actEnded && currentAct >= 5);
+    }
+    return playerForfeit || opponentForfeit || (actEnded && currentAct >= 5);
+  }
 
   String get timerDisplay {
     final mins = (timerSeconds / 60).floor();

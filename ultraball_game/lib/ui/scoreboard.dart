@@ -14,15 +14,12 @@ const _kBg    = Color(0xFF04050A);
 // ── Ball color (matches field_painter charge color logic) ─────────────────────
 Color _ballColor(double chargePercent) {
   if (chargePercent < 0.5) {
-    return Color.lerp(const Color(0xFF88FF88), const Color(0xFFFFFF00), chargePercent * 2)!;
-  }
-  if (chargePercent < 0.75) {
-    return Color.lerp(const Color(0xFFFFFF00), const Color(0xFFFF8800), (chargePercent - 0.5) * 4)!;
+    return Color.lerp(const Color(0xFFFFCC00), const Color(0xFFFF6600), chargePercent * 2)!;
   }
   if (chargePercent < 0.9) {
-    return Color.lerp(const Color(0xFFFF8800), const Color(0xFFFF2200), (chargePercent - 0.75) * 6.67)!;
+    return Color.lerp(const Color(0xFFFF6600), const Color(0xFFFF0044), (chargePercent - 0.5) / 0.4)!;
   }
-  return const Color(0xFFFF0000);
+  return const Color(0xFFFF0044);
 }
 
 // ── Public widget ─────────────────────────────────────────────────────────────

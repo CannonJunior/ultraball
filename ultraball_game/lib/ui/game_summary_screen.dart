@@ -1,13 +1,14 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../game/game_state.dart';
+import '../models/game_settings.dart';
 import '../models/player.dart';
 import 'stat_table.dart';
 
 // ── Design palette ────────────────────────────────────────────────────────────
 const _kGold = Color(0xFFFFCB3D);
 const _kSurf = Color(0xFF0A0C14);
-const _kDark = Color(0xFF06070D);
 const _kHeal = Color(0xFF6EE7B7);
 
 // ── Public widget ─────────────────────────────────────────────────────────────
@@ -21,49 +22,71 @@ class GameSummaryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final act = gs.actState;
+    final isThreeTeam = gs.settings.matchMode == MatchMode.threeTeams;
+
+    final homeColor  = Color(gs.settings.homeTeamPrimary);
+    final awayColor  = Color(gs.settings.awayTeamPrimary);
+    final thirdColor = isThreeTeam ? Color(gs.settings.thirdTeamPrimary) : null;
 
     // Determine winner
-    final playerWon = act.playerScore > act.opponentScore;
-    final tied      = act.playerScore == act.opponentScore;
     String winnerName;
     Color  winnerColor;
+    bool   tied;
 
-    final homeColor = Color(gs.settings.homeTeamPrimary);
-    final awayColor = Color(gs.settings.awayTeamPrimary);
-
-    if (act.playerForfeit) {
-      winnerName  = gs.settings.awayTeamName;
-      winnerColor = awayColor;
-    } else if (act.opponentForfeit) {
-      winnerName  = gs.settings.homeTeamName;
-      winnerColor = homeColor;
-    } else if (tied) {
-      winnerName  = 'DRAW';
-      winnerColor = _kGold;
-    } else if (playerWon) {
-      winnerName  = gs.settings.homeTeamName;
-      winnerColor = homeColor;
+    if (isThreeTeam) {
+      final pf = act.playerForfeit;
+      final of = act.opponentForfeit;
+      final tf = act.thirdForfeit;
+      if (pf && of) {
+        winnerName = gs.settings.thirdTeamName; winnerColor = thirdColor!; tied = false;
+      } else if (pf && tf) {
+        winnerName = gs.settings.awayTeamName; winnerColor = awayColor; tied = false;
+      } else if (of && tf) {
+        winnerName = gs.settings.homeTeamName; winnerColor = homeColor; tied = false;
+      } else {
+        final maxScore = [act.playerScore, act.opponentScore, act.thirdScore].reduce(math.max);
+        final leaders = [
+          if (act.playerScore   == maxScore) (gs.settings.homeTeamName,  homeColor),
+          if (act.opponentScore == maxScore) (gs.settings.awayTeamName,  awayColor),
+          if (act.thirdScore    == maxScore) (gs.settings.thirdTeamName, thirdColor!),
+        ];
+        if (leaders.length == 1) {
+          winnerName = leaders[0].$1; winnerColor = leaders[0].$2; tied = false;
+        } else {
+          winnerName = 'DRAW'; winnerColor = _kGold; tied = true;
+        }
+      }
     } else {
-      winnerName  = gs.settings.awayTeamName;
-      winnerColor = awayColor;
+      final playerWon = act.playerScore > act.opponentScore;
+      tied = act.playerScore == act.opponentScore;
+      if (act.playerForfeit) {
+        winnerName = gs.settings.awayTeamName; winnerColor = awayColor;
+      } else if (act.opponentForfeit) {
+        winnerName = gs.settings.homeTeamName; winnerColor = homeColor;
+      } else if (tied) {
+        winnerName = 'DRAW'; winnerColor = _kGold;
+      } else if (playerWon) {
+        winnerName = gs.settings.homeTeamName; winnerColor = homeColor;
+      } else {
+        winnerName = gs.settings.awayTeamName; winnerColor = awayColor;
+      }
     }
 
     // Match duration
-    final totalSecs  = gs.matchTimeElapsed.isFinite ? gs.matchTimeElapsed.toInt() : 0;
-    final mins       = (totalSecs ~/ 60).toString().padLeft(2, '0');
-    final secs       = (totalSecs % 60).toString().padLeft(2, '0');
-    final fmtDur     = '$mins:$secs';
+    final totalSecs = gs.matchTimeElapsed.isFinite ? gs.matchTimeElapsed.toInt() : 0;
+    final mins      = (totalSecs ~/ 60).toString().padLeft(2, '0');
+    final secs      = (totalSecs % 60).toString().padLeft(2, '0');
+    final fmtDur    = '$mins:$secs';
 
     // Derive headline stats
     final all = [
       ...gs.playerRoster.map((p) => (p, true)),
       ...gs.opponentRoster.map((p) => (p, false)),
+      if (isThreeTeam) ...gs.thirdRoster.map((p) => (p, false)),
     ];
-    final mvp      = all.reduce((a, b) => a.$1.pointsThisMatch >= b.$1.pointsThisMatch ? a : b).$1;
-    final topDmg   = all.reduce((a, b) => a.$1.totalDamageDealt >= b.$1.totalDamageDealt ? a : b).$1;
-    final topHeal  = all.reduce((a, b) => a.$1.totalHealingDone >= b.$1.totalHealingDone ? a : b).$1;
-    final homeKills = act.playerKills;
-    final awayKills = act.opponentKills;
+    final mvp     = all.reduce((a, b) => a.$1.pointsThisMatch  >= b.$1.pointsThisMatch  ? a : b).$1;
+    final topDmg  = all.reduce((a, b) => a.$1.totalDamageDealt >= b.$1.totalDamageDealt ? a : b).$1;
+    final topHeal = all.reduce((a, b) => a.$1.totalHealingDone >= b.$1.totalHealingDone ? a : b).$1;
 
     return Container(
       color: Colors.black.withValues(alpha: 0.93),
@@ -86,7 +109,6 @@ class GameSummaryScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // ── Hero header ─────────────────────────────────────
                       _HeroHeader(
                         winnerName:  winnerName,
                         winnerColor: winnerColor,
@@ -97,18 +119,17 @@ class GameSummaryScreen extends StatelessWidget {
                         fmtDur:      fmtDur,
                         tied:        tied,
                         onBack:      onBack,
+                        thirdTeam:   isThreeTeam ? gs.settings.thirdTeamName : null,
+                        thirdScore:  isThreeTeam ? act.thirdScore : null,
                       ),
-
-                      // ── 4 stat cards ────────────────────────────────────
                       _StatCards(
                         mvp:        mvp,
                         topDmg:     topDmg,
                         topHeal:    topHeal,
-                        homeKills:  homeKills,
-                        awayKills:  awayKills,
+                        homeKills:  act.playerKills,
+                        awayKills:  act.opponentKills,
+                        thirdKills: isThreeTeam ? act.thirdKills : null,
                       ),
-
-                      // ── Sortable player table ───────────────────────────
                       StatTable(gs: gs),
                     ],
                   ),
@@ -120,20 +141,16 @@ class GameSummaryScreen extends StatelessWidget {
       ),
     );
   }
-
-  static String _fmt(double v) {
-    if (!v.isFinite) return '0';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}k';
-    return v.toInt().toString();
-  }
 }
 
 // ── Hero header ───────────────────────────────────────────────────────────────
 
 class _HeroHeader extends StatelessWidget {
   final String     winnerName, homeTeam, awayTeam, fmtDur;
+  final String?    thirdTeam;
   final Color      winnerColor;
   final int        homeScore, awayScore;
+  final int?       thirdScore;
   final bool       tied;
   final VoidCallback onBack;
 
@@ -147,10 +164,13 @@ class _HeroHeader extends StatelessWidget {
     required this.fmtDur,
     required this.tied,
     required this.onBack,
+    this.thirdTeam,
+    this.thirdScore,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isThreeTeam = thirdTeam != null;
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
       decoration: BoxDecoration(
@@ -164,7 +184,6 @@ class _HeroHeader extends StatelessWidget {
         children: [
           Column(
             children: [
-              // FINAL · duration
               Text(
                 'FINAL · $fmtDur',
                 style: GoogleFonts.chakraPetch(
@@ -176,7 +195,6 @@ class _HeroHeader extends StatelessWidget {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 6),
-              // Winner name + VICTORY
               Text.rich(
                 TextSpan(
                   children: [
@@ -206,28 +224,52 @@ class _HeroHeader extends StatelessWidget {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 4),
-              // Final score
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(gs_awayScore(awayScore),
-                    style: GoogleFonts.barlowCondensed(
-                      fontSize: 26, fontWeight: FontWeight.w700,
-                      color: Colors.white.withValues(alpha: 0.85))),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('–',
-                      style: TextStyle(fontSize: 20, color: Colors.white.withValues(alpha: 0.3))),
-                  ),
-                  Text(gs_homeScore(homeScore),
-                    style: GoogleFonts.barlowCondensed(
-                      fontSize: 26, fontWeight: FontWeight.w700,
-                      color: Colors.white.withValues(alpha: 0.85))),
-                ],
-              ),
+              if (isThreeTeam)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('$homeScore $homeTeam',
+                      style: GoogleFonts.barlowCondensed(
+                        fontSize: 26, fontWeight: FontWeight.w700,
+                        color: Colors.white.withValues(alpha: 0.85))),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text('·', style: TextStyle(fontSize: 20, color: Colors.white.withValues(alpha: 0.3))),
+                    ),
+                    Text('$awayScore $awayTeam',
+                      style: GoogleFonts.barlowCondensed(
+                        fontSize: 26, fontWeight: FontWeight.w700,
+                        color: Colors.white.withValues(alpha: 0.85))),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text('·', style: TextStyle(fontSize: 20, color: Colors.white.withValues(alpha: 0.3))),
+                    ),
+                    Text('${thirdScore ?? 0} $thirdTeam',
+                      style: GoogleFonts.barlowCondensed(
+                        fontSize: 26, fontWeight: FontWeight.w700,
+                        color: Colors.white.withValues(alpha: 0.85))),
+                  ],
+                )
+              else
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('$awayScore',
+                      style: GoogleFonts.barlowCondensed(
+                        fontSize: 26, fontWeight: FontWeight.w700,
+                        color: Colors.white.withValues(alpha: 0.85))),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text('–', style: TextStyle(fontSize: 20, color: Colors.white.withValues(alpha: 0.3))),
+                    ),
+                    Text('$homeScore',
+                      style: GoogleFonts.barlowCondensed(
+                        fontSize: 26, fontWeight: FontWeight.w700,
+                        color: Colors.white.withValues(alpha: 0.85))),
+                  ],
+                ),
             ],
           ),
-          // Back button top-right
           Positioned(
             top: 0,
             right: 0,
@@ -253,17 +295,14 @@ class _HeroHeader extends StatelessWidget {
       ),
     );
   }
-
-  // Helpers to format — put here so build stays clean
-  static String gs_awayScore(int s) => '$s';
-  static String gs_homeScore(int s) => '$s';
 }
 
 // ── 4 stat cards ──────────────────────────────────────────────────────────────
 
 class _StatCards extends StatelessWidget {
   final UltraballPlayer mvp, topDmg, topHeal;
-  final int homeKills, awayKills;
+  final int  homeKills, awayKills;
+  final int? thirdKills;
 
   const _StatCards({
     required this.mvp,
@@ -271,10 +310,14 @@ class _StatCards extends StatelessWidget {
     required this.topHeal,
     required this.homeKills,
     required this.awayKills,
+    this.thirdKills,
   });
 
   @override
   Widget build(BuildContext context) {
+    final killsValue = thirdKills != null
+        ? '$homeKills / $awayKills / $thirdKills'
+        : '$homeKills / $awayKills';
     return Container(
       decoration: BoxDecoration(
         border: Border.symmetric(
@@ -295,7 +338,7 @@ class _StatCards extends StatelessWidget {
             Expanded(child: _StatCard(
               value:    _fmt(topDmg.totalDamageDealt),
               valueColor: const Color(0xFFFF8A99),
-              label:    'TOP DAMAGE',
+              label:    'TOP DAMAGE · ${topDmg.name}',
             )),
             _Divider(),
             Expanded(child: _StatCard(
@@ -305,7 +348,7 @@ class _StatCards extends StatelessWidget {
             )),
             _Divider(),
             Expanded(child: _StatCard(
-              value:    '$homeKills / $awayKills',
+              value:    killsValue,
               valueColor: Colors.white,
               label:    'TEAM KILLS',
             )),

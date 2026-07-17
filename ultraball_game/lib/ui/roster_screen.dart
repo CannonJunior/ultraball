@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/player.dart';
 import '../models/act_state.dart';
+import '../models/game_settings.dart';
 import '../game/game_state.dart';
 import 'ui_assets.dart';
 import 'stat_table.dart';
@@ -138,25 +139,51 @@ class _IntermissionHeader extends StatelessWidget {
             ),
           ),
           // Score
-          Row(
-            children: [
-              Text(gs.settings.awayTeamName,
-                style: GoogleFonts.barlowCondensed(
-                  fontSize: 22, fontWeight: FontWeight.w700,
-                  color: Color(gs.settings.awayTeamPrimary))),
-              const SizedBox(width: 12),
-              Text(
-                '${act.opponentScore}  –  ${act.playerScore}',
-                style: GoogleFonts.barlowCondensed(
-                  fontSize: 32, fontWeight: FontWeight.w700, color: Colors.white),
-              ),
-              const SizedBox(width: 12),
-              Text(gs.settings.homeTeamName,
-                style: GoogleFonts.barlowCondensed(
-                  fontSize: 22, fontWeight: FontWeight.w700,
-                  color: Color(gs.settings.homeTeamPrimary))),
-            ],
-          ),
+          if (gs.settings.matchMode == MatchMode.threeTeams)
+            Row(
+              children: [
+                Text(gs.settings.awayTeamName,
+                  style: GoogleFonts.barlowCondensed(
+                    fontSize: 22, fontWeight: FontWeight.w700,
+                    color: Color(gs.settings.awayTeamPrimary))),
+                const SizedBox(width: 12),
+                Text(
+                  '${act.opponentScore}  –  ${act.playerScore}  –  ${act.thirdScore}',
+                  style: GoogleFonts.barlowCondensed(
+                    fontSize: 32, fontWeight: FontWeight.w700, color: Colors.white),
+                ),
+                const SizedBox(width: 12),
+                Text(gs.settings.homeTeamName,
+                  style: GoogleFonts.barlowCondensed(
+                    fontSize: 22, fontWeight: FontWeight.w700,
+                    color: Color(gs.settings.homeTeamPrimary))),
+                const SizedBox(width: 12),
+                Text(gs.settings.thirdTeamName,
+                  style: GoogleFonts.barlowCondensed(
+                    fontSize: 22, fontWeight: FontWeight.w700,
+                    color: Color(gs.settings.thirdTeamPrimary))),
+              ],
+            )
+          else
+            Row(
+              children: [
+                Text(gs.settings.awayTeamName,
+                  style: GoogleFonts.barlowCondensed(
+                    fontSize: 22, fontWeight: FontWeight.w700,
+                    color: Color(gs.settings.awayTeamPrimary))),
+                const SizedBox(width: 12),
+                Text(
+                  '${act.opponentScore}  –  ${act.playerScore}',
+                  style: GoogleFonts.barlowCondensed(
+                    fontSize: 32, fontWeight: FontWeight.w700, color: Colors.white),
+                ),
+                const SizedBox(width: 12),
+                Text(gs.settings.homeTeamName,
+                  style: GoogleFonts.barlowCondensed(
+                    fontSize: 22, fontWeight: FontWeight.w700,
+                    color: Color(gs.settings.homeTeamPrimary))),
+              ],
+            ),
         ],
       ),
     );

@@ -136,7 +136,9 @@ class ActSystem {
         gs.actState.thirdForfeit = true;
         gs.showEvent('THIRD TEAM FORFEIT!');
       }
-      endAct(gs);
+      if (gs.actState.gameOver) {
+        endAct(gs);
+      }
       return;
     }
 
@@ -250,7 +252,7 @@ class ActSystem {
     }
 
     // Player team: roster was configured by roster screen; just fill any gaps
-    _fillPlayerTeamGaps(gs);
+    _restockTeam(gs, Team.player);
     // AI team: auto-restock in deployment order
     _restockTeam(gs, Team.opponent);
     if (gs.settings.matchMode == MatchMode.threeTeams) {
@@ -307,40 +309,6 @@ class ActSystem {
     }
   }
 
-  static void _fillPlayerTeamGaps(GameState gs) {
-    final roster = gs.playerRoster;
-    final onField = roster.where((p) => p.isOnField && p.isAlive).length;
-    if (onField < 7) {
-      final available = roster.where((p) => !p.isOnField && p.isAlive && !p.isInactive).toList()
-          ..sort((a, b) => a.deploySlot.compareTo(b.deploySlot));
-      final toAdd = math.min(7 - onField, available.length);
-      for (int i = 0; i < toAdd; i++) {
-        available[i].isOnField = true;
-      }
-      gs.markRosterDirty();
-    }
-    for (final p in roster.where((p) => p.isOnField && p.isAlive)) {
-      p.health = p.maxHealth;
-      p.blueMana = 100;
-      p.redMana = 0;
-      p.stunTimer = 0;
-      p.state = PlayerState.idle;
-      p.resetBuffs();
-    }
-
-    // Renumber deploySlots preserving the order the roster screen established.
-    // Sort by existing deploySlot so the player's drag-reorder is respected.
-    int slot = 0;
-    final onFieldAlive = roster.where((p) => p.isOnField && p.isAlive).toList()
-        ..sort((a, b) => a.deploySlot.compareTo(b.deploySlot));
-    for (final p in onFieldAlive) {
-      p.deploySlot = slot++;
-    }
-    for (final p in roster.where((p) => !p.isAlive)) {
-      p.deploySlot = 100 + p.rosterIndex;
-    }
-  }
-
   static void _resetPositions(GameState gs) {
     final rand = math.Random();
 
@@ -386,12 +354,15 @@ class ActSystem {
       final (nx, ny) = GameState.team3Normals[teamIdx];
       final perpX = -ny; final perpY = nx;
       final baseDist = GameState.field3Inradius + 25.0;
+      // Each team starts facing toward the center (opposite of their arm normal).
+      final teamFacing = math.atan2(-ny, -nx);
       int idx = 0;
       for (final p in gs.getTeamOnField(team)) {
         final spread = (idx - 3) * 5.0;
         p.x = GameState.field3CX + nx * baseDist + perpX * spread + rand.nextDouble() * 4 - 2;
         p.y = GameState.field3CY + ny * baseDist + perpY * spread + rand.nextDouble() * 4 - 2;
         p.velX = 0; p.velY = 0;
+        p.facing = teamFacing;
         idx++;
       }
     }
