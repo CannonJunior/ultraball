@@ -12,6 +12,8 @@ import '../rendering3d/character_rig.dart';
 import '../models/player.dart';
 import '../models/creature.dart';
 import '../models/ultraball.dart';
+import '../models/terrain_grid.dart';
+import '../models/fissure_event.dart';
 import '../game/game_state.dart';
 import 'field_mesh_builder.dart';
 import 'ball_mesh_builder.dart';
@@ -47,6 +49,11 @@ class UltraballRenderSystem {
   final Map<String, CharacterRig> _playerRigs = {};
   final Map<String, CharacterRig> _selectedCubeRigs = {};
   bool _useCubeModels = false;
+
+  Mesh? _pitDiscMesh;
+  Mesh? _mudCellMesh;
+  Mesh? _hillCellMesh;
+  Mesh? _valleyCellMesh;
 
   bool _ready = false;
   bool get ready => _ready;
@@ -100,9 +107,15 @@ class UltraballRenderSystem {
     _camera!.pitchBy(35.0);
     _camera!.setTargetDistance(55.0);
 
-    _fieldMeshes = FieldMeshBuilder.build();
-    _ballMeshes  = BallMeshBuilder.build();
-    _creatureRig = CreatureMeshBuilder.build(creatureType);
+    _fieldMeshes  = FieldMeshBuilder.build();
+    _ballMeshes   = BallMeshBuilder.build();
+    _creatureRig  = CreatureMeshBuilder.build(creatureType);
+
+    // Terrain overlay meshes — unit-sized, scaled per-instance at render time.
+    _pitDiscMesh    = Mesh.disc(segments: 28, color: Vector3(0.04, 0.0, 0.07));
+    _mudCellMesh    = Mesh.plane(width: 1.0, height: 1.0, color: Vector3(0.36, 0.23, 0.10));
+    _hillCellMesh   = Mesh.box(width: 1.0, height: 1.0, depth: 1.0, color: Vector3(0.10, 0.70, 0.15));
+    _valleyCellMesh = Mesh.plane(width: 1.0, height: 1.0, color: Vector3(0.04, 0.02, 0.12));
 
     // Cache immutable field transforms
     _homeEndzoneT  = FieldMeshes.homeEndzoneTransform();
@@ -181,7 +194,7 @@ class UltraballRenderSystem {
         // Convert game facing (radians, 0=+X) to Transform3d yaw convention (degrees)
         final worldYaw = -(player.facing * (180.0 / math.pi) + 90.0);
         cam.updateThirdPersonFollow(
-          Vector3(player.x, player.zHeight, player.y),
+          Vector3(player.x, math.max(0.0, player.totalElevation), player.y),
           worldYaw,
           dt,
         );
@@ -246,6 +259,9 @@ class UltraballRenderSystem {
     r.render(fm.rightChannel, _rightChannelT, c);
     r.render(fm.awayEndzone,  _awayEndzoneT,  c);
 
+    // ── Terrain overlays (pits, mud, hills) ──────────────────────────────
+    _renderTerrainOverlays(r, c, gs);
+
     // ── Phase lines (unlit — glow effect) ────────────────────────────────
     for (int i = 0; i < 5; i++) {
       final mesh = gs.ball.phaseLineActive[i]
@@ -303,10 +319,73 @@ class UltraballRenderSystem {
     _fieldMeshes = null;
     _ballMeshes = null;
     _creatureRig = null;
+    _pitDiscMesh = null;
+    _mudCellMesh = null;
+    _hillCellMesh = null;
+    _valleyCellMesh = null;
     _playerRigs.clear();
     _selectedCubeRigs.clear();
     _ready = false;
     debugPrint('[UltraballRenderSystem] disposed');
+  }
+
+  // ── Private: terrain overlays ─────────────────────────────────────────────
+
+  void _renderTerrainOverlays(WebGLRenderer r, PerspectiveCamera c, GameState gs) {
+    final disc   = _pitDiscMesh;
+    final mud    = _mudCellMesh;
+    final hill   = _hillCellMesh;
+    final valley = _valleyCellMesh;
+
+    // Pits — one disc per PitEffect (world-space circle, not cell-grid squares)
+    if (disc != null) {
+      for (final pit in gs.pitEffects) {
+        r.renderUnlit(disc, Transform3d(
+          position: Vector3(pit.worldX, 0.01, pit.worldY),
+          scale:    Vector3(pit.radius, 1.0, pit.radius),
+        ), c);
+      }
+    }
+
+    // Mud: coarse cell grid
+    if (mud != null) {
+      gs.terrain.forEach((col, row, cell) {
+        if (cell.surface != SurfaceType.mud) return;
+        final cx = (col + 0.5) * kCellW;
+        final cz = (row + 0.5) * kCellH;
+        r.renderUnlit(mud, Transform3d(
+          position: Vector3(cx, 0.01, cz),
+          scale:    Vector3(kCellW, 1.0, kCellH),
+        ), c);
+      });
+    }
+
+    // Valleys: dark flat overlay for negative elevation cells
+    if (valley != null) {
+      gs.elevGrid.forEach((col, row, elev) {
+        if (elev.current >= -0.5) return;
+        final cx = (col + 0.5) * kElevCellW;
+        final cz = (row + 0.5) * kElevCellH;
+        r.renderUnlit(valley, Transform3d(
+          position: Vector3(cx, 0.01, cz),
+          scale:    Vector3(kElevCellW, 1.0, kElevCellH),
+        ), c);
+      });
+    }
+
+    // Hills: fine elevation grid
+    if (hill != null) {
+      gs.elevGrid.forEach((col, row, elev) {
+        if (elev.current <= 0.5) return;
+        final cx = (col + 0.5) * kElevCellW;
+        final cz = (row + 0.5) * kElevCellH;
+        final h  = elev.current.clamp(0.5, 4.0);
+        r.render(hill, Transform3d(
+          position: Vector3(cx, h * 0.5, cz),
+          scale:    Vector3(kElevCellW, h, kElevCellH),
+        ), c);
+      });
+    }
   }
 
   // ── Private: animation helpers ────────────────────────────────────────────
@@ -411,7 +490,7 @@ class UltraballRenderSystem {
       _targetAcquiredStartTime = _elapsedTime;
     }
 
-    final targetPos = Vector3(target.x, target.zHeight, target.y);
+    final targetPos = Vector3(target.x, math.max(0.0, target.totalElevation), target.y);
 
     if (_targetAcquiredMesh != null && _targetAcquiredStartTime >= 0) {
       final age = _elapsedTime - _targetAcquiredStartTime;
@@ -465,7 +544,7 @@ class UltraballRenderSystem {
     // Formula: worldYaw = −(facingDeg + 90)
     final worldYaw = -(player.facing * (180.0 / math.pi) + 90.0);
     return Transform3d(
-      position: Vector3(player.x, player.zHeight, player.y),
+      position: Vector3(player.x, math.max(0.0, player.totalElevation), player.y),
       rotation: Vector3(0, worldYaw, 0),
     );
   }
@@ -484,7 +563,7 @@ class UltraballRenderSystem {
       final holder = gs.getPlayerById(ball.holderId!);
       if (holder != null) {
         // Ball carried above holder's head
-        return Vector3(holder.x, holder.zHeight + 2.2, holder.y);
+        return Vector3(holder.x, math.max(0.0, holder.totalElevation) + 2.2, holder.y);
       }
     }
     // Loose or in-flight: use ball's own position + small ground clearance

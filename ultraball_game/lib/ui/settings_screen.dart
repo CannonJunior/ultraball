@@ -16,7 +16,8 @@ const _kSurf = Color(0xFF08080F);
 const _kGold = Color(0xFFFFCB3D);
 const _kBorder = Color(0xFF1A1A2E);
 
-const _kInactiveKey = 'ultraball_inactive_classes';
+const _kInactiveKey          = 'ultraball_inactive_classes';
+const _kRosterOrderKeyPrefix = 'ultraball_roster_';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -49,21 +50,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadInactiveClasses();
   }
 
+  // Returns the saved roster order for [teamIdx], or the default sequential order.
+  List<int> _loadRosterOrder(int teamIdx) {
+    try {
+      final raw = html.window.localStorage['$_kRosterOrderKeyPrefix$teamIdx'];
+      if (raw != null && raw.isNotEmpty) {
+        final list = (jsonDecode(raw) as List).cast<int>();
+        // Validate: must be a permutation of 0–14
+        if (list.length == 15 && list.toSet().length == 15) return list;
+      }
+    } catch (_) {}
+    return List.generate(15, (i) => i);
+  }
+
+  void _saveRosterOrder() {
+    html.window.localStorage['$_kRosterOrderKeyPrefix$_homeTeamIdx'] =
+        jsonEncode(_homeRosterOrder);
+  }
+
   void _loadInactiveClasses() {
     try {
       final raw = html.window.localStorage[_kInactiveKey];
       if (raw != null && raw.isNotEmpty) {
         final list = (jsonDecode(raw) as List).cast<int>();
         _inactiveClasses = list.toSet();
-        // Rebuild roster order: active classes first, inactive at the end
-        for (final classIdx in _inactiveClasses) {
-          final toSink = _homeRosterOrder.where((i) => i % 7 == classIdx).toList();
-          final rest   = _homeRosterOrder.where((i) => i % 7 != classIdx).toList();
-          _homeRosterOrder = [...rest, ...toSink];
-        }
       }
     } catch (_) {
       // Ignore corrupt/missing storage — defaults are fine
+    }
+    // Load saved roster order, then sink any inactive classes to the end.
+    _homeRosterOrder = _loadRosterOrder(_homeTeamIdx);
+    for (final classIdx in _inactiveClasses) {
+      final toSink = _homeRosterOrder.where((i) => i % 8 == classIdx).toList();
+      final rest   = _homeRosterOrder.where((i) => i % 8 != classIdx).toList();
+      _homeRosterOrder = [...rest, ...toSink];
     }
   }
 
@@ -77,18 +97,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (_inactiveClasses.contains(classIdx)) {
         _inactiveClasses = Set.from(_inactiveClasses)..remove(classIdx);
         // Move reactivated indices to end of active reserves (before remaining inactive)
-        final reactivated = _homeRosterOrder.where((i) => i % 7 == classIdx).toList();
-        final rest        = _homeRosterOrder.where((i) => i % 7 != classIdx).toList();
+        final reactivated = _homeRosterOrder.where((i) => i % 8 == classIdx).toList();
+        final rest        = _homeRosterOrder.where((i) => i % 8 != classIdx).toList();
         _homeRosterOrder  = [...rest, ...reactivated];
       } else {
         _inactiveClasses = Set.from(_inactiveClasses)..add(classIdx);
         // Sink deactivated indices to end of list
-        final toSink     = _homeRosterOrder.where((i) => i % 7 == classIdx).toList();
-        final rest       = _homeRosterOrder.where((i) => i % 7 != classIdx).toList();
+        final toSink     = _homeRosterOrder.where((i) => i % 8 == classIdx).toList();
+        final rest       = _homeRosterOrder.where((i) => i % 8 != classIdx).toList();
         _homeRosterOrder = [...rest, ...toSink];
       }
     });
     _saveInactiveClasses();
+    _saveRosterOrder();
   }
 
   void _startMatch() {
@@ -297,7 +318,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             : {_awayTeamIdx},
                         onChanged: (i) => setState(() {
                           _homeTeamIdx = i;
-                          _homeRosterOrder = List.generate(15, (j) => j);
+                          _homeRosterOrder = _loadRosterOrder(i);
+                          for (final cls in _inactiveClasses) {
+                            final toSink = _homeRosterOrder.where((j) => j % 8 == cls).toList();
+                            final rest   = _homeRosterOrder.where((j) => j % 8 != cls).toList();
+                            _homeRosterOrder = [...rest, ...toSink];
+                          }
                         }),
                         accentColor: Color(TeamDefinition.teams[_homeTeamIdx].primaryColor),
                       ),
@@ -813,7 +839,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             thirdTeamIdx: _thirdTeamIdx,
             matchMode: _matchMode,
             homeRosterOrder: _homeRosterOrder,
-            onHomeReorder: (newOrder) => setState(() => _homeRosterOrder = newOrder),
+            onHomeReorder: (newOrder) {
+              setState(() => _homeRosterOrder = newOrder);
+              _saveRosterOrder();
+            },
             inactiveClasses: _inactiveClasses,
           ),
           const SizedBox(height: 12),
@@ -1392,24 +1421,26 @@ class _RosterEditor extends StatelessWidget {
     this.matchMode = MatchMode.twoTeams,
   });
 
-  static Color _classColor(int playerIdx) => switch (playerIdx % 7) {
+  static Color _classColor(int playerIdx) => switch (playerIdx % 8) {
     0 => const Color(0xFF44FFCC),
     1 => const Color(0xFFFF44AA),
     2 => const Color(0xFFFF5544),
     3 => const Color(0xFF4488FF),
     4 => const Color(0xFFFFCC44),
     5 => const Color(0xFFAA44FF),
-    _ => const Color(0xFFFF7700),
+    6 => const Color(0xFFFF7700),
+    _ => const Color(0xFF44DD88),
   };
 
-  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 7) {
+  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 8) {
     0 => PlayerClass.spectre,
     1 => PlayerClass.corsair,
     2 => PlayerClass.geomancer,
     3 => PlayerClass.archon,
     4 => PlayerClass.warden,
     5 => PlayerClass.trickster,
-    _ => PlayerClass.wrecker,
+    6 => PlayerClass.wrecker,
+    _ => PlayerClass.vitalist,
   };
 
   // Builds a single inactive player row given a player index and their display name.
@@ -1485,11 +1516,11 @@ class _RosterEditor extends StatelessWidget {
     final thirdColor   = Color(thirdDef.primaryColor);
     final isThree      = matchMode == MatchMode.threeTeams;
 
-    final homeInactive  = homeRosterOrder.where((i) => inactiveClasses.contains(i % 7)).toList();
+    final homeInactive  = homeRosterOrder.where((i) => inactiveClasses.contains(i % 8)).toList();
     final awayInactive  = List.generate(15, (i) => i)
-        .where((i) => inactiveClasses.contains(i % 7)).toList();
+        .where((i) => inactiveClasses.contains(i % 8)).toList();
     final thirdInactive = List.generate(15, (i) => i)
-        .where((i) => inactiveClasses.contains(i % 7)).toList();
+        .where((i) => inactiveClasses.contains(i % 8)).toList();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 0),
@@ -1622,24 +1653,26 @@ class _EditableTeamRoster extends StatefulWidget {
 class _EditableTeamRosterState extends State<_EditableTeamRoster> {
   final Set<int> _expanded = {};
 
-  static Color _classColor(int playerIdx) => switch (playerIdx % 7) {
+  static Color _classColor(int playerIdx) => switch (playerIdx % 8) {
     0 => const Color(0xFF44FFCC),
     1 => const Color(0xFFFF44AA),
     2 => const Color(0xFFFF5544),
     3 => const Color(0xFF4488FF),
     4 => const Color(0xFFFFCC44),
     5 => const Color(0xFFAA44FF),
-    _ => const Color(0xFFFF7700),
+    6 => const Color(0xFFFF7700),
+    _ => const Color(0xFF44DD88),
   };
 
-  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 7) {
+  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 8) {
     0 => PlayerClass.spectre,
     1 => PlayerClass.corsair,
     2 => PlayerClass.geomancer,
     3 => PlayerClass.archon,
     4 => PlayerClass.warden,
     5 => PlayerClass.trickster,
-    _ => PlayerClass.wrecker,
+    6 => PlayerClass.wrecker,
+    _ => PlayerClass.vitalist,
   };
 
   Widget _buildInfoPanel(int playerIdx) {
@@ -1748,8 +1781,8 @@ class _EditableTeamRosterState extends State<_EditableTeamRoster> {
 
   @override
   Widget build(BuildContext context) {
-    final activeOrder   = widget.order.where((i) => !widget.inactiveClasses.contains(i % 7)).toList();
-    final inactiveOrder = widget.order.where((i) =>  widget.inactiveClasses.contains(i % 7)).toList();
+    final activeOrder   = widget.order.where((i) => !widget.inactiveClasses.contains(i % 8)).toList();
+    final inactiveOrder = widget.order.where((i) =>  widget.inactiveClasses.contains(i % 8)).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1878,24 +1911,26 @@ class _ReadonlyTeamRoster extends StatefulWidget {
 class _ReadonlyTeamRosterState extends State<_ReadonlyTeamRoster> {
   final Set<int> _expanded = {};
 
-  static Color _classColor(int playerIdx) => switch (playerIdx % 7) {
+  static Color _classColor(int playerIdx) => switch (playerIdx % 8) {
     0 => const Color(0xFF44FFCC),
     1 => const Color(0xFFFF44AA),
     2 => const Color(0xFFFF5544),
     3 => const Color(0xFF4488FF),
     4 => const Color(0xFFFFCC44),
     5 => const Color(0xFFAA44FF),
-    _ => const Color(0xFFFF7700),
+    6 => const Color(0xFFFF7700),
+    _ => const Color(0xFF44DD88),
   };
 
-  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 7) {
+  static PlayerClass _playerClass(int playerIdx) => switch (playerIdx % 8) {
     0 => PlayerClass.spectre,
     1 => PlayerClass.corsair,
     2 => PlayerClass.geomancer,
     3 => PlayerClass.archon,
     4 => PlayerClass.warden,
     5 => PlayerClass.trickster,
-    _ => PlayerClass.wrecker,
+    6 => PlayerClass.wrecker,
+    _ => PlayerClass.vitalist,
   };
 
   Widget _buildInfoPanel(int playerIdx) {
@@ -2006,7 +2041,7 @@ class _ReadonlyTeamRosterState extends State<_ReadonlyTeamRoster> {
   Widget build(BuildContext context) {
     // Pre-pair each active slot with its display position so divider logic is correct
     final activeSlots = List.generate(15, (i) => i)
-        .where((i) => !widget.inactiveClasses.contains(i % 7)).toList();
+        .where((i) => !widget.inactiveClasses.contains(i % 8)).toList();
 
     final activeEntries = [
       for (int pos = 0; pos < activeSlots.length; pos++) (pos, activeSlots[pos]),
@@ -2115,6 +2150,7 @@ class _ClassesSection extends StatelessWidget {
     (PlayerClass.warden,   Color(0xFFFFCC44)),
     (PlayerClass.trickster, Color(0xFFAA44FF)),
     (PlayerClass.wrecker,  Color(0xFFFF7700)),
+    (PlayerClass.vitalist,  Color(0xFF44DD88)),
   ];
 
   @override

@@ -76,7 +76,7 @@ class PlayerMeshBuilder {
   }
 
   static CharacterRig buildCubeSelected(Team team, PlayerClass playerClass) {
-    final color = _classColorVec(playerClass);
+    final color = playerClass.meshColor;
     final mesh = _cache.putIfAbsent(
       'cube_selected_${playerClass.name}',
       () => Mesh.cube(size: 1.6, color: color),
@@ -90,23 +90,13 @@ class PlayerMeshBuilder {
     ]);
   }
 
-  static Vector3 _classColorVec(PlayerClass cls) => switch (cls) {
-    PlayerClass.spectre   => Vector3(0x44 / 255, 1.0,          0xCC / 255),
-    PlayerClass.corsair   => Vector3(1.0,         0x44 / 255,  0xAA / 255),
-    PlayerClass.geomancer => Vector3(1.0,         0x55 / 255,  0x44 / 255),
-    PlayerClass.archon    => Vector3(0x44 / 255,  0x88 / 255,  1.0        ),
-    PlayerClass.warden    => Vector3(1.0,         0xCC / 255,  0x44 / 255 ),
-    PlayerClass.trickster => Vector3(0xAA / 255,  0x44 / 255,  1.0        ),
-    PlayerClass.wrecker   => Vector3(1.0,         0x77 / 255,  0.0        ),
-  };
-
   static CharacterRig build(Team team, PlayerClass playerClass) {
     final t = team.name;
     final c = playerClass.name;
 
     final jersey = _jerseyColor(team, playerClass);
     final pants  = _pantsColor(team);
-    final helmet = _helmetColor(playerClass);
+    final helmet = playerClass.helmetColor;
     final skin   = Vector3(0.82, 0.62, 0.45);
     final boot   = Vector3(0.22, 0.22, 0.24);
 
@@ -173,7 +163,7 @@ class PlayerMeshBuilder {
 
   static Vector3 _jerseyColor(Team team, PlayerClass playerClass) {
     final base  = _teamPrimary(team);
-    final shift = _classJerseyShift(playerClass);
+    final shift = playerClass.jerseyShift;
     return Vector3(
       (base.x + shift.x).clamp(0.0, 1.0),
       (base.y + shift.y).clamp(0.0, 1.0),
@@ -181,26 +171,5 @@ class PlayerMeshBuilder {
     );
   }
 
-  // Subtle per-class jersey tint so classes are distinguishable on the same team
-  static Vector3 _classJerseyShift(PlayerClass cls) => switch (cls) {
-    PlayerClass.spectre   => Vector3( 0.00,  0.08, -0.05),  // brighter mid
-    PlayerClass.geomancer => Vector3(-0.05, -0.05,  0.00),  // slightly darker
-    PlayerClass.archon   => Vector3( 0.05,  0.05,  0.05),  // lighter
-    PlayerClass.warden  => Vector3(-0.02,  0.08,  0.04),  // cyan-ish
-    PlayerClass.corsair  => Vector3( 0.08, -0.02, -0.08),  // warmer
-    PlayerClass.trickster => Vector3(-0.10,  0.05,  0.15),  // TRICKSTER — purple shift
-    PlayerClass.wrecker  => Vector3( 0.15, -0.08, -0.10),  // WRECKER — deep red-orange shift
-  };
-
   static Vector3 _pantsColor(Team team) => _teamSecondary(team);
-
-  static Vector3 _helmetColor(PlayerClass cls) => switch (cls) {
-    PlayerClass.spectre   => Vector3(0.90, 0.75, 0.10),  // SPECTRE — gold
-    PlayerClass.corsair  => Vector3(0.90, 0.45, 0.08),  // CORSAIR — orange
-    PlayerClass.geomancer => Vector3(0.12, 0.45, 0.12),  // GEOMANCER — earthy green
-    PlayerClass.archon   => Vector3(0.78, 0.78, 0.80),  // ARCHON — silver
-    PlayerClass.warden  => Vector3(0.10, 0.80, 0.85),  // WARDEN — cyan
-    PlayerClass.trickster => Vector3(0.60, 0.10, 0.90),  // TRICKSTER — violet
-    PlayerClass.wrecker  => Vector3(0.85, 0.20, 0.02),  // WRECKER — crimson
-  };
 }

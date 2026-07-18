@@ -71,3 +71,70 @@ class TerrainGrid {
     }
   }
 }
+
+// ─── High-resolution elevation grid (hills + valleys) ────────────────────────
+
+const int    kElevCols  = kTerrainCols * 6; // 168
+const int    kElevRows  = kTerrainRows * 6; // 48
+const double kElevCellW = kCellW / 6;       // ~0.833 m
+const double kElevCellH = kCellH / 6;       // ~0.833 m
+
+class ElevCell {
+  double current = 0.0;
+  double target  = 0.0;
+  double timer   = 0.0; // counts down; when it hits 0, target reverts to 0
+}
+
+class ElevationGrid {
+  final List<List<ElevCell>> cells;
+
+  ElevationGrid()
+      : cells = List.generate(kElevCols,
+            (_) => List.generate(kElevRows, (_) => ElevCell()));
+
+  double heightAt(double worldX, double worldY) {
+    final col = (worldX / kElevCellW).floor().clamp(0, kElevCols - 1);
+    final row = (worldY / kElevCellH).floor().clamp(0, kElevRows - 1);
+    return cells[col][row].current;
+  }
+
+  void tick(double dt) {
+    for (int c = 0; c < kElevCols; c++) {
+      for (int r = 0; r < kElevRows; r++) {
+        final cell = cells[c][r];
+        if (cell.timer > 0) {
+          cell.timer -= dt;
+          if (cell.timer <= 0) {
+            cell.timer  = 0;
+            cell.target = 0.0;
+          }
+        }
+        final diff = cell.target - cell.current;
+        if (diff.abs() > 0.001) {
+          cell.current += diff * (3.0 * dt).clamp(0.0, 1.0);
+        } else {
+          cell.current = cell.target;
+        }
+      }
+    }
+  }
+
+  void clear() {
+    for (int c = 0; c < kElevCols; c++) {
+      for (int r = 0; r < kElevRows; r++) {
+        cells[c][r]
+          ..current = 0.0
+          ..target  = 0.0
+          ..timer   = 0.0;
+      }
+    }
+  }
+
+  void forEach(void Function(int col, int row, ElevCell cell) callback) {
+    for (int c = 0; c < kElevCols; c++) {
+      for (int r = 0; r < kElevRows; r++) {
+        callback(c, r, cells[c][r]);
+      }
+    }
+  }
+}

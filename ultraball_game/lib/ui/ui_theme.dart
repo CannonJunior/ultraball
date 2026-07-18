@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../models/player_class.dart';
 
 /// Singleton holding every visual token for Ultraball's UI.
 ///
@@ -38,6 +39,7 @@ class UiTheme {
   final Color classWardenColor;
   final Color classTricksterColor;
   final Color classWreckerColor;
+  final Color classVitalistColor;
 
   // ── Field / phase ──────────────────────────────────────────────────────────
   final Color phaseActiveColor;
@@ -90,6 +92,7 @@ class UiTheme {
     this.classWardenColor            = const Color(0xFFFFCC44),
     this.classTricksterColor         = const Color(0xFFAA44FF),
     this.classWreckerColor           = const Color(0xFFFF7700),
+    this.classVitalistColor          = const Color(0xFF44DD88),
     this.phaseActiveColor            = const Color(0xFF00FFFF),
     this.phaseInactiveColor          = const Color(0xFF333333),
     this.aliveColor                  = const Color(0xFF44FF88),
@@ -117,6 +120,17 @@ class UiTheme {
 
   Color get homeTeamDim => homeTeamColor.withValues(alpha: 0.6);
   Color get awayTeamDim => awayTeamColor.withValues(alpha: 0.6);
+
+  Color classColor(PlayerClass cls) => switch (cls) {
+    PlayerClass.spectre   => classSpectreColor,
+    PlayerClass.corsair   => classCorsairColor,
+    PlayerClass.geomancer => classGeomancerColor,
+    PlayerClass.archon    => classArchonColor,
+    PlayerClass.warden    => classWardenColor,
+    PlayerClass.trickster => classTricksterColor,
+    PlayerClass.wrecker   => classWreckerColor,
+    PlayerClass.vitalist  => classVitalistColor,
+  };
 
   static bool _loaded = false;
 
@@ -160,6 +174,7 @@ class UiTheme {
       classWardenColor:            _hex(c['classWarden'],    0xFFFFCC44),
       classTricksterColor:         _hex(c['classTrickster'], 0xFFAA44FF),
       classWreckerColor:           _hex(c['classWrecker'],  0xFFFF7700),
+      classVitalistColor:          _hex(c['classVitalist'], 0xFF44DD88),
       phaseActiveColor:            _hex(c['phaseActive'],    0xFF00FFFF),
       phaseInactiveColor:          _hex(c['phaseInactive'],  0xFF333333),
       aliveColor:                  _hex(c['alive'],          0xFF44FF88),

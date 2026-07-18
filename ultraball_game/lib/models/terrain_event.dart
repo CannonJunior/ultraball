@@ -33,6 +33,9 @@ class TerrainEvent {
   final double intensity;
   final double duration;
   final double? directionRad;
+  /// For riseMountain / sinkValley: fraction of radius that is flat plateau.
+  /// 0.0 = pure spike, 1.0 = fully flat. Default 0.28.
+  final double plateauFrac;
 
   const TerrainEvent({
     required this.type,
@@ -42,5 +45,6 @@ class TerrainEvent {
     this.intensity = 1.0,
     this.duration = 6.0,
     this.directionRad,
+    this.plateauFrac = 0.28,
   });
 }

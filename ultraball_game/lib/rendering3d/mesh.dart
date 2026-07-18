@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:vector_math/vector_math.dart';
 import 'dart:typed_data';
 
@@ -282,6 +283,43 @@ class Mesh {
     required double lineWidth,
     required Vector3 color,
   }) => _buildMeshTargetIndicator(size: size, lineWidth: lineWidth, color: color);
+
+  /// Flat unit disc (radius=1) in the XZ plane.  Scale via Transform3d to set world radius.
+  /// Double-sided: front (CCW from +Y) and back (CCW from -Y) so it renders
+  /// regardless of which side the camera sees — needed because the WebGL renderer
+  /// has GL_CULL_FACE / GL_BACK enabled.
+  factory Mesh.disc({int segments = 24, Vector3? color}) {
+    final col      = color ?? Vector3(1.0, 1.0, 1.0);
+    final numVerts = 1 + segments;
+    final verts    = Float32List(numVerts * 3);
+    final norms    = Float32List(numVerts * 3);
+    final cols     = Float32List(numVerts * 4);
+    final idx      = Uint16List(segments * 6); // 2 triangles per segment (both faces)
+
+    // Center vertex at index 0
+    cols[0] = col.x; cols[1] = col.y; cols[2] = col.z; cols[3] = 1.0;
+    norms[1] = 1.0; // normal points up (+Y)
+
+    for (int i = 0; i < segments; i++) {
+      final angle = i * 2.0 * math.pi / segments;
+      final vi = (i + 1) * 3;
+      verts[vi]     = math.cos(angle);
+      verts[vi + 1] = 0.0;
+      verts[vi + 2] = math.sin(angle);
+      norms[vi + 1] = 1.0;
+      final ci = (i + 1) * 4;
+      cols[ci] = col.x; cols[ci + 1] = col.y; cols[ci + 2] = col.z; cols[ci + 3] = 1.0;
+
+      final next = (i + 1) % segments + 1;
+      final ti = i * 6;
+      // Front face (CCW when viewed from +Y)
+      idx[ti]     = 0; idx[ti + 1] = i + 1; idx[ti + 2] = next;
+      // Back face (CCW when viewed from -Y — reversed winding)
+      idx[ti + 3] = 0; idx[ti + 4] = next;  idx[ti + 5] = i + 1;
+    }
+
+    return Mesh(vertices: verts, indices: idx, normals: norms, colors: cols);
+  }
 
   @override
   String toString() {

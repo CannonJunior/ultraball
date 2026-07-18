@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import '../../models/terrain_grid.dart';
 import '../../models/terrain_event.dart';
+import '../../models/fissure_event.dart';
 import '../../models/damage_indicator.dart';
 import '../../models/player.dart';
 import '../game_state.dart';
@@ -10,8 +11,15 @@ import 'act_system.dart';
 
 class TerrainSystem {
   static void update(GameState gs, double dt) {
+    gs.elevGrid.tick(dt);
     _tickCells(gs, dt);
+    _tickPitEffects(gs, dt);
     _applyTerrainEffectsToPlayers(gs, dt);
+  }
+
+  static void _tickPitEffects(GameState gs, double dt) {
+    for (final pit in gs.pitEffects) pit.age += dt;
+    gs.pitEffects.removeWhere((p) => p.isDone);
   }
 
   static void _tickCells(GameState gs, double dt) {
@@ -34,9 +42,17 @@ class TerrainSystem {
       if (p.isAirborne) { p.terrainSpeedMult = 1.0; continue; }
       final cell = gs.terrain.cellAt(p.x, p.y);
       p.terrainSpeedMult = cell.speedMult;
+      // Terrain elevation from fine grid (positive = hill, negative = valley)
+      p.terrainElevation = gs.elevGrid.heightAt(p.x, p.y);
+      if (!p.isAirborne && p.terrainElevation > 0.5) {
+        p.terrainSpeedMult *= math.max(0.5, 1.0 - p.terrainElevation * 0.08);
+      }
+      if (!p.isAirborne && p.terrainElevation < -0.5) {
+        p.terrainSpeedMult *= math.max(0.4, 1.0 + p.terrainElevation * 0.1);
+      }
 
-      // Pit: instant death for non-creature players
-      if (cell.isPit) {
+      // Pit: instant death unless a hill is present (elevation >= 1m lifts player over gap)
+      if (cell.isPit && p.terrainElevation < 1.0) {
         p.health = 0;
         p.isAlive = false;
         p.isOnField = false;
@@ -73,19 +89,47 @@ class TerrainSystem {
   static void applyEvent(GameState gs, TerrainEvent event) {
     switch (event.type) {
       case TerrainEventType.riseMountain:
-        for (final cell in gs.terrain.cellsInRadius(event.worldX, event.worldY, event.radius)) {
-          cell.targetHeight = event.intensity * 4.0;
-          cell.hazardTimer  = event.duration;
-          cell.lerpSpeed    = 3.0;
+        final maxH      = event.intensity * 4.0;
+        final plateauR  = event.radius * event.plateauFrac;
+        final slopeSpan = event.radius - plateauR;
+        final noiseAmp  = maxH * 0.15;
+        final colMin = ((event.worldX - event.radius) / kElevCellW).floor().clamp(0, kElevCols - 1);
+        final colMax = ((event.worldX + event.radius) / kElevCellW).floor().clamp(0, kElevCols - 1);
+        final rowMin = ((event.worldY - event.radius) / kElevCellH).floor().clamp(0, kElevRows - 1);
+        final rowMax = ((event.worldY + event.radius) / kElevCellH).floor().clamp(0, kElevRows - 1);
+        for (int col = colMin; col <= colMax; col++) {
+          for (int row = rowMin; row <= rowMax; row++) {
+            final cellCx = (col + 0.5) * kElevCellW;
+            final cellCy = (row + 0.5) * kElevCellH;
+            final dx = cellCx - event.worldX;
+            final dy = cellCy - event.worldY;
+            final d  = math.sqrt(dx * dx + dy * dy);
+            if (d > event.radius) continue;
+            final h = d <= plateauR
+                ? maxH
+                : maxH * (1.0 - (d - plateauR) / slopeSpan);
+            // Per-cell hash noise for natural variation (breaks up uniform rings)
+            final hash = ((col * 1013904223) ^ (row * 1664525)) & 0x7FFFFFFF;
+            final noise = ((hash % 10000) / 10000.0 * 2.0 - 1.0) * noiseAmp;
+            final ec = gs.elevGrid.cells[col][row];
+            ec.target  = (h + noise).clamp(0.0, maxH);
+            ec.current = ec.target * 0.5;
+            ec.timer   = event.duration;
+          }
         }
 
       case TerrainEventType.openPit:
         for (final cell in gs.terrain.cellsInRadius(event.worldX, event.worldY, event.radius)) {
           cell.isPit        = true;
+          cell.height       = -2.0;
           cell.targetHeight = -3.0;
           cell.hazardTimer  = event.duration;
           cell.lerpSpeed    = 5.0;
         }
+        gs.pitEffects.add(PitEffect(
+          worldX: event.worldX, worldY: event.worldY,
+          radius: event.radius, duration: event.duration,
+        ));
 
       case TerrainEventType.closePit:
         for (final cell in gs.terrain.cellsInRadius(event.worldX, event.worldY, event.radius)) {
@@ -104,10 +148,32 @@ class TerrainSystem {
         }
 
       case TerrainEventType.sinkValley:
-        for (final cell in gs.terrain.cellsInRadius(event.worldX, event.worldY, event.radius)) {
-          cell.targetHeight = -event.intensity * 2.0;
-          cell.hazardTimer  = event.duration;
-          cell.lerpSpeed    = 2.0;
+        final maxDepth  = -event.intensity * 4.0; // negative
+        final plateauR  = event.radius * event.plateauFrac;
+        final slopeSpan = event.radius - plateauR;
+        final noiseAmp  = maxDepth.abs() * 0.15;
+        final colMinV = ((event.worldX - event.radius) / kElevCellW).floor().clamp(0, kElevCols - 1);
+        final colMaxV = ((event.worldX + event.radius) / kElevCellW).floor().clamp(0, kElevCols - 1);
+        final rowMinV = ((event.worldY - event.radius) / kElevCellH).floor().clamp(0, kElevRows - 1);
+        final rowMaxV = ((event.worldY + event.radius) / kElevCellH).floor().clamp(0, kElevRows - 1);
+        for (int col = colMinV; col <= colMaxV; col++) {
+          for (int row = rowMinV; row <= rowMaxV; row++) {
+            final cellCx = (col + 0.5) * kElevCellW;
+            final cellCy = (row + 0.5) * kElevCellH;
+            final dx = cellCx - event.worldX;
+            final dy = cellCy - event.worldY;
+            final d  = math.sqrt(dx * dx + dy * dy);
+            if (d > event.radius) continue;
+            final h = d <= plateauR
+                ? maxDepth
+                : maxDepth * (1.0 - (d - plateauR) / slopeSpan);
+            final hash = ((col * 1013904223) ^ (row * 1664525)) & 0x7FFFFFFF;
+            final noise = ((hash % 10000) / 10000.0 * 2.0 - 1.0) * noiseAmp;
+            final ec = gs.elevGrid.cells[col][row];
+            ec.target  = (h + noise).clamp(maxDepth, 0.0);
+            ec.current = ec.target * 0.5;
+            ec.timer   = event.duration;
+          }
         }
 
       case TerrainEventType.lavaPool:

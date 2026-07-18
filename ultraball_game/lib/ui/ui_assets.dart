@@ -75,18 +75,7 @@ class UiAssets {
 
   // ── Color lookups (mirrors UiTheme for convenience) ───────────────────────
 
-  static Color classColor(PlayerClass cls) {
-    final t = UiTheme.instance;
-    return switch (cls) {
-      PlayerClass.spectre   => t.classSpectreColor,
-      PlayerClass.corsair   => t.classCorsairColor,
-      PlayerClass.geomancer => t.classGeomancerColor,
-      PlayerClass.archon    => t.classArchonColor,
-      PlayerClass.warden    => t.classWardenColor,
-      PlayerClass.trickster => t.classTricksterColor,
-      PlayerClass.wrecker   => t.classWreckerColor,
-    };
-  }
+  static Color classColor(PlayerClass cls) => UiTheme.instance.classColor(cls);
 
   static Color _scoreColor(String type) {
     final t = UiTheme.instance;

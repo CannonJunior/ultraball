@@ -11,6 +11,9 @@ const _kGold  = Color(0xFFFFCB3D);
 const _kCyan  = Color(0xFF19E3E3);
 const _kBg    = Color(0xFF04050A);
 
+// Fixed scoreboard height — matches 2-team layout: _MainBar(110) + _BallDivider(32) + _PlayerCardsRow(55).
+const double _kScoreboardHeight = 197.0;
+
 // ── Ball color (matches field_painter charge color logic) ─────────────────────
 Color _ballColor(double chargePercent) {
   if (chargePercent < 0.5) {
@@ -985,7 +988,8 @@ class _ThreeTeamLayout extends StatelessWidget {
         : timerSecs <= 60 ? const Color(0xFFFFAA00)
         : _kCyan;
 
-    return IntrinsicHeight(
+    return SizedBox(
+      height: _kScoreboardHeight,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1291,9 +1295,10 @@ class _TeamPanel3T extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 5),
-          // Unit cards
-          Row(
-            mainAxisSize: MainAxisSize.min,
+          // Unit cards — Wrap prevents horizontal overflow on narrow panels
+          Wrap(
+            spacing: 2,
+            runSpacing: 2,
             children: players.map((p) => _UnitCard3T(
               player:    p,
               teamColor: color,

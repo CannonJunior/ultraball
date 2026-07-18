@@ -8,6 +8,7 @@ import '../models/damage_indicator.dart';
 import '../models/game_settings.dart';
 import '../models/terrain_grid.dart';
 import 'game_state.dart';
+import '../models/fissure_event.dart';
 import 'camera_3d.dart';
 import '../game3d/ultraball_render_system.dart';
 import '../ui/ui_assets.dart';
@@ -35,6 +36,12 @@ class FieldPainter extends CustomPainter {
   // Set by GameWidget after renderer init (full3D mode only)
   UltraballRenderSystem? renderSystem;
 
+  /// Full browser window size — set by GameWidget._computeLayout.
+  /// The WebGL camera covers the entire window; overlay drawing (arc preview,
+  /// damage indicators, player targeting) must account for the scoreboard
+  /// offset so projected coordinates align with the game canvas.
+  Size windowSize = Size.zero;
+
   FieldPainter({required this.gs, required Listenable repaint})
       : super(repaint: repaint);
 
@@ -44,15 +51,31 @@ class FieldPainter extends CustomPainter {
   double sm(double m) => m * scale;
   Offset toScreen(double x, double y) => Offset(sx(x), sy(y));
 
+  /// Projects [worldPos] into game-canvas space using the full-3D render system.
+  /// Passes the full window size to [rs.project] (matching the WebGL camera's
+  /// aspect ratio) then subtracts the scoreboard height so the result is in
+  /// canvas-local coordinates.
+  Offset? _projectFull3D(
+      UltraballRenderSystem rs, Vector3 worldPos, Size canvasSize) {
+    final ws = windowSize != Size.zero ? windowSize : canvasSize;
+    final projected = rs.project(worldPos, ws);
+    if (projected == null) return null;
+    final scoreboardH = ws.height - canvasSize.height;
+    return Offset(projected.dx, projected.dy - scoreboardH);
+  }
+
   Offset? projectPlayer(UltraballPlayer p, Size canvasSize) {
     switch (viewMode) {
       case ViewMode.flat:
         return Offset(sx(p.x), sy(p.y));
       case ViewMode.threeQuarter:
         _camera3D.update(canvasSize);
-        return _camera3D.project(p.x, p.y, p.zHeight * 1.2);
+        return _camera3D.project(p.x, p.y, math.max(0.0, p.totalElevation) * 1.2);
       case ViewMode.full3D:
-        return renderSystem?.project(Vector3(p.x, p.zHeight, p.y), canvasSize);
+        final rs = renderSystem;
+        if (rs == null || !rs.ready) return null;
+        // Project mid-body (~0.9 units up) so click target matches the visible mesh.
+        return _projectFull3D(rs, Vector3(p.x, math.max(0.0, p.totalElevation) + 0.9, p.y), canvasSize);
     }
   }
 
@@ -334,7 +357,12 @@ class FieldPainter extends CustomPainter {
     // 11b. Terrain aim reticle
     _drawTerrainAimReticle(canvas);
 
-    // 11c. Ability range circle (hovered icon)
+    // 11c. Fissure aim preview, in-flight projectiles, and ground warnings
+    _drawFissureAimPreview(canvas);
+    _drawFissureWarnings(canvas);
+    _drawFissureProjectiles(canvas);
+
+    // 11d. Ability range circle (hovered icon)
     _drawAbilityRangeCircle(canvas);
 
     // 12. Ball
@@ -512,7 +540,7 @@ class FieldPainter extends CustomPainter {
       }
       final isTarget = p.id == gs.currentTargetId;
       if (isTarget) {
-        _sp.color = const Color(0xFFFF6B6B).withValues(alpha: 0.92);
+        _sp.color = _targetRingColor(p).withValues(alpha: 0.92);
         _sp.strokeWidth = sm(0.3);
         canvas.drawCircle(pos, r + sm(0.9), _sp);
       }
@@ -574,10 +602,10 @@ class FieldPainter extends CustomPainter {
 
   void _drawTerrainOverlay(Canvas canvas) {
     final t       = gs.matchTimeElapsed;
-    final terrain = gs.terrain.cells;
 
     gs.terrain.forEach((col, row, cell) {
-      if (cell.surface == SurfaceType.normal && !cell.isPit &&
+      if (cell.isPit) return; // pits drawn as circles via _drawPitCircles2D
+      if (cell.surface == SurfaceType.normal &&
           cell.height.abs() < 0.05 && cell.targetHeight.abs() < 0.05) return;
 
       final wx   = col * kCellW;
@@ -588,26 +616,85 @@ class FieldPainter extends CustomPainter {
       final cw   = rect.width;
       final ch   = rect.height;
 
-      if (cell.isPit) {
-        _drawPitCell(canvas, rect, cx, cy, cw, ch, cell, col, row, terrain, t);
-      } else if (cell.surface == SurfaceType.lava) {
+      if (cell.surface == SurfaceType.lava) {
         _drawLavaCell(canvas, rect, cx, cy, cw, ch, t);
       } else if (cell.surface == SurfaceType.ice) {
         _drawIceCell(canvas, rect, cw, ch, col, row, t);
       } else if (cell.surface == SurfaceType.mud) {
         _drawMudCell(canvas, rect, cx, cy, cw, ch, col, row, t);
-      } else if (cell.height > 0.5) {
-        _drawHillCell(canvas, rect, cx, cy, cw, ch, cell);
       } else if (cell.height < -0.5) {
         _drawValleyCell(canvas, rect, cx, cy, cw, ch, cell);
       }
     });
+    // Pits are circles, not grid squares — draw using world-space PitEffects
+    _drawPitCircles2D(canvas, gs.matchTimeElapsed);
+    _drawValleyCells2D(canvas);
+    _drawHillCells2D(canvas);
+  }
+
+  void _drawValleyCells2D(Canvas canvas) {
+    gs.elevGrid.forEach((col, row, elev) {
+      if (elev.current >= -0.5) return;
+      final wx   = col * kElevCellW;
+      final wy   = row * kElevCellH;
+      final rect = Rect.fromLTWH(sx(wx), sy(wy), sm(kElevCellW), sm(kElevCellH));
+      _drawValleyElevCell(canvas, rect, rect.center.dx, rect.center.dy,
+          rect.width, rect.height, elev.current);
+    });
+  }
+
+  void _drawHillCells2D(Canvas canvas) {
+    gs.elevGrid.forEach((col, row, elev) {
+      if (elev.current <= 0.5) return;
+      final wx   = col * kElevCellW;
+      final wy   = row * kElevCellH;
+      final rect = Rect.fromLTWH(sx(wx), sy(wy), sm(kElevCellW), sm(kElevCellH));
+      _drawHillCell(canvas, rect, rect.center.dx, rect.center.dy,
+          rect.width, rect.height, elev.current);
+    });
+  }
+
+  void _drawPitCircles2D(Canvas canvas, double t) {
+    if (gs.pitEffects.isEmpty) return;
+    for (final pit in gs.pitEffects) {
+      final depth = pit.depth;
+      final cx = sx(pit.worldX);
+      final cy = sy(pit.worldY);
+      final r  = sm(pit.radius);
+
+      _fp.color = Color.fromARGB((185 * depth).toInt(), 30, 18, 38);
+      canvas.drawCircle(Offset(cx, cy), r, _fp);
+      _fp.color = Color.fromARGB((215 * depth).toInt(), 12, 6, 20);
+      canvas.drawCircle(Offset(cx, cy), r * 0.67, _fp);
+      _fp.color = Color.fromARGB((245 * depth).toInt(), 3, 0, 8);
+      canvas.drawCircle(Offset(cx, cy), r * 0.38, _fp);
+
+      if (depth > 0.65) {
+        final pulse = (math.sin(t * 2.8) * 0.5 + 0.5) * ((depth - 0.65) / 0.35);
+        _fp.color = Color.fromARGB((60 * pulse).toInt(), 120, 0, 200);
+        canvas.drawCircle(Offset(cx, cy), r, _fp);
+        final shimmer = (math.sin(t * 5.1 + cx * 0.3) * 0.5 + 0.5) * ((depth - 0.65) / 0.35);
+        _fp.color = Color.fromARGB((35 * shimmer).toInt(), 220, 0, 60);
+        canvas.drawCircle(Offset(cx, cy), r, _fp);
+      }
+
+      if (depth > 0.08) {
+        final pulse = math.sin(t * 3.5) * 0.5 + 0.5;
+        final alpha = ((depth - 0.08) / 0.92 * (0.5 + pulse * 0.5) * 200).toInt().clamp(0, 200);
+        _sp
+          ..color       = Color.fromARGB(alpha, 255, 40, 0)
+          ..strokeWidth = (sm(0.18) + pulse * sm(0.1)).clamp(1.0, 4.0)
+          ..strokeCap   = StrokeCap.butt;
+        canvas.drawCircle(Offset(cx, cy), r, _sp);
+      }
+    }
   }
 
   void _drawTerrainOverlay3D(Canvas canvas) {
     final t = gs.matchTimeElapsed;
     gs.terrain.forEach((col, row, cell) {
-      if (cell.surface == SurfaceType.normal && !cell.isPit &&
+      if (cell.isPit) return; // pits drawn as ellipses via _drawPitCircles3D
+      if (cell.surface == SurfaceType.normal &&
           cell.height.abs() < 0.05 && cell.targetHeight.abs() < 0.05) return;
 
       final x0 = col * kCellW;
@@ -615,22 +702,7 @@ class FieldPainter extends CustomPainter {
       final x1 = x0 + kCellW;
       final y1 = y0 + kCellH;
 
-      if (cell.isPit) {
-        final depth = (-cell.height / 3.0).clamp(0.0, 1.0);
-        _fp.color = Color.fromARGB((185 * depth).toInt(), 30, 18, 38);
-        _draw3DQuad(canvas, x0, y0, x1, y1, _fp);
-        final ix = kCellW * 0.18; final iy = kCellH * 0.18;
-        _fp.color = Color.fromARGB((215 * depth).toInt(), 12, 6, 20);
-        _draw3DQuad(canvas, x0 + ix, y0 + iy, x1 - ix, y1 - iy, _fp);
-        final ix2 = kCellW * 0.38; final iy2 = kCellH * 0.38;
-        _fp.color = Color.fromARGB((245 * depth).toInt(), 3, 0, 8);
-        _draw3DQuad(canvas, x0 + ix2, y0 + iy2, x1 - ix2, y1 - iy2, _fp);
-        if (depth > 0.65) {
-          final pulse = (math.sin(t * 2.8) * 0.5 + 0.5) * ((depth - 0.65) / 0.35);
-          _fp.color = Color.fromARGB((50 * pulse).toInt(), 100, 0, 180);
-          _draw3DQuad(canvas, x0, y0, x1, y1, _fp);
-        }
-      } else if (cell.surface == SurfaceType.lava) {
+      if (cell.surface == SurfaceType.lava) {
         _fp.color = const Color(0xD9FF3300);
         _draw3DQuad(canvas, x0, y0, x1, y1, _fp);
         final b1 = math.sin(t * 2.3 + x0 * 0.07 + y0 * 0.11) * 0.5 + 0.5;
@@ -643,12 +715,86 @@ class FieldPainter extends CustomPainter {
       } else if (cell.surface == SurfaceType.mud) {
         _fp.color = const Color(0xCC5C3A1A);
         _draw3DQuad(canvas, x0, y0, x1, y1, _fp);
-      } else if (cell.height > 0.5) {
-        final h = cell.height;
-        _fp.color = Color.fromARGB(180, (30 + h * 8).toInt().clamp(0, 255), 100, 20);
-        _draw3DQuadAtZ(canvas, x0, y0, x1, y1, h, _fp);
       }
     });
+    // Pits as projected ellipses using world-space PitEffects
+    _drawPitCircles3D(canvas, gs.matchTimeElapsed);
+    _drawValleyCells3D(canvas);
+    _drawHillCells3D(canvas);
+  }
+
+  void _drawValleyCells3D(Canvas canvas) {
+    gs.elevGrid.forEach((col, row, elev) {
+      if (elev.current >= -0.5) return;
+      final depth = -elev.current; // positive depth value
+      final t     = (depth / 4.0).clamp(0.0, 1.0);
+      final x0 = col * kElevCellW;
+      final y0 = row * kElevCellH;
+      final x1 = x0 + kElevCellW;
+      final y1 = y0 + kElevCellH;
+      _fp.color = Color.fromARGB((120 + (t * 100).toInt()).clamp(0, 220), 10, 5, 25);
+      _draw3DQuadAtZ(canvas, x0, y0, x1, y1, 0.0, _fp);
+    });
+  }
+
+  void _drawHillCells3D(Canvas canvas) {
+    gs.elevGrid.forEach((col, row, elev) {
+      if (elev.current <= 0.5) return;
+      final h  = elev.current;
+      final x0 = col * kElevCellW;
+      final y0 = row * kElevCellH;
+      final x1 = x0 + kElevCellW;
+      final y1 = y0 + kElevCellH;
+      _fp.color = Color.fromARGB(180, (30 + h * 8).toInt().clamp(0, 255), 100, 20);
+      _draw3DQuadAtZ(canvas, x0, y0, x1, y1, h, _fp);
+    });
+  }
+
+  void _drawPitCircles3D(Canvas canvas, double t) {
+    if (gs.pitEffects.isEmpty) return;
+    const seg = 24;
+    for (final pit in gs.pitEffects) {
+      final depth = pit.depth;
+
+      void projectCircle(double radius, Paint paint) {
+        bool started = false;
+        _path.reset();
+        for (int i = 0; i <= seg; i++) {
+          final angle = i * 2.0 * math.pi / seg;
+          final px = pit.worldX + math.cos(angle) * radius;
+          final py = pit.worldY + math.sin(angle) * radius;
+          final proj = _camera3D.project(px, py, 0);
+          if (proj == null) continue;
+          if (!started) { _path.moveTo(proj.dx, proj.dy); started = true; }
+          else _path.lineTo(proj.dx, proj.dy);
+        }
+        _path.close();
+        canvas.drawPath(_path, paint);
+      }
+
+      _fp.color = Color.fromARGB((185 * depth).toInt(), 30, 18, 38);
+      projectCircle(pit.radius, _fp);
+      _fp.color = Color.fromARGB((215 * depth).toInt(), 12, 6, 20);
+      projectCircle(pit.radius * 0.67, _fp);
+      _fp.color = Color.fromARGB((245 * depth).toInt(), 3, 0, 8);
+      projectCircle(pit.radius * 0.38, _fp);
+
+      if (depth > 0.65) {
+        final pulse = (math.sin(t * 2.8) * 0.5 + 0.5) * ((depth - 0.65) / 0.35);
+        _fp.color = Color.fromARGB((60 * pulse).toInt(), 120, 0, 200);
+        projectCircle(pit.radius, _fp);
+      }
+
+      if (depth > 0.08) {
+        final pulse = math.sin(t * 3.5) * 0.5 + 0.5;
+        final alpha = ((depth - 0.08) / 0.92 * (0.5 + pulse * 0.5) * 200).toInt().clamp(0, 200);
+        _sp
+          ..color       = Color.fromARGB(alpha, 255, 40, 0)
+          ..strokeWidth = (sm(0.18) + pulse * sm(0.1)).clamp(1.0, 4.0)
+          ..strokeCap   = StrokeCap.butt;
+        projectCircle(pit.radius, _sp);
+      }
+    }
   }
 
   // ── Pit / Sinkhole ─────────────────────────────────────────────────────────
@@ -675,7 +821,11 @@ class FieldPainter extends CustomPainter {
     // Pulsing purple void glow on fully-open pits
     if (depth > 0.65) {
       final pulse = (math.sin(t * 2.8) * 0.5 + 0.5) * ((depth - 0.65) / 0.35);
-      _fp.color = Color.fromARGB((50 * pulse).toInt(), 100, 0, 180);
+      _fp.color = Color.fromARGB((60 * pulse).toInt(), 120, 0, 200);
+      canvas.drawRect(rect, _fp);
+      // Extra red danger shimmer — signals instant death
+      final shimmer = (math.sin(t * 5.1 + cx * 0.3) * 0.5 + 0.5) * ((depth - 0.65) / 0.35);
+      _fp.color = Color.fromARGB((35 * shimmer).toInt(), 220, 0, 60);
       canvas.drawRect(rect, _fp);
     }
 
@@ -698,9 +848,9 @@ class FieldPainter extends CustomPainter {
           final angle = math.atan2(cy - ey, cx - ex) +
               ((kseed + k * 7) % 9 - 4) * 0.18;
           final len   = (cw * 0.14 + (kseed % 7) * cw * 0.028) * depth;
+          // Outer crack: vivid orange-red so the danger zone reads clearly
           _sp.color = Color.fromARGB(
-              (190 * depth).toInt(),
-              130 + (kseed * 3 % 40), 80 + (kseed % 28), 40);
+              (200 * depth).toInt(), 220, 80 + (kseed % 30), 10);
           canvas.drawLine(
               Offset(ex, ey),
               Offset(ex + math.cos(angle) * len, ey + math.sin(angle) * len),
@@ -712,7 +862,7 @@ class FieldPainter extends CustomPainter {
             final midX   = ex + math.cos(angle) * len * 0.5;
             final midY   = ey + math.sin(angle) * len * 0.5;
             _sp.color = Color.fromARGB(
-                (130 * depth).toInt(), 110, 70, 35);
+                (140 * depth).toInt(), 180, 60, 20);
             canvas.drawLine(Offset(midX, midY),
                 Offset(midX + math.cos(angle2) * len2,
                        midY + math.sin(angle2) * len2), _sp);
@@ -855,8 +1005,8 @@ class FieldPainter extends CustomPainter {
   // ── Hill / Raised Terrain ──────────────────────────────────────────────────
 
   void _drawHillCell(Canvas canvas, Rect rect, double cx, double cy,
-      double cw, double ch, TerrainCell cell) {
-    final t = (cell.height / 4.0).clamp(0.0, 1.0);
+      double cw, double ch, double height) {
+    final t = (height / 4.0).clamp(0.0, 1.0);
 
     // Base green fill (stronger with height)
     _fp.color = Color.fromARGB((80 + (t * 140).toInt()), 60, 170, 50);
@@ -877,7 +1027,7 @@ class FieldPainter extends CustomPainter {
     // Contour lines (one per meter of height, max 3 visible)
     _sp.color = Color.fromARGB((70 + (t * 60).toInt()), 30, 120, 20);
     _sp.strokeWidth = (sm(0.15)).clamp(0.7, 2.0);
-    final levels = cell.height.floor().clamp(1, 3);
+    final levels = height.floor().clamp(1, 3);
     for (int i = 1; i <= levels; i++) {
       final f = 1.0 - (i / 4.0);
       canvas.drawRect(
@@ -889,6 +1039,28 @@ class FieldPainter extends CustomPainter {
   }
 
   // ── Valley / Sinkhole Depression ───────────────────────────────────────────
+
+  void _drawValleyElevCell(Canvas canvas, Rect rect, double cx, double cy,
+      double cw, double ch, double height) {
+    final t = (-height / 4.0).clamp(0.0, 1.0);
+
+    _fp.color = Color.fromARGB((100 + (t * 120).toInt()), 8, 5, 20);
+    canvas.drawRect(rect, _fp);
+
+    _fp.color = Color.fromARGB((30 + (t * 40).toInt()), 50, 30, 70);
+    canvas.drawRect(Rect.fromLTRB(
+        rect.left + cw * 0.2, rect.top + ch * 0.2,
+        rect.right - cw * 0.2, rect.bottom - ch * 0.2), _fp);
+
+    _fp.color = Color.fromARGB((150 + (t * 80).toInt()), 3, 1, 10);
+    canvas.drawOval(
+        Rect.fromCenter(center: Offset(cx, cy), width: cw * 0.45, height: ch * 0.45),
+        _fp);
+
+    _sp.color = Color.fromARGB((60 + (t * 50).toInt()), 55, 35, 80);
+    _sp.strokeWidth = (sm(0.15)).clamp(0.6, 1.5);
+    canvas.drawRect(rect, _sp);
+  }
 
   void _drawValleyCell(Canvas canvas, Rect rect, double cx, double cy,
       double cw, double ch, TerrainCell cell) {
@@ -958,12 +1130,15 @@ class FieldPainter extends CustomPainter {
     final isPit      = eventType?.name == 'openPit';
     final isFissure  = eventType?.name == 'fissure';
     final isHill     = eventType?.name == 'riseMountain';
+    final isValley   = eventType?.name == 'sinkValley';
 
     final color = isPit || isFissure
         ? const Color(0xCCFF2200)
         : isHill
             ? const Color(0xAA44FF88)
-            : const Color(0xAAFFCC00);
+            : isValley
+                ? const Color(0xAA8855DD)
+                : const Color(0xAAFFCC00);
 
     final px = sx(player.x);
     final py = sy(player.y);
@@ -1007,7 +1182,7 @@ class FieldPainter extends CustomPainter {
           .clamp(0.0, fieldMaxX);
       final ty = (player.y + math.sin(player.facing) * GameState.terrainAimRange)
           .clamp(0.0, fieldMaxY);
-      final radius = sm(isPit ? 4.0 : 5.0);
+      final radius = sm(isPit ? 4.0 : (isHill || isValley) ? 9.0 : 5.0);
 
       // Outer reticle circle
       _sp.color = color;
@@ -1609,7 +1784,7 @@ class FieldPainter extends CustomPainter {
     if (isTarget) {
       final ts = gs.prefs.targetIndicatorSize;
       _gp
-        ..color = const Color(0xFFFF3333).withValues(alpha: 0.32)
+        ..color = _targetRingColor(p).withValues(alpha: 0.32)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
       canvas.drawCircle(pos, r + sm(1.2) * ts, _gp);
       _gp.maskFilter = null;
@@ -1669,14 +1844,16 @@ class FieldPainter extends CustomPainter {
     // (mirrors how _draw3DPlayer works; fixes visibility on same-colour bodies)
     if (isTarget) {
       final ts = gs.prefs.targetIndicatorSize;
+      final tc = _targetRingColor(p);
       _sp
-        ..color = const Color(0xFFFF6B6B).withValues(alpha: 0.92)
+        ..color = tc.withValues(alpha: 0.92)
         ..strokeWidth = sm(0.3) * ts;
       canvas.drawCircle(pos, r + sm(0.9) * ts, _sp);
       _sp
-        ..color = const Color(0xFFFF6B6B).withValues(alpha: 0.5)
+        ..color = tc.withValues(alpha: 0.5)
         ..strokeWidth = sm(0.14) * ts;
       canvas.drawCircle(pos, r + sm(1.5) * ts, _sp);
+      _targetTriPaint.color = tc.withValues(alpha: 0.9);
       _drawTargetTriangles(canvas, pos, r + sm(1.8) * ts, ts);
     }
     if (p.isSelected) {
@@ -1717,6 +1894,9 @@ class FieldPainter extends CustomPainter {
       ..close();
     canvas.drawPath(_path, _facingPaint);
   }
+
+  Color _targetRingColor(UltraballPlayer p) =>
+      p.team == Team.player ? const Color(0xFF33EE66) : const Color(0xFFFF6B6B);
 
   void _drawTargetTriangles(Canvas canvas, Offset center, double radius, [double scale = 1.0]) {
     final size = 5.0 * scale;
@@ -1926,6 +2106,12 @@ class FieldPainter extends CustomPainter {
     }
     // WebGL draw calls go to the body-appended canvas (not this Flutter canvas).
     rs.render(gs, size);
+    // Throw arc preview projected via WebGL camera into the Flutter canvas overlay.
+    _drawFull3DThrowArcPreview(canvas, size, rs);
+    // Fissure overlays projected via WebGL camera.
+    _drawFull3DFissureAimPreview(canvas, size, rs);
+    _drawFull3DFissureWarnings(canvas, size, rs);
+    _drawFull3DFissureProjectiles(canvas, size, rs);
     // 2D damage indicators float up from their world positions.
     if (gs.prefs.showDamageIndicators) _drawDamageIndicators3D(canvas, size, rs);
     _drawAbilityQueueOverlay(canvas, size);
@@ -1939,7 +2125,8 @@ class FieldPainter extends CustomPainter {
       // Ease-out rise: 3 world units total, decelerating.
       final easedProgress = 1.0 - math.pow(1.0 - ind.progress, 2.0) as double;
       // xJitter is in screen pixels — apply it after projection.
-      final projected = rs.project(
+      final projected = _projectFull3D(
+        rs,
         Vector3(ind.worldX, easedProgress * 3.0, ind.worldY),
         size,
       );
@@ -2032,6 +2219,9 @@ class FieldPainter extends CustomPainter {
     _drawTerrainOverlay3D(canvas);
     _draw3DEntities(canvas);
     _draw3DThrowArcPreview(canvas);
+    _draw3DFissureAimPreview(canvas);
+    _draw3DFissureWarnings(canvas);
+    _draw3DFissureProjectiles(canvas);
     if (gs.prefs.showDamageIndicators) _drawDamageIndicators(canvas);
     _drawAbilityQueueOverlay(canvas, size);
   }
@@ -2105,6 +2295,536 @@ class FieldPainter extends CustomPainter {
 
       final distTp = _getDistTp(dist);
       distTp.paint(canvas, Offset(landPos.dx - distTp.width / 2, landPos.dy + xs + 2));
+    }
+  }
+
+  /// Throw arc preview for full-3D (WebGL) mode — same physics as
+  /// [_draw3DThrowArcPreview] but projects via the WebGL camera.
+  void _drawFull3DThrowArcPreview(
+      Canvas canvas, Size size, UltraballRenderSystem rs) {
+    final player = gs.selectedPlayer;
+    if (player == null || !player.isChargingThrow) return;
+    if (gs.ball.holderId != player.id) return;
+
+    const hSpeed  = 20.0;
+    const gravity = 20.0;
+    const zScale  = 1.2; // matches entity lift in render system
+    final dist       = player.throwDistance;
+    final flightTime = dist / hSpeed;
+    final initVZ     = 0.5 * gravity * flightTime;
+    const steps      = 24;
+
+    _sp
+      ..color       = const Color(0xBFFFDD00)
+      ..strokeWidth = 2.0
+      ..strokeCap   = StrokeCap.round;
+
+    Offset? prevArc;
+    Offset? prevGround;
+
+    for (int i = 1; i <= steps; i++) {
+      final t     = (i / steps) * flightTime;
+      final tPrev = ((i - 1) / steps) * flightTime;
+
+      final wx = player.x + math.cos(player.facing) * hSpeed * t;
+      final wy = player.y + math.sin(player.facing) * hSpeed * t;
+      final wz = (initVZ * t - 0.5 * gravity * t * t).clamp(0.0, double.infinity);
+
+      final wxPrev = player.x + math.cos(player.facing) * hSpeed * tPrev;
+      final wyPrev = player.y + math.sin(player.facing) * hSpeed * tPrev;
+      final wzPrev = (initVZ * tPrev - 0.5 * gravity * tPrev * tPrev)
+          .clamp(0.0, double.infinity);
+
+      // Render system coords: Vector3(gameX, altitude, gameY)
+      final arcPos     = _projectFull3D(rs, Vector3(wx,     wz * zScale,     wy),     size);
+      final groundPos  = _projectFull3D(rs, Vector3(wx,     0.0,             wy),     size);
+      final arcPosPrev = prevArc    ??
+          _projectFull3D(rs, Vector3(wxPrev, wzPrev * zScale, wyPrev), size);
+      final gndPosPrev = prevGround ??
+          _projectFull3D(rs, Vector3(wxPrev, 0.0,             wyPrev), size);
+
+      if (arcPos != null && arcPosPrev != null && i % 2 == 0) {
+        canvas.drawLine(arcPosPrev, arcPos, _sp);
+      }
+      if (groundPos != null && gndPosPrev != null && i % 2 == 0) {
+        canvas.drawLine(gndPosPrev, groundPos, _arcShadowPaint);
+      }
+      if (arcPos != null && i % 6 == 0) {
+        canvas.drawCircle(arcPos, 3.0, _arcDotPaint);
+      }
+
+      prevArc    = arcPos;
+      prevGround = groundPos;
+    }
+
+    // Landing X marker
+    final landWx  = player.x + math.cos(player.facing) * dist;
+    final landWy  = player.y + math.sin(player.facing) * dist;
+    final landPos = _projectFull3D(rs, Vector3(landWx, 0.0, landWy), size);
+    if (landPos != null) {
+      _sp
+        ..color       = const Color(0xFFFFDD00).withValues(alpha: 0.9)
+        ..strokeWidth = 2.0
+        ..strokeCap   = StrokeCap.round;
+      const xs = 6.0;
+      canvas.drawLine(Offset(landPos.dx - xs, landPos.dy - xs),
+                      Offset(landPos.dx + xs, landPos.dy + xs), _sp);
+      canvas.drawLine(Offset(landPos.dx + xs, landPos.dy - xs),
+                      Offset(landPos.dx - xs, landPos.dy + xs), _sp);
+
+      final distTp = _getDistTp(dist);
+      distTp.paint(
+          canvas, Offset(landPos.dx - distTp.width / 2, landPos.dy + xs + 2));
+    }
+  }
+
+  // ── Fissure — flat 2D ─────────────────────────────────────────────────────
+
+  /// Arc preview while the player holds "9" to aim the Fissure.
+  void _drawFissureAimPreview(Canvas canvas) {
+    final player = gs.selectedPlayer;
+    if (player == null || !player.isFissureAiming) return;
+
+    const hSpeed  = 12.0;
+    const gravity = 20.0;
+    final dist       = player.fissureTargetDistance;
+    final flightTime = dist / hSpeed;
+    final initVZ     = 0.5 * gravity * flightTime;
+    const steps      = 20;
+
+    _sp
+      ..color     = const Color(0xBFFF5500)
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
+
+    Offset? prevArc;
+    Offset? prevGround;
+
+    for (int i = 1; i <= steps; i++) {
+      final t     = (i / steps) * flightTime;
+      final tPrev = ((i - 1) / steps) * flightTime;
+      final wx = player.x + math.cos(player.facing) * hSpeed * t;
+      final wy = player.y + math.sin(player.facing) * hSpeed * t;
+      final wz = (initVZ * t - 0.5 * gravity * t * t).clamp(0.0, double.infinity);
+      final wxPrev = player.x + math.cos(player.facing) * hSpeed * tPrev;
+      final wyPrev = player.y + math.sin(player.facing) * hSpeed * tPrev;
+      final wzPrev = (initVZ * tPrev - 0.5 * gravity * tPrev * tPrev).clamp(0.0, double.infinity);
+
+      final gp    = toScreen(wx, wy);
+      final arcPos = Offset(gp.dx, gp.dy - wz * scale * 0.5);
+      final gpPrev = prevGround ?? toScreen(wxPrev, wyPrev);
+      final arcPosPrev = prevArc ?? Offset(gpPrev.dx, gpPrev.dy - wzPrev * scale * 0.5);
+
+      if (i % 2 == 0) {
+        canvas.drawLine(arcPosPrev, arcPos, _sp);
+        _sp.color = const Color(0x50FF5500);
+        canvas.drawLine(gpPrev, gp, _sp);
+        _sp.color = const Color(0xBFFF5500);
+      }
+      if (i % 5 == 0) {
+        _fp.color = const Color(0xCCFF5500);
+        canvas.drawCircle(arcPos, 2.5, _fp);
+      }
+      prevArc    = arcPos;
+      prevGround = gp;
+    }
+
+    // Landing zone circle and cross-hair
+    final lx = (player.x + math.cos(player.facing) * dist);
+    final ly = (player.y + math.sin(player.facing) * dist);
+    final lp = toScreen(lx, ly);
+    final r  = sm(3.0);
+
+    _fp.color = const Color(0x25FF2200);
+    canvas.drawCircle(lp, r, _fp);
+
+    _sp
+      ..color     = const Color(0xCCFF2200)
+      ..strokeWidth = 2.0
+      ..strokeCap  = StrokeCap.butt;
+    canvas.drawCircle(lp, r, _sp);
+
+    final t = gs.matchTimeElapsed;
+    final rot = t * 2.5;
+    _fp.color = const Color(0xAAFF2200);
+    for (int i = 0; i < 4; i++) {
+      final a = rot + i * math.pi / 2;
+      final tipX = lp.dx + math.cos(a) * (r + sm(0.6));
+      final tipY = lp.dy + math.sin(a) * (r + sm(0.6));
+      _path.reset();
+      _path.moveTo(tipX, tipY);
+      _path.lineTo(tipX - math.cos(a - 0.5) * sm(0.8),
+                   tipY - math.sin(a - 0.5) * sm(0.8));
+      _path.lineTo(tipX - math.cos(a + 0.5) * sm(0.8),
+                   tipY - math.sin(a + 0.5) * sm(0.8));
+      _path.close();
+      canvas.drawPath(_path, _fp);
+    }
+
+    final distTp = _getDistTp(dist);
+    distTp.paint(canvas, Offset(lp.dx - distTp.width / 2, lp.dy + r + 3));
+  }
+
+  /// Ground warning animation for in-flight and just-landed fissures.
+  void _drawFissureWarnings(Canvas canvas) {
+    if (gs.fissureWarnings.isEmpty) return;
+    final t = gs.matchTimeElapsed;
+    for (final warn in gs.fissureWarnings) {
+      final p   = warn.progress;
+      final cx  = sx(warn.worldX);
+      final cy  = sy(warn.worldY);
+      final r   = sm(warn.radius);
+
+      // Expanding red ground crack glow
+      _fp.color = Color.fromARGB((70 * p).toInt(), 255, 60, 0);
+      canvas.drawCircle(Offset(cx, cy), r, _fp);
+
+      // Pulsing outer ring
+      final pulse = math.sin(t * 10.0) * 0.5 + 0.5;
+      _sp
+        ..color     = Color.fromARGB((210 * p).toInt(), 255, 80, 0)
+        ..strokeWidth = 2.0 + pulse * 2.0
+        ..strokeCap  = StrokeCap.butt;
+      canvas.drawCircle(Offset(cx, cy), r * (0.88 + pulse * 0.15), _sp);
+
+      // Radiating ground cracks (grow as progress advances)
+      const numCracks = 8;
+      for (int i = 0; i < numCracks; i++) {
+        final angle  = (i / numCracks) * math.pi * 2 + t * 0.4 + i * 0.3;
+        final len    = r * p * (0.65 + math.sin(t * 5.0 + i * 1.1) * 0.18);
+        final jitter = ((i * 37 + 3) % 7) * 0.06;
+
+        _sp
+          ..color     = Color.fromARGB((230 * p).toInt(), 200, 80, 20)
+          ..strokeWidth = (2.5 * p).clamp(1.0, 3.0);
+        canvas.drawLine(
+          Offset(cx + math.cos(angle + jitter) * r * 0.12,
+                 cy + math.sin(angle + jitter) * r * 0.12),
+          Offset(cx + math.cos(angle) * len, cy + math.sin(angle) * len),
+          _sp,
+        );
+
+        if (p > 0.35) {
+          final branchA = angle + 0.45;
+          _sp
+            ..color     = Color.fromARGB((160 * p).toInt(), 180, 60, 10)
+            ..strokeWidth = (1.5 * p).clamp(0.8, 2.0);
+          canvas.drawLine(
+            Offset(cx + math.cos(angle) * len * 0.65,
+                   cy + math.sin(angle) * len * 0.65),
+            Offset(cx + math.cos(branchA) * len * 0.4,
+                   cy + math.sin(branchA) * len * 0.4),
+            _sp,
+          );
+        }
+      }
+
+      // Rotating danger triangles (appear in final half)
+      if (p > 0.5) {
+        final intensity = (p - 0.5) * 2.0;
+        final rot = t * 2.2;
+        _fp.color = Color.fromARGB((200 * intensity).toInt(), 255, 50, 0);
+        for (int i = 0; i < 4; i++) {
+          final a = rot + i * math.pi / 2;
+          final tipX = cx + math.cos(a) * (r + sm(0.6));
+          final tipY = cy + math.sin(a) * (r + sm(0.6));
+          _path.reset();
+          _path.moveTo(tipX, tipY);
+          _path.lineTo(tipX - math.cos(a - 0.5) * sm(0.8),
+                       tipY - math.sin(a - 0.5) * sm(0.8));
+          _path.lineTo(tipX - math.cos(a + 0.5) * sm(0.8),
+                       tipY - math.sin(a + 0.5) * sm(0.8));
+          _path.close();
+          canvas.drawPath(_path, _fp);
+        }
+      }
+    }
+  }
+
+  /// Flying Fissure rock projectile(s) in flat 2D view.
+  void _drawFissureProjectiles(Canvas canvas) {
+    for (final proj in gs.fissureProjectiles) {
+      final ground = toScreen(proj.currentX, proj.currentY);
+      final z = proj.zHeight;
+      final pos = Offset(ground.dx, ground.dy - z * scale * 0.5);
+
+      // Shadow
+      _fp.color = Color.fromARGB(70, 0, 0, 0);
+      canvas.drawOval(
+          Rect.fromCenter(center: ground, width: sm(0.9), height: sm(0.45)), _fp);
+
+      // Rock body (earthy brown)
+      _fp.color = const Color(0xFF7A4E2A);
+      canvas.drawCircle(pos, sm(0.65), _fp);
+      // Highlight
+      _fp.color = const Color(0xFFA06838);
+      canvas.drawCircle(Offset(pos.dx - sm(0.12), pos.dy - sm(0.12)), sm(0.3), _fp);
+      // Outline
+      _sp
+        ..color     = const Color(0xFF4A2E10)
+        ..strokeWidth = 1.5
+        ..strokeCap  = StrokeCap.butt;
+      canvas.drawCircle(pos, sm(0.65), _sp);
+    }
+  }
+
+  // ── Fissure — 3D three-quarter ────────────────────────────────────────────
+
+  void _draw3DFissureAimPreview(Canvas canvas) {
+    final player = gs.selectedPlayer;
+    if (player == null || !player.isFissureAiming) return;
+
+    const hSpeed  = 12.0;
+    const gravity = 20.0;
+    const zScale  = 1.2;
+    final dist       = player.fissureTargetDistance;
+    final flightTime = dist / hSpeed;
+    final initVZ     = 0.5 * gravity * flightTime;
+    const steps      = 20;
+
+    _sp
+      ..color     = const Color(0xBFFF5500)
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
+
+    Offset? prevArc;
+    Offset? prevGround;
+
+    for (int i = 1; i <= steps; i++) {
+      final t     = (i / steps) * flightTime;
+      final tPrev = ((i - 1) / steps) * flightTime;
+      final wx = player.x + math.cos(player.facing) * hSpeed * t;
+      final wy = player.y + math.sin(player.facing) * hSpeed * t;
+      final wz = (initVZ * t - 0.5 * gravity * t * t).clamp(0.0, double.infinity);
+      final wxPrev = player.x + math.cos(player.facing) * hSpeed * tPrev;
+      final wyPrev = player.y + math.sin(player.facing) * hSpeed * tPrev;
+      final wzPrev = (initVZ * tPrev - 0.5 * gravity * tPrev * tPrev).clamp(0.0, double.infinity);
+
+      final arcPos    = _camera3D.project(wx, wy, wz * zScale);
+      final groundPos = _camera3D.project(wx, wy, 0);
+      final arcPosPrev    = prevArc    ?? _camera3D.project(wxPrev, wyPrev, wzPrev * zScale);
+      final gndPosPrev    = prevGround ?? _camera3D.project(wxPrev, wyPrev, 0);
+
+      if (i % 2 == 0) {
+        if (arcPos != null && arcPosPrev != null) {
+          canvas.drawLine(arcPosPrev, arcPos, _sp);
+        }
+        if (groundPos != null && gndPosPrev != null) {
+          _sp.color = const Color(0x50FF5500);
+          canvas.drawLine(gndPosPrev, groundPos, _sp);
+          _sp.color = const Color(0xBFFF5500);
+        }
+      }
+      if (i % 5 == 0 && arcPos != null) {
+        _fp.color = const Color(0xCCFF5500);
+        canvas.drawCircle(arcPos, 2.5, _fp);
+      }
+      prevArc    = arcPos;
+      prevGround = groundPos;
+    }
+
+    final lx = player.x + math.cos(player.facing) * dist;
+    final ly = player.y + math.sin(player.facing) * dist;
+    final lp = _camera3D.project(lx, ly, 0);
+    if (lp != null) {
+      final r = sm(3.0) * 0.4; // radius scaled for 3D perspective feel
+      _fp.color = const Color(0x25FF2200);
+      canvas.drawCircle(lp, r, _fp);
+      _sp
+        ..color     = const Color(0xCCFF2200)
+        ..strokeWidth = 2.0
+        ..strokeCap  = StrokeCap.butt;
+      canvas.drawCircle(lp, r, _sp);
+      final distTp = _getDistTp(dist);
+      distTp.paint(canvas, Offset(lp.dx - distTp.width / 2, lp.dy + r + 3));
+    }
+  }
+
+  void _draw3DFissureWarnings(Canvas canvas) {
+    if (gs.fissureWarnings.isEmpty) return;
+    final t = gs.matchTimeElapsed;
+    for (final warn in gs.fissureWarnings) {
+      final p  = warn.progress;
+      final cp = _camera3D.project(warn.worldX, warn.worldY, 0);
+      if (cp == null) continue;
+      final r = sm(warn.radius) * 0.4;
+
+      _fp.color = Color.fromARGB((70 * p).toInt(), 255, 60, 0);
+      canvas.drawCircle(cp, r, _fp);
+
+      final pulse = math.sin(t * 10.0) * 0.5 + 0.5;
+      _sp
+        ..color     = Color.fromARGB((210 * p).toInt(), 255, 80, 0)
+        ..strokeWidth = 1.5 + pulse * 2.0
+        ..strokeCap  = StrokeCap.butt;
+      canvas.drawCircle(cp, r * (0.9 + pulse * 0.12), _sp);
+
+      const numCracks = 8;
+      for (int i = 0; i < numCracks; i++) {
+        final angle = (i / numCracks) * math.pi * 2 + t * 0.4;
+        final len   = r * p * 0.75;
+        _sp
+          ..color     = Color.fromARGB((220 * p).toInt(), 200, 80, 20)
+          ..strokeWidth = (2.0 * p).clamp(0.8, 2.5);
+        canvas.drawLine(
+          Offset(cp.dx + math.cos(angle) * r * 0.1,
+                 cp.dy + math.sin(angle) * r * 0.1),
+          Offset(cp.dx + math.cos(angle) * len,
+                 cp.dy + math.sin(angle) * len),
+          _sp,
+        );
+      }
+    }
+  }
+
+  void _draw3DFissureProjectiles(Canvas canvas) {
+    for (final proj in gs.fissureProjectiles) {
+      const zScale = 1.2;
+      final ground = _camera3D.project(proj.currentX, proj.currentY, 0);
+      final pos    = _camera3D.project(proj.currentX, proj.currentY, proj.zHeight * zScale);
+      if (pos == null || ground == null) continue;
+
+      _fp.color = Color.fromARGB(70, 0, 0, 0);
+      canvas.drawOval(
+          Rect.fromCenter(center: ground, width: sm(0.7) * 0.4, height: sm(0.35) * 0.4), _fp);
+      _fp.color = const Color(0xFF7A4E2A);
+      canvas.drawCircle(pos, sm(0.65) * 0.4, _fp);
+      _sp
+        ..color     = const Color(0xFF4A2E10)
+        ..strokeWidth = 1.2
+        ..strokeCap  = StrokeCap.butt;
+      canvas.drawCircle(pos, sm(0.65) * 0.4, _sp);
+    }
+  }
+
+  // ── Fissure — full 3D WebGL overlay ──────────────────────────────────────
+
+  void _drawFull3DFissureAimPreview(
+      Canvas canvas, Size size, UltraballRenderSystem rs) {
+    final player = gs.selectedPlayer;
+    if (player == null || !player.isFissureAiming) return;
+
+    const hSpeed  = 12.0;
+    const gravity = 20.0;
+    const zScale  = 1.2;
+    final dist       = player.fissureTargetDistance;
+    final flightTime = dist / hSpeed;
+    final initVZ     = 0.5 * gravity * flightTime;
+    const steps      = 20;
+
+    _sp
+      ..color     = const Color(0xBFFF5500)
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
+
+    Offset? prevArc;
+    Offset? prevGround;
+
+    for (int i = 1; i <= steps; i++) {
+      final t     = (i / steps) * flightTime;
+      final tPrev = ((i - 1) / steps) * flightTime;
+      final wx = player.x + math.cos(player.facing) * hSpeed * t;
+      final wy = player.y + math.sin(player.facing) * hSpeed * t;
+      final wz = (initVZ * t - 0.5 * gravity * t * t).clamp(0.0, double.infinity);
+      final wxPrev = player.x + math.cos(player.facing) * hSpeed * tPrev;
+      final wyPrev = player.y + math.sin(player.facing) * hSpeed * tPrev;
+      final wzPrev = (initVZ * tPrev - 0.5 * gravity * tPrev * tPrev).clamp(0.0, double.infinity);
+
+      final arcPos    = _projectFull3D(rs, Vector3(wx, wz * zScale, wy), size);
+      final groundPos = _projectFull3D(rs, Vector3(wx, 0.0, wy), size);
+      final arcPosPrev    = prevArc    ?? _projectFull3D(rs, Vector3(wxPrev, wzPrev * zScale, wyPrev), size);
+      final gndPosPrev    = prevGround ?? _projectFull3D(rs, Vector3(wxPrev, 0.0, wyPrev), size);
+
+      if (i % 2 == 0) {
+        if (arcPos != null && arcPosPrev != null) {
+          canvas.drawLine(arcPosPrev, arcPos, _sp);
+        }
+        if (groundPos != null && gndPosPrev != null) {
+          _sp.color = const Color(0x50FF5500);
+          canvas.drawLine(gndPosPrev, groundPos, _sp);
+          _sp.color = const Color(0xBFFF5500);
+        }
+      }
+      if (i % 5 == 0 && arcPos != null) {
+        _fp.color = const Color(0xCCFF5500);
+        canvas.drawCircle(arcPos, 2.5, _fp);
+      }
+      prevArc    = arcPos;
+      prevGround = groundPos;
+    }
+
+    final lx = player.x + math.cos(player.facing) * dist;
+    final ly = player.y + math.sin(player.facing) * dist;
+    final lp = _projectFull3D(rs, Vector3(lx, 0.0, ly), size);
+    if (lp != null) {
+      _fp.color = const Color(0x25FF2200);
+      canvas.drawCircle(lp, 20.0, _fp);
+      _sp
+        ..color     = const Color(0xCCFF2200)
+        ..strokeWidth = 2.0
+        ..strokeCap  = StrokeCap.butt;
+      canvas.drawCircle(lp, 20.0, _sp);
+      final distTp = _getDistTp(dist);
+      distTp.paint(canvas, Offset(lp.dx - distTp.width / 2, lp.dy + 23));
+    }
+  }
+
+  void _drawFull3DFissureWarnings(
+      Canvas canvas, Size size, UltraballRenderSystem rs) {
+    if (gs.fissureWarnings.isEmpty) return;
+    final t = gs.matchTimeElapsed;
+    for (final warn in gs.fissureWarnings) {
+      final p  = warn.progress;
+      final cp = _projectFull3D(rs, Vector3(warn.worldX, 0.0, warn.worldY), size);
+      if (cp == null) continue;
+      const r = 24.0; // pixel radius at typical view distance
+
+      _fp.color = Color.fromARGB((70 * p).toInt(), 255, 60, 0);
+      canvas.drawCircle(cp, r, _fp);
+
+      final pulse = math.sin(t * 10.0) * 0.5 + 0.5;
+      _sp
+        ..color     = Color.fromARGB((210 * p).toInt(), 255, 80, 0)
+        ..strokeWidth = 1.5 + pulse * 2.0
+        ..strokeCap  = StrokeCap.butt;
+      canvas.drawCircle(cp, r * (0.9 + pulse * 0.12), _sp);
+
+      const numCracks = 8;
+      for (int i = 0; i < numCracks; i++) {
+        final angle = (i / numCracks) * math.pi * 2 + t * 0.4;
+        final len   = r * p * 0.8;
+        _sp
+          ..color     = Color.fromARGB((220 * p).toInt(), 200, 80, 20)
+          ..strokeWidth = (2.0 * p).clamp(0.8, 2.5);
+        canvas.drawLine(
+          Offset(cp.dx + math.cos(angle) * r * 0.1,
+                 cp.dy + math.sin(angle) * r * 0.1),
+          Offset(cp.dx + math.cos(angle) * len,
+                 cp.dy + math.sin(angle) * len),
+          _sp,
+        );
+      }
+    }
+  }
+
+  void _drawFull3DFissureProjectiles(
+      Canvas canvas, Size size, UltraballRenderSystem rs) {
+    for (final proj in gs.fissureProjectiles) {
+      const zScale = 1.2;
+      final ground = _projectFull3D(rs, Vector3(proj.currentX, 0.0, proj.currentY), size);
+      final pos    = _projectFull3D(rs, Vector3(proj.currentX, proj.zHeight * zScale, proj.currentY), size);
+      if (pos == null || ground == null) continue;
+
+      _fp.color = Color.fromARGB(70, 0, 0, 0);
+      canvas.drawOval(
+          Rect.fromCenter(center: ground, width: 10.0, height: 5.0), _fp);
+      _fp.color = const Color(0xFF7A4E2A);
+      canvas.drawCircle(pos, 8.0, _fp);
+      _sp
+        ..color     = const Color(0xFF4A2E10)
+        ..strokeWidth = 1.5
+        ..strokeCap  = StrokeCap.butt;
+      canvas.drawCircle(pos, 8.0, _sp);
     }
   }
 
@@ -2215,7 +2935,7 @@ class FieldPainter extends CustomPainter {
     // Players
     for (final pl in gs.fieldPlayers) {
       if (!pl.isAlive) continue;
-      final dep = _camera3D.projectWithDepth(pl.x, pl.y, pl.zHeight * 1.2);
+      final dep = _camera3D.projectWithDepth(pl.x, pl.y, math.max(0.0, pl.totalElevation) * 1.2);
       if (dep == null) continue;
       final pos = dep.$1; final cw = dep.$2;
       items.add((cw, () => _draw3DPlayer(canvas, pl, pos, cw)));
@@ -2335,12 +3055,13 @@ class FieldPainter extends CustomPainter {
     // Indicators drawn after body so they appear on top
     if (p.id == gs.currentTargetId) {
       final sw = math.max(2.0, r * 0.15);
+      final tc = _targetRingColor(p);
       _sp
-        ..color = const Color(0xFFFF2222).withValues(alpha: 0.9)
+        ..color = tc.withValues(alpha: 0.9)
         ..strokeWidth = sw;
       canvas.drawCircle(pos, r * 1.35, _sp);
       _sp
-        ..color = const Color(0xFFFF4444).withValues(alpha: 0.4)
+        ..color = tc.withValues(alpha: 0.4)
         ..strokeWidth = sw * 0.6;
       canvas.drawCircle(pos, r * 1.6, _sp);
     }
@@ -2377,7 +3098,7 @@ class FieldPainter extends CustomPainter {
 
   void _draw3DFacingIndicator(Canvas canvas, UltraballPlayer p) {
     final f = p.facing;
-    final z = p.zHeight * 1.2;
+    final z = math.max(0.0, p.totalElevation) * 1.2;
     const tipDist  = 2.2;   // world units ahead of center
     const baseR    = 0.7;   // world units from center to base corners
     const halfAngle = 0.55; // half-width of triangle base in radians

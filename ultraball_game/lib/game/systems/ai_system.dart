@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import '../../models/player.dart';
 import '../../models/game_settings.dart';
+import '../../models/terrain_grid.dart';
 import '../../ai/ai_strategy.dart';
 import '../game_state.dart';
 import 'combat_system.dart';
@@ -1145,8 +1146,7 @@ class AiSystem {
     }
 
     if (sprint) {
-      // Geomancer's sprint is Upheaval (slot 8); every other class uses slot 3
-      final sprintSlot = p.playerClass == PlayerClass.geomancer ? 8 : 3;
+      final sprintSlot = 3;
       CombatSystem.useClassAbility(gs, p, sprintSlot);
     }
   }
@@ -1232,7 +1232,7 @@ class AiSystem {
           CombatSystem.useClassAbility(gs, p, 7);
         }
         // Raise Hill (slot 2): use occasionally when near enemies
-        if (p.slamCooldown <= 0 && p.redMana >= 25) {
+        if (p.slamCooldown <= 0 && p.blueMana >= 15) {
           bool nearEnemy = false;
           for (final e in gs.fieldPlayers) {
             if (e.team == p.team || !e.isAlive) continue;
@@ -1241,16 +1241,30 @@ class AiSystem {
           }
           if (nearEnemy) CombatSystem.useClassAbility(gs, p, 2);
         }
-        // Open Sinkhole (slot 4): use near enemy ball carrier
-        if (p.ability4Cooldown <= 0 && p.redMana >= 35) {
+        // Quagmire (slot 4): mud zone near ball carrier or clustered enemies
+        if (p.ability4Cooldown <= 0 && p.blueMana >= 25) {
           final holder = gs.getPlayerById(gs.ball.holderId ?? '');
           if (holder != null && holder.team != p.team) {
             final dx = holder.x - p.x, dy = holder.y - p.y;
             if (dx * dx + dy * dy <= 225.0) { // 15m
-              // Face toward holder then fire
               p.facing = math.atan2(dy, dx);
               CombatSystem.useClassAbility(gs, p, 4);
             }
+          }
+        }
+        // Crevasse (slot 8): valley under nearest enemy cluster
+        if (p.ability8Cooldown <= 0 && p.blueMana >= 60) {
+          UltraballPlayer? target;
+          double bestDist = double.infinity;
+          for (final e in gs.fieldPlayers) {
+            if (e.team == p.team || !e.isAlive) continue;
+            final dx = e.x - p.x, dy = e.y - p.y;
+            final d = dx * dx + dy * dy;
+            if (d < bestDist && d <= 225.0) { bestDist = d; target = e; }
+          }
+          if (target != null) {
+            p.facing = math.atan2(target.y - p.y, target.x - p.x);
+            CombatSystem.useClassAbility(gs, p, 8);
           }
         }
 
@@ -1263,6 +1277,21 @@ class AiSystem {
         }
 
       case PlayerClass.corsair:
+        break;
+
+      case PlayerClass.vitalist:
+        // Infuse (slot 3): heal lowest HP ally when in range
+        if (p.sprintCooldown <= 0 && p.yellowMana >= 20) {
+          CombatSystem.useClassAbility(gs, p, 3);
+        }
+        // Mend (slot 2): spam HoT on nearby ally
+        if (p.slamCooldown <= 0 && p.yellowMana >= 5) {
+          CombatSystem.useClassAbility(gs, p, 2);
+        }
+        // Bulwark (slot 5): shield nearby ally
+        if (p.ability5Cooldown <= 0 && p.yellowMana >= 10) {
+          CombatSystem.useClassAbility(gs, p, 5);
+        }
         break;
 
       case PlayerClass.trickster:
@@ -1345,10 +1374,59 @@ class AiSystem {
     return _Vec2(ax, ay);
   }
 
+  // Repulsion radius around pit cell centres — slightly larger than cell size so
+  // AI steers away before its foot enters the deadly tile.
+  static const double _pitAvoidRadius = 5.5;
+
+  /// Pushes the AI away from any open pit cells within [_pitAvoidRadius].
+  static _Vec2 _getPitAvoidance(GameState gs, UltraballPlayer p) {
+    var ax = 0.0, ay = 0.0;
+    final colMin = ((p.x - _pitAvoidRadius) / kCellW).floor().clamp(0, kTerrainCols - 1);
+    final colMax = ((p.x + _pitAvoidRadius) / kCellW).ceil().clamp(0, kTerrainCols - 1);
+    final rowMin = ((p.y - _pitAvoidRadius) / kCellH).floor().clamp(0, kTerrainRows - 1);
+    final rowMax = ((p.y + _pitAvoidRadius) / kCellH).ceil().clamp(0, kTerrainRows - 1);
+    for (int col = colMin; col <= colMax; col++) {
+      for (int row = rowMin; row <= rowMax; row++) {
+        if (!gs.terrain.cells[col][row].isPit) continue;
+        final cellCX = (col + 0.5) * kCellW;
+        final cellCY = (row + 0.5) * kCellH;
+        final dx   = p.x - cellCX;
+        final dy   = p.y - cellCY;
+        final dist = math.sqrt(dx * dx + dy * dy);
+        if (dist < _pitAvoidRadius && dist > 0) {
+          final strength = (1.0 - dist / _pitAvoidRadius) * 4.0;
+          ax += (dx / dist) * strength;
+          ay += (dy / dist) * strength;
+        }
+      }
+    }
+    return _Vec2(ax, ay);
+  }
+
+  /// Steers the AI away from Fissure warning zones (incoming pits).
+  static _Vec2 _getFissureWarningAvoidance(GameState gs, UltraballPlayer p) {
+    var ax = 0.0, ay = 0.0;
+    for (final warn in gs.fissureWarnings) {
+      final dx   = p.x - warn.worldX;
+      final dy   = p.y - warn.worldY;
+      final dist = math.sqrt(dx * dx + dy * dy);
+      final avoidR = warn.radius + 2.5; // give extra berth during the warning
+      if (dist < avoidR && dist > 0) {
+        // Strength scales with warning progress — more urgent as the pit nears
+        final strength = (1.0 - dist / avoidR) * 3.5 * (0.5 + warn.progress * 0.5);
+        ax += (dx / dist) * strength;
+        ay += (dy / dist) * strength;
+      }
+    }
+    return _Vec2(ax, ay);
+  }
+
   static _Vec2 _getAvoidance(GameState gs, UltraballPlayer p) {
-    final c = _getCreatureAvoidance(gs, p);
-    final pl = _getPlayerAvoidance(gs, p);
-    return _Vec2(c.x + pl.x, c.y + pl.y);
+    final c   = _getCreatureAvoidance(gs, p);
+    final pl  = _getPlayerAvoidance(gs, p);
+    final pit = _getPitAvoidance(gs, p);
+    final fw  = _getFissureWarningAvoidance(gs, p);
+    return _Vec2(c.x + pl.x + pit.x + fw.x, c.y + pl.y + pit.y + fw.y);
   }
 
   /// Set velocity toward (tx, ty) at full speed, blended with creature avoidance.

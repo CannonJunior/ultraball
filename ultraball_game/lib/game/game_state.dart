@@ -9,6 +9,7 @@ import '../models/game_settings.dart';
 import '../models/gameplay_preferences.dart';
 import '../models/terrain_grid.dart';
 import '../models/terrain_event.dart';
+import '../models/fissure_event.dart';
 import '../ai/ai_policy.dart';
 import '../ai/ai_strategy.dart';
 import '../ai/game_data_sink.dart';
@@ -90,6 +91,12 @@ class GameState {
 
   // Trickster traps
   List<TricksterTrap> tricksterTraps = [];
+
+  // Fissure projectiles and warnings (Geomancer ability 9)
+  List<FissureProjectile> fissureProjectiles = [];
+  List<FissureWarning>    fissureWarnings    = [];
+  List<PitEffect>         pitEffects         = [];
+  ElevationGrid elevGrid = ElevationGrid();
 
   // Geomancer hold-to-aim terrain placement
   bool isAimingTerrain = false;
@@ -246,13 +253,21 @@ class GameState {
     final rand = math.Random();
 
     if (settings.testMode) {
-      // Test mode: one player character vs one passive dummy enemy
-      const cls = PlayerClass.spectre;
+      // Test mode: one player character vs one passive dummy enemy.
+      // Respect homeRosterOrder so the player in Field 1 position is loaded.
+      final field1Idx = settings.homeRosterOrder.isNotEmpty
+          ? settings.homeRosterOrder[0]
+          : 0;
+      final cls = const [
+        PlayerClass.spectre, PlayerClass.corsair, PlayerClass.geomancer,
+        PlayerClass.archon, PlayerClass.warden, PlayerClass.trickster,
+        PlayerClass.wrecker, PlayerClass.vitalist,
+      ][field1Idx % 8];
       final p = UltraballPlayer(
-        id: 'p_0',
-        name: settings.homePlayerNames[0],
+        id: 'p_$field1Idx',
+        name: settings.homePlayerNames[field1Idx],
         team: Team.player,
-        rosterIndex: 0,
+        rosterIndex: field1Idx,
         x: 80.0,
         y: 17.5,
       );
@@ -287,8 +302,8 @@ class GameState {
         final cls = const [
           PlayerClass.spectre, PlayerClass.corsair, PlayerClass.geomancer,
           PlayerClass.archon, PlayerClass.warden, PlayerClass.trickster,
-          PlayerClass.wrecker,
-        ][i % 7];
+          PlayerClass.wrecker, PlayerClass.vitalist,
+        ][i % 8];
         double startX, startY;
         if (settings.matchMode == MatchMode.threeTeams) {
           // Player team starts in bottom arm
@@ -323,8 +338,8 @@ class GameState {
         final cls = const [
           PlayerClass.spectre, PlayerClass.corsair, PlayerClass.geomancer,
           PlayerClass.archon, PlayerClass.warden, PlayerClass.trickster,
-          PlayerClass.wrecker,
-        ][i % 7];
+          PlayerClass.wrecker, PlayerClass.vitalist,
+        ][i % 8];
         double startX, startY;
         if (settings.matchMode == MatchMode.threeTeams) {
           // Opponent team starts in upper-right arm
@@ -358,7 +373,7 @@ class GameState {
       for (int slot = 0; slot < 15; slot++) {
         final playerIdx = settings.homeRosterOrder[slot];
         final p = playerRoster[playerIdx];
-        if (settings.inactiveClasses.contains(playerIdx % 7)) {
+        if (settings.inactiveClasses.contains(playerIdx % 8)) {
           p.isInactive = true;
           p.isOnField  = false;
           p.deploySlot = 100 + slot; // beyond normal range so sort won't pick them
@@ -373,7 +388,7 @@ class GameState {
       for (int slot = 0; slot < 15; slot++) {
         final oppIdx = settings.awayRosterOrder[slot];
         final p = opponentRoster[oppIdx];
-        if (settings.inactiveClasses.contains(oppIdx % 7)) {
+        if (settings.inactiveClasses.contains(oppIdx % 8)) {
           p.isInactive = true;
           p.isOnField  = false;
           p.deploySlot = 100 + slot;
@@ -394,8 +409,8 @@ class GameState {
           final cls = const [
             PlayerClass.spectre, PlayerClass.corsair, PlayerClass.geomancer,
             PlayerClass.archon, PlayerClass.warden, PlayerClass.trickster,
-            PlayerClass.wrecker,
-          ][i % 7];
+            PlayerClass.wrecker, PlayerClass.vitalist,
+          ][i % 8];
           // Third team starts in upper-left arm
           final (nx, ny) = team3Normals[2]; // third team normal
           final spreadPerp = ((i % 5) - 2) * 7.0 + rand.nextDouble() * 2 - 1;
@@ -495,6 +510,17 @@ class GameState {
 
     abilityStats = AbilityStatsCollector();
 
+    // TEST: stamp a pit at the ball's starting position to verify terrain rendering in all view modes.
+    if (settings.testMode) {
+      final cell = terrain.cellAt(ball.x, ball.y);
+      cell.isPit        = true;
+      cell.height       = -2.0;
+      cell.targetHeight = -3.0;
+      cell.hazardTimer  = 999.0;
+      cell.lerpSpeed    = 3.0;
+      pitEffects.add(PitEffect(worldX: ball.x, worldY: ball.y, radius: 4.0, duration: 999.0));
+    }
+
     gameStarted = true;
     markRosterDirty();
   }
@@ -587,10 +613,7 @@ class GameState {
     if (currentTargetId == null) return null;
     final p = _playerById[currentTargetId!];
     if (p == null || !p.isAlive) return null;
-    if (settings.matchMode == MatchMode.threeTeams) {
-      return (p.team == Team.opponent || p.team == Team.third) ? p : null;
-    }
-    return p.team == Team.opponent ? p : null;
+    return p;
   }
 
   void showEvent(String message, {double duration = 2.5}) {

@@ -38,6 +38,8 @@ List<UiEffect> _playerEffects(UltraballPlayer p) {
   if (p.dodgeTimer > 0) effects.add(UiEffect(name: 'Dodge', color: const Color(0xFF00FFEE), icon: Icons.flash_on, remaining: p.dodgeTimer, total: p.dodgeMax > 0 ? p.dodgeMax : 1.5, isBuff: true));
   if (p.hotTimer > 0) effects.add(UiEffect(name: 'Regen', color: const Color(0xFF44FF88), icon: Icons.favorite, remaining: p.hotTimer, total: p.hotMax > 0 ? p.hotMax : 5.0, isBuff: true));
   if (p.attacksApplySnareTimer > 0) effects.add(UiEffect(name: 'Blood Rush', color: const Color(0xFFFF44CC), icon: Icons.gas_meter, remaining: p.attacksApplySnareTimer, total: p.attacksApplySnareMax > 0 ? p.attacksApplySnareMax : 7.0, isBuff: true));
+  if (p.durationDoubleNext && p.durationDoubleNextTimer > 0) effects.add(UiEffect(name: 'Prolong', color: const Color(0xFF44DD88), icon: Icons.timer, remaining: p.durationDoubleNextTimer, total: p.durationDoubleNextMax > 0 ? p.durationDoubleNextMax : 10.0, isBuff: true));
+  if (p.periodicHotTicksLeft > 0) effects.add(UiEffect(name: 'Verdure', color: const Color(0xFF44FF88), icon: Icons.spa, remaining: p.periodicHotTotalTimer, total: p.periodicHotTotalMax > 0 ? p.periodicHotTotalMax : 10.0, isBuff: true));
   // Debuffs
   if (p.stunTimer > 0) effects.add(UiEffect(name: 'Stun', color: const Color(0xFFFFFF44), icon: Icons.bolt, remaining: p.stunTimer, total: p.stunMax > 0 ? p.stunMax : 2.0, isBuff: false));
   if (p.snareTimer > 0) effects.add(UiEffect(name: 'Snare', color: const Color(0xFFAAAAFF), icon: Icons.anchor, remaining: p.snareTimer, total: p.snareMax > 0 ? p.snareMax : 2.0, isBuff: false));
@@ -156,8 +158,13 @@ class _ManaBarsState extends State<ManaBars> {
                         _MiniBar(value: player.redMana,  max: 100,                           color: const Color(0xFFDD3333), label: 'R'),
                         const SizedBox(height: 2),
                         _MiniBar(value: player.blueMana, max: 100,                           color: const Color(0xFF2277EE), label: 'B'),
+                        if (player.playerClass == PlayerClass.corsair) ...[
+                          const SizedBox(height: 2),
+                          _MiniBar(value: player.yellowMana, max: UltraballPlayer.maxYellowMana, color: const Color(0xFFFFEE22), label: 'Y'),
+                        ],
                         const SizedBox(height: 2),
-                        _MiniBar(value: player.ultraMana, max: UltraballPlayer.maxUltraMana, color: const Color(0xFFFFCC00), label: 'U'),
+                        _MiniBar(value: player.ultraMana, max: UltraballPlayer.maxUltraMana, color: const Color(0xFFFFCC00), label: 'U',
+                          gradientColors: const [Color(0xFFFFCC00), Color(0xFFFF6600), Color(0xFFFF0044)]),
                       ],
                     ),
                   ),
@@ -237,6 +244,10 @@ class _ManaBarsState extends State<ManaBars> {
                   const SizedBox(height: 4),
                   _ChargeBar(chargePercent: gs.ball.chargePercent),
                 ],
+                if (player.isChargingHill) ...[
+                  const SizedBox(height: 4),
+                  _HillChargeBar(chargePercent: player.hillChargePercent),
+                ],
               ],
             ),
           ),
@@ -273,13 +284,16 @@ class TargetFrame extends StatelessWidget {
     }
 
     final effects = _playerEffects(target);
+    final frameColor = target.team == Team.player
+        ? const Color(0xFF33EE66)
+        : const Color(0xFFFF6B6B);
 
     return Container(
       width: 260,
       decoration: BoxDecoration(
         color: const Color(0xFF1a1a2e).withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFFF6B6B), width: 2),
+        border: Border.all(color: frameColor, width: 2),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.5),
@@ -306,8 +320,8 @@ class TargetFrame extends StatelessWidget {
                         Flexible(
                           child: Text(
                             '▶ ${target.name.toUpperCase()}',
-                            style: const TextStyle(
-                              color:       Color(0xFFFF6B6B),
+                            style: TextStyle(
+                              color:       frameColor,
                               fontSize:    11,
                               fontWeight:  FontWeight.bold,
                               letterSpacing: 0.5,
@@ -424,19 +438,9 @@ class _PortraitBox extends StatelessWidget {
   final bool isPlayer;
   const _PortraitBox({required this.player, required this.isPlayer});
 
-  static Color _classColor(PlayerClass cls) => switch (cls) {
-    PlayerClass.spectre   => const Color(0xFF44FFCC),
-    PlayerClass.geomancer => const Color(0xFFFF5544),
-    PlayerClass.archon    => const Color(0xFF4488FF),
-    PlayerClass.warden    => const Color(0xFFFFCC44),
-    PlayerClass.corsair   => const Color(0xFFFF44AA),
-    PlayerClass.trickster => const Color(0xFFAA44FF),
-    PlayerClass.wrecker   => const Color(0xFFFF7700),
-  };
-
   @override
   Widget build(BuildContext context) {
-    final classColor  = _classColor(player.playerClass);
+    final classColor  = UiAssets.classColor(player.playerClass);
     final borderColor = isPlayer ? const Color(0xFF4cc9f0) : const Color(0xFFFF6B6B);
 
     return Container(
@@ -547,11 +551,57 @@ class _MiniBar extends StatelessWidget {
   final double max;
   final Color  color;
   final String label;
-  const _MiniBar({required this.value, required this.max, required this.color, required this.label});
+  /// When provided, fill uses a left-to-right reveal of this gradient instead
+  /// of the standard single-color vertical depth gradient.
+  final List<Color>? gradientColors;
+  const _MiniBar({required this.value, required this.max, required this.color, required this.label, this.gradientColors});
 
   @override
   Widget build(BuildContext context) {
     final frac = (value / max).clamp(0.0, 1.0);
+
+    Widget fillWidget;
+    if (gradientColors != null) {
+      fillWidget = LayoutBuilder(builder: (ctx, constraints) {
+        final coverWidth = constraints.maxWidth * (1.0 - frac);
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end:   Alignment.centerRight,
+                  colors: gradientColors!,
+                ),
+              ),
+            ),
+            if (coverWidth > 0)
+              Positioned(
+                right: 0, top: 0, bottom: 0,
+                width: coverWidth,
+                child: ColoredBox(color: const Color(0xFF0d0d14)),
+              ),
+          ],
+        );
+      });
+    } else {
+      fillWidget = FractionallySizedBox(
+        widthFactor: frac,
+        alignment: Alignment.centerLeft,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end:   Alignment.bottomCenter,
+              colors: [color.withValues(alpha: 0.88), color.withValues(alpha: 0.6)],
+            ),
+            borderRadius: BorderRadius.circular(1),
+          ),
+        ),
+      );
+    }
+
     return Row(
       children: [
         SizedBox(
@@ -566,19 +616,9 @@ class _MiniBar extends StatelessWidget {
               borderRadius: BorderRadius.circular(2),
               border: Border.all(color: Colors.black.withValues(alpha: 0.4), width: 0.5),
             ),
-            child: FractionallySizedBox(
-              widthFactor: frac,
-              alignment: Alignment.centerLeft,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end:   Alignment.bottomCenter,
-                    colors: [color.withValues(alpha: 0.88), color.withValues(alpha: 0.6)],
-                  ),
-                  borderRadius: BorderRadius.circular(1),
-                ),
-              ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(1),
+              child: fillWidget,
             ),
           ),
         ),
@@ -593,28 +633,19 @@ class _ClassBadge extends StatelessWidget {
   final PlayerClass cls;
   const _ClassBadge({required this.cls});
 
-  Color get _color => switch (cls) {
-    PlayerClass.spectre   => const Color(0xFF44FFCC),
-    PlayerClass.geomancer => const Color(0xFFFF5544),
-    PlayerClass.archon    => const Color(0xFF4488FF),
-    PlayerClass.warden    => const Color(0xFFFFCC44),
-    PlayerClass.corsair   => const Color(0xFFFF44AA),
-    PlayerClass.trickster => const Color(0xFFAA44FF),
-    PlayerClass.wrecker   => const Color(0xFFFF7700),
-  };
-
   @override
   Widget build(BuildContext context) {
+    final color = UiAssets.classColor(cls);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
       decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(3),
-        border: Border.all(color: _color.withValues(alpha: 0.5), width: 0.5),
+        border: Border.all(color: color.withValues(alpha: 0.5), width: 0.5),
       ),
       child: Text(
         cls.displayName,
-        style: TextStyle(color: _color, fontSize: 7, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+        style: TextStyle(color: color, fontSize: 7, fontWeight: FontWeight.bold, letterSpacing: 0.5),
       ),
     );
   }
@@ -1003,6 +1034,59 @@ class _ClockSweepPainter extends CustomPainter {
 }
 
 // ─── Charge bar ───────────────────────────────────────────────────────────────
+
+class _HillChargeBar extends StatelessWidget {
+  final double chargePercent;
+  const _HillChargeBar({required this.chargePercent});
+
+  @override
+  Widget build(BuildContext context) {
+    // 0% = flat top (green); 100% = spike (amber)
+    final Color chargeColor;
+    if (chargePercent < 0.4)      chargeColor = const Color(0xFF44CC66);
+    else if (chargePercent < 0.7) chargeColor = const Color(0xFF88AA44);
+    else if (chargePercent < 0.9) chargeColor = const Color(0xFFCC8822);
+    else                          chargeColor = const Color(0xFFDD5500);
+
+    final label = chargePercent < 0.15
+        ? 'FLAT TOP'
+        : chargePercent < 0.6
+            ? 'RISING'
+            : chargePercent < 0.9
+                ? 'STEEP'
+                : 'SPIKE!';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('HILL SHAPE', style: TextStyle(color: Color(0xFF88CC66), fontSize: 9, letterSpacing: 1, fontWeight: FontWeight.bold)),
+            Text(label, style: TextStyle(color: chargeColor, fontSize: 9, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Stack(
+          children: [
+            Container(height: 6, decoration: BoxDecoration(color: const Color(0xFF222222), borderRadius: BorderRadius.circular(2))),
+            FractionallySizedBox(
+              widthFactor: chargePercent,
+              child: Container(
+                height: 6,
+                decoration: BoxDecoration(
+                  color: chargeColor,
+                  borderRadius: BorderRadius.circular(2),
+                  boxShadow: [BoxShadow(color: chargeColor.withValues(alpha: 0.5), blurRadius: 4)],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
 
 class _ChargeBar extends StatelessWidget {
   final double chargePercent;

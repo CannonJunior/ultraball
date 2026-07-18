@@ -254,6 +254,8 @@ class BallSystem {
     // Accumulate charge; holder earns 1 ultra mana per second
     ball.chargeTimer += dt;
     holder.gainUltraMana(dt);
+    // Ball carrier gains extra yellow mana (doubles the base 5/sec regen rate)
+    holder.gainYellowMana(5.0 * dt);
 
     // Check phase line crossing
     final prevX = holder.x - holder.velX * dt;

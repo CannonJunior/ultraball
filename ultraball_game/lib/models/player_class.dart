@@ -1,4 +1,6 @@
-enum PlayerClass { spectre, geomancer, archon, warden, corsair, trickster, wrecker }
+import 'package:vector_math/vector_math.dart';
+
+enum PlayerClass { spectre, geomancer, archon, warden, corsair, trickster, wrecker, vitalist }
 
 /// Semantic purpose of an ability — drives icon color.
 enum AbilityType {
@@ -32,6 +34,7 @@ extension PlayerClassInfo on PlayerClass {
     PlayerClass.corsair    => 'CORSAIR',
     PlayerClass.trickster  => 'TRICKSTER',
     PlayerClass.wrecker    => 'WRECKER',
+    PlayerClass.vitalist   => 'VITALIST',
   };
 
   String get description => switch (this) {
@@ -42,6 +45,7 @@ extension PlayerClassInfo on PlayerClass {
     PlayerClass.corsair    => 'Disruption · Predation · Strip & Mark',
     PlayerClass.trickster  => 'Confusion · Traps · Creature Manipulation',
     PlayerClass.wrecker    => 'Brutality · Close Combat · Maximum Damage',
+    PlayerClass.vitalist   => 'Renewal · Restoration · Duration Mastery',
   };
 
   double get baseSpeed => switch (this) {
@@ -52,6 +56,7 @@ extension PlayerClassInfo on PlayerClass {
     PlayerClass.corsair    =>  8.5,
     PlayerClass.trickster  =>  9.0,
     PlayerClass.wrecker    =>  8.0,
+    PlayerClass.vitalist   =>  8.0,
   };
 
   double get maxHealth => switch (this) {
@@ -62,6 +67,7 @@ extension PlayerClassInfo on PlayerClass {
     PlayerClass.corsair    => 105.0,
     PlayerClass.trickster  =>  85.0,
     PlayerClass.wrecker    => 110.0,
+    PlayerClass.vitalist   =>  90.0,
   };
 
   // Ability layout (all classes):
@@ -95,14 +101,14 @@ extension PlayerClassInfo on PlayerClass {
     // Play pattern: shove → armor → AoE CC → raise terrain → pull ally → open pit → fissure
     PlayerClass.geomancer => [
       'Earth Fist',     // 1  heavy melee
-      'Tremor Strike',  // 2  snare punch
-      'Seismic Shove',  // 3  knockback (spam)
-      'Stone Armor',    // 4  damage reduction
+      'Raise Hill',     // 2  terrain: hill (hold-to-aim)
+      'Seismic Shove',  // 3  knockback
+      'Quagmire',       // 4  terrain: mud zone (hold-to-aim)
       'Tremor',         // 5  AoE snare
-      'Raise Hill',     // 6  terrain: hill
-      'Earthmend',      // 7  pull ally + heal
-      'Open Sinkhole',  // 8  terrain: instant-death pit
-      'Fissure',        // 9  dash + pit strip
+      'Stone Armor',    // 6  damage reduction
+      'Earthmend',      // 7  self-heal
+      'Crevasse',       // 8  terrain: valley cone (hold-to-aim)
+      'Fissure',        // 9  hold-to-aim rock projectile → pit
       'TERRA NOVA',     // 10 ultra
     ],
     // ── ARCHON ──────────────────────────────────────────────────────────────
@@ -175,6 +181,20 @@ extension PlayerClassInfo on PlayerClass {
       'Death Blow',     // 9  kill-shot finisher
       'DEMOLISH',       // 10 ultra
     ],
+    // ── VITALIST ────────────────────────────────────────────────────────────
+    // Play pattern: mend ally → infuse burst → empower attacker → shield → refresh + cleanse → cascade AoE → prolong key buff → verdure ultra
+    PlayerClass.vitalist => [
+      'Tap',            // 1  light strike + self-heal
+      'Mend',           // 2  HoT to ally (spam)
+      'Infuse',         // 3  burst heal + HoT to ally
+      'Empower',        // 4  damage boost to ally
+      'Bulwark',        // 5  damage shield to ally
+      'Refresh',        // 6  big heal + cleanse to ally
+      'Cascade',        // 7  AoE heal to all nearby allies
+      'Rebuke',         // 8  stun + fumble (defensive CC)
+      'Prolong',        // 9  next ally ability buff durations doubled
+      'VERDURE',        // 10 ultra: periodic AoE HoT (5 ticks × 2s)
+    ],
   };
 
   List<String> get abilityDescriptions => switch (this) {
@@ -192,14 +212,14 @@ extension PlayerClassInfo on PlayerClass {
     ],
     PlayerClass.geomancer => [
       '18 dmg',
-      '22 dmg · 1.5s snare (40% slow)',
+      'Raise 4m hill at aimed spot (hold [2])',
       '12 dmg · push 4m',
+      'Mud zone at aimed spot · 45% slow · 8s (hold [4])',
+      '15 dmg/target · 1.5s snare (40% slow) in 5m AoE',
       '40% dmg reduction for 4s',
-      '12 dmg/target · 1.5s snare (40% slow) in 5m AoE',
-      'Raise 4m-high hill at targeted spot',
-      'Pull nearest ally 7m toward self · +35 HP',
-      'Open instant-death sinkhole at targeted spot',
-      'Dash 5m · fissure along path (2s pit strip · 20 dmg to all hit)',
+      'Self +35 HP',
+      'Sink valley at aimed spot · slows traversal (hold [8])',
+      'Hold [9] to aim · rock flies to target · 1.5s warning · 5s pit',
       'Raise hills across 30m · open pits under all enemies',
     ],
     PlayerClass.archon => [
@@ -262,33 +282,47 @@ extension PlayerClassInfo on PlayerClass {
       '60 dmg · 3s stun · +40% dmg for 5s',
       '35 dmg/target · 1.5s stun · +40% dmg for 5s in 6m AoE',
     ],
+    PlayerClass.vitalist => [
+      '10 dmg · self +5 HP',
+      '4s HoT (6 HP/sec) to nearest ally in 5m',
+      '+30 HP · 4s HoT (8 HP/sec) to nearest ally in 5m',
+      '+20% dmg for 4s to nearest ally in 5m',
+      '30% dmg reduction for 4s to nearest ally in 5m',
+      '+45 HP · CC cleanse to nearest ally in 7m',
+      '+25 HP to all allies in 6m',
+      '20 dmg · 2s stun · force fumble if holding ball',
+      'Nearest ally in 10m: next ability buff durations doubled',
+      'All allies in 8m: +20 HP every 2s for 10s (5 ticks)',
+    ],
   };
 
-  // Mana cost per slot. Format: 'NR' = N Red, 'NB' = N Blue, 'NU' = N Ultra, '—' = free.
+  // Mana cost per slot. Format: 'NR' = N Red, 'NB' = N Blue, 'NY' = N Yellow, 'NU' = N Ultra, '—' = free.
   // Tier costs: slot 2 (1.5s CD): 5R/15B · slots 3–5 (5s): 7–10R/20–30B ·
   //             slots 6–7 (10s): 13–17R/40–50B · slots 8–9 (20s): 20–25R/60–70B
-  // Red ≈ 1/3 of blue at the same tier. Corsair only uses both mana types.
+  // Red ≈ 1/3 of blue at the same tier. Corsair exclusively uses yellow mana.
   List<String> get abilityManaCosts => switch (this) {
     //                  1     2      3      4      5      6      7      8      9     10
     PlayerClass.spectre    => ['—',  '5R',  '7R',  '8R', '10R', '13R', '17R', '20R', '25R', '5U'],
     PlayerClass.geomancer  => ['—', '15B', '20B', '25B', '30B', '40B', '50B', '60B', '70B', '5U'],
     PlayerClass.archon     => ['—', '15B', '20B', '25B', '30B', '40B', '50B', '60B', '70B', '5U'],
     PlayerClass.warden     => ['—', '15B', '20B', '25B', '30B', '40B', '50B', '60B', '70B', '5U'],
-    PlayerClass.corsair    => ['—',  '5R', '20B', '10R', '12R', '15R', '40B', '60B', '20R', '5U'],
+    PlayerClass.corsair    => ['—',  '5Y', '20Y', '10Y', '12Y', '15Y', '40Y', '60Y', '20Y', '5U'],
     PlayerClass.trickster  => ['—', '15B', '20B', '25B', '30B', '40B', '50B', '60B', '70B', '5U'],
     PlayerClass.wrecker    => ['—',  '5R',  '7R',  '8R', '10R', '13R', '17R', '20R', '25R', '5U'],
+    PlayerClass.vitalist   => ['—',  '5Y', '20Y', '15Y', '10Y', '35Y', '45Y', '60Y', '25Y', '5U'],
   };
 
   // Spatial extent / targeting range per slot.
   List<String> get abilityRanges => switch (this) {
     //                  1       2       3        4          5       6       7        8        9         10
     PlayerClass.spectre   => ['2.5m',  '2.5m',  'self',   '6m dash',  'self',    '2.5m',   '10m',    '4m AoE',  '2.5m',   'self'   ],
-    PlayerClass.geomancer => ['2.5m',  '2.5m',  '2.5m',  'self',     '5m AoE',  'aimed',  '7m',     'aimed',   '5m dash','30m AoE'],
+    PlayerClass.geomancer => ['2.5m',  'aimed', '2.5m',  'aimed',    '5m AoE',  'self',   'self',   'aimed',   'aimed',  '30m AoE'],
     PlayerClass.archon    => ['2.5m',  '3m',    'self',  'self',     '5m',      '8m',     'self',   '5m',      '7m AoE', '10m AoE'],
     PlayerClass.warden    => ['2.5m',  '3m',    '5m',    '5m',       'self',    '3m',     '5m',     '7m',      'global', 'global' ],
     PlayerClass.corsair   => ['2.5m',  '2.5m',  'self',  '5m dash',  '3m',      '4m',     '20m',    '6m',      '3.5m',   'self'   ],
     PlayerClass.trickster => ['2.5m',  '7m',    'self',  '3m',       '8m',      'global', '5m',     '5m AoE',  '3m',     'global' ],
     PlayerClass.wrecker   => ['2.5m',  '2.5m',  '5m dash','3m',      '4m AoE',  '2.5m',   '8m',    '4m AoE',  '2.5m',   '6m AoE' ],
+    PlayerClass.vitalist  => ['2.5m',  '5m',    '5m',    '5m',       '5m',      '7m',     '6m AoE', '3m',     '10m',    '8m AoE' ],
   };
 
   /// Numeric range in world units for slot [slot] (1-indexed).
@@ -323,8 +357,8 @@ extension PlayerClassInfo on PlayerClass {
     return switch (this) {
       // Spectre:   jab  snare  sprint  dash   invuln  stun-hit  self-heal  AoE-snare  stun-immune  ultra
       PlayerClass.spectre   => [d, d, b, m, b, d, h, c, b, x],
-      // Geomancer: fist  hill  shove  pit  AoE-snare  armor  selfheal  upheaval  fissure  ultra
-      PlayerClass.geomancer => [d, t, d, t, d, b, h, b, t, x],
+      // Geomancer: fist  hill  shove  mud  AoE-snare  armor  selfheal  crevasse  fissure  ultra
+      PlayerClass.geomancer => [d, t, d, t, d, b, h, t, t, x],
       // Archon:    fist  snare  sprint  shield  heal-ally  charge  self-heal  ally-shield  AoE-heal  ultra
       PlayerClass.archon    => [d, d, b, b, h, d, h, p, h, x],
       // Warden:    jab  snare  sprint  heal-ally  mana-ally  stun+snare  big-heal  AoE-mana  dash-stun  ultra
@@ -335,6 +369,8 @@ extension PlayerClassInfo on PlayerClass {
       PlayerClass.trickster => [d, m, b, c, u, u, u, c, c, x],
       // Wrecker:   all damage, all the time
       PlayerClass.wrecker   => [d, d, d, d, d, d, d, d, d, x],
+      // Vitalist:  jab+selfheal  HoT  burst-heal  ally-dmgbuff  ally-shield  big-heal+cleanse  AoE-heal  stun+fumble  duration-double  ultra
+      PlayerClass.vitalist  => [d, h, h, p, p, h, h, c, p, x],
     };
   }
 
@@ -351,6 +387,45 @@ extension PlayerClassInfo on PlayerClass {
       PlayerClass.corsair   => [e, {c, f}, e, {s}, e, {s}, e, {a}, e, e],
       PlayerClass.trickster => [e, {s}, e, {f}, {a}, e, {c}, {a}, {f}, {a}],
       PlayerClass.wrecker   => [e, {c}, e, {s}, {a}, {c}, {a}, {a, c}, {c}, {a, c}],
+      PlayerClass.vitalist  => [e, e, e, e, e, e, {a}, {c, f}, e, {a}],
     };
   }
+
+  // ── 3D mesh colors ────────────────────────────────────────────────────────
+
+  /// Accent color used for the selected-player cube highlight and class tinting.
+  Vector3 get meshColor => switch (this) {
+    PlayerClass.spectre   => Vector3(0x44 / 255, 1.0,          0xCC / 255),
+    PlayerClass.corsair   => Vector3(1.0,         0x44 / 255,  0xAA / 255),
+    PlayerClass.geomancer => Vector3(1.0,         0x55 / 255,  0x44 / 255),
+    PlayerClass.archon    => Vector3(0x44 / 255,  0x88 / 255,  1.0       ),
+    PlayerClass.warden    => Vector3(1.0,         0xCC / 255,  0x44 / 255),
+    PlayerClass.trickster => Vector3(0xAA / 255,  0x44 / 255,  1.0       ),
+    PlayerClass.wrecker   => Vector3(1.0,         0x77 / 255,  0.0       ),
+    PlayerClass.vitalist  => Vector3(0x44 / 255,  0xDD / 255,  0x88 / 255),
+  };
+
+  /// Subtle per-class jersey tint offset applied on top of the team base color.
+  Vector3 get jerseyShift => switch (this) {
+    PlayerClass.spectre   => Vector3( 0.00,  0.08, -0.05),
+    PlayerClass.geomancer => Vector3(-0.05, -0.05,  0.00),
+    PlayerClass.archon    => Vector3( 0.05,  0.05,  0.05),
+    PlayerClass.warden    => Vector3(-0.02,  0.08,  0.04),
+    PlayerClass.corsair   => Vector3( 0.08, -0.02, -0.08),
+    PlayerClass.trickster => Vector3(-0.10,  0.05,  0.15),
+    PlayerClass.wrecker   => Vector3( 0.15, -0.08, -0.10),
+    PlayerClass.vitalist  => Vector3(-0.05,  0.10,  0.00),
+  };
+
+  /// Helmet color in the 3D character rig.
+  Vector3 get helmetColor => switch (this) {
+    PlayerClass.spectre   => Vector3(0.90, 0.75, 0.10),
+    PlayerClass.corsair   => Vector3(0.90, 0.45, 0.08),
+    PlayerClass.geomancer => Vector3(0.12, 0.45, 0.12),
+    PlayerClass.archon    => Vector3(0.78, 0.78, 0.80),
+    PlayerClass.warden    => Vector3(0.10, 0.80, 0.85),
+    PlayerClass.trickster => Vector3(0.60, 0.10, 0.90),
+    PlayerClass.wrecker   => Vector3(0.85, 0.20, 0.02),
+    PlayerClass.vitalist  => Vector3(0.10, 0.80, 0.40),
+  };
 }

@@ -265,6 +265,12 @@ class ActSystem {
     // Reset ball
     BallSystem.resetForAct(gs);
 
+    // Clear mid-air fissure effects and open pits from the previous act
+    gs.fissureProjectiles.clear();
+    gs.fissureWarnings.clear();
+    gs.pitEffects.clear();
+    gs.elevGrid.clear();
+
     gs.showEvent('ACT ${act.currentAct} BEGIN!');
   }
 

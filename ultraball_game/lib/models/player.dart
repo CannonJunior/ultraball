@@ -26,9 +26,11 @@ class UltraballPlayer {
   double maxHealth = 100;
   double redMana = 0;
   double blueMana = 100;
+  double yellowMana = 100; // Corsair-exclusive mana; regens 2× faster while holding ball
   // Third mana — Ultra: earned by holding ball, scoring, and act wins
   double ultraMana = 0.0;
   static const double maxUltraMana = 10.0;
+  static const double maxYellowMana = 100.0;
 
   bool isAlive = true;
   bool isOnField = false;
@@ -96,6 +98,20 @@ class UltraballPlayer {
   bool attacksApplySnare = false;
   double attacksApplySnareTimer = 0.0;
 
+  // Vitalist Prolong: caster's next ability's self-buff durations are doubled
+  bool durationDoubleNext = false;
+  double durationDoubleNextTimer = 0.0; // buff expires when this hits 0
+  double durationDoubleNextMax = 0.0;
+
+  // Vitalist VERDURE ultra: periodic HoT that fires every 2s for 10s
+  int periodicHotTicksLeft = 0;
+  double periodicHotTickTimer = 0.0;   // countdown to next tick
+  double periodicHotInterval = 0.0;
+  double periodicHotTickAmount = 0.0;
+  double periodicHotTotalTimer = 0.0;  // total remaining (for UI progress ring)
+  double periodicHotTotalMax = 0.0;
+  void Function(double)? _periodicHotCasterCredit;
+
   // Trickster status effects
   double hexedTimer = 0.0;
   double hexedFactor = 1.0; // <1.0 = reduced damage output when hexed
@@ -146,6 +162,8 @@ class UltraballPlayer {
   // Jump physics
   double zHeight = 0.0;
   double zVelocity = 0.0;
+  double terrainElevation = 0.0; // world height of terrain surface at player's position
+  double get totalElevation => terrainElevation + zHeight;
   bool hasDoubleJumped = false;
 
   static const double _jumpVelocity       = 16.0;
@@ -185,6 +203,25 @@ class UltraballPlayer {
       (throwChargeTime / maxThrowChargeTime).clamp(0.0, 1.0);
 
   double get throwDistance => 5.0 + 35.0 * throwChargePercent;
+
+  // Fissure aim-charging (Geomancer ability 9)
+  bool isFissureAiming = false;
+  double fissureAimTime = 0.0;
+  static const double maxFissureAimTime = 2.0;
+
+  double get fissureAimPercent =>
+      (fissureAimTime / maxFissureAimTime).clamp(0.0, 1.0);
+
+  /// Target distance: 5 m (minimum) → 35 m (full charge)
+  double get fissureTargetDistance => 5.0 + 30.0 * fissureAimPercent;
+
+  // Hill/valley charge (Geomancer abilities 2 and 8)
+  bool isChargingHill = false;
+  double hillChargeTime = 0.0;
+  static const double maxHillChargeTime = 3.0;
+
+  double get hillChargePercent =>
+      (hillChargeTime / maxHillChargeTime).clamp(0.0, 1.0);
 
   UltraballPlayer({
     required this.id,
@@ -253,6 +290,9 @@ class UltraballPlayer {
     // Blue mana regen — faster when stationary
     final blueRegenRate = (velX == 0 && velY == 0) ? 8.0 : 2.0;
     blueMana = math.min(100, blueMana + blueRegenRate * dt);
+
+    // Yellow mana base regen (5/sec); ball carrier bonus applied externally via gainYellowMana
+    yellowMana = math.min(maxYellowMana, yellowMana + 5.0 * dt);
 
     // Buff timers
     if (damageBoostTimer > 0) {
@@ -324,6 +364,33 @@ class UltraballPlayer {
     if (attacksApplySnareTimer > 0) {
       attacksApplySnareTimer -= dt;
       attacksApplySnare = attacksApplySnareTimer > 0;
+    }
+
+    // Vitalist Prolong: expire if unused
+    if (durationDoubleNextTimer > 0) {
+      durationDoubleNextTimer -= dt;
+      if (durationDoubleNextTimer <= 0) {
+        durationDoubleNextTimer = 0;
+        durationDoubleNext = false;
+      }
+    }
+
+    // Vitalist VERDURE: periodic HoT ticks
+    if (periodicHotTicksLeft > 0) {
+      periodicHotTotalTimer = math.max(0, periodicHotTotalTimer - dt);
+      periodicHotTickTimer -= dt;
+      if (periodicHotTickTimer <= 0) {
+        periodicHotTickTimer += periodicHotInterval;
+        final tickHeal = math.min(maxHealth - health, periodicHotTickAmount);
+        health += tickHeal;
+        if (tickHeal > 0) _periodicHotCasterCredit?.call(tickHeal);
+        periodicHotTicksLeft--;
+        if (periodicHotTicksLeft == 0) {
+          periodicHotTotalTimer = 0;
+          periodicHotTickAmount = 0;
+          _periodicHotCasterCredit = null;
+        }
+      }
     }
 
     // Trickster debuffs
@@ -430,6 +497,20 @@ class UltraballPlayer {
     ultraMana = math.min(maxUltraMana, ultraMana + amount);
   }
 
+  void gainYellowMana(double amount) {
+    yellowMana = math.min(maxYellowMana, yellowMana + amount);
+  }
+
+  void applyPeriodicHoT(int ticks, double amount, double interval, {void Function(double)? casterCredit}) {
+    periodicHotTicksLeft = ticks;
+    periodicHotTickAmount = amount;
+    periodicHotInterval = interval;
+    periodicHotTickTimer = interval;
+    periodicHotTotalTimer = ticks * interval;
+    periodicHotTotalMax = ticks * interval;
+    _periodicHotCasterCredit = casterCredit;
+  }
+
   // Snare: apply only if it worsens the current snare
   void applySnare(double duration, double multiplier) {
     if (dodgeTimer > 0) return;
@@ -502,6 +583,16 @@ class UltraballPlayer {
     attacksApplySnare = false;
     attacksApplySnareTimer = 0;
     attacksApplySnareMax = 0;
+    durationDoubleNext = false;
+    durationDoubleNextTimer = 0;
+    durationDoubleNextMax = 0;
+    periodicHotTicksLeft = 0;
+    periodicHotTickTimer = 0;
+    periodicHotTotalTimer = 0;
+    periodicHotTotalMax = 0;
+    periodicHotTickAmount = 0;
+    periodicHotInterval = 0;
+    _periodicHotCasterCredit = null;
     hexedTimer = 0.0; hexedFactor = 1.0; hexedMax = 0;
     confusedTimer = 0.0; confusedMax = 0;
     stunTimer = 0; stunMax = 0;

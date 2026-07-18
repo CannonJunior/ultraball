@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import '../../models/player.dart';
 import '../../models/damage_indicator.dart';
 import '../../models/terrain_event.dart';
+import '../../models/fissure_event.dart';
 import '../game_state.dart';
 import '../ability_stats_collector.dart';
 import 'act_system.dart';
@@ -36,6 +37,14 @@ class CombatSystem {
     }
     _deductMana(player, slot);
 
+    // Prolong (Vitalist slot 9): snapshot self-buff timers before ability fires.
+    final bool prolong = player.durationDoubleNext && player.durationDoubleNextTimer > 0;
+    final _TimerSnapshot? snap = prolong ? _TimerSnapshot.of(player) : null;
+    if (prolong) {
+      player.durationDoubleNext = false;
+      player.durationDoubleNextTimer = 0;
+    }
+
     final stats = gs.abilityStats;
     final before = stats != null
         ? AbilityStatsCollector.snap(gs, player.team)
@@ -56,7 +65,12 @@ class CombatSystem {
         _tricksterAbility(gs, player, slot);
       case PlayerClass.wrecker:
         _wreckerAbility(gs, player, slot);
+      case PlayerClass.vitalist:
+        _vitalistAbility(gs, player, slot);
     }
+
+    // Double any self-buff timer increases caused by this ability.
+    if (prolong && snap != null) snap.doubleIncreases(player);
 
     if (stats != null && before != null) {
       final after = AbilityStatsCollector.snap(gs, player.team);
@@ -90,9 +104,10 @@ class CombatSystem {
     final (amount, letter) = costs[slot - 1];
     if (letter == '—') return null;
     return switch (letter) {
-      'R' when player.redMana   < amount => 'Insufficient Red Mana',
-      'B' when player.blueMana  < amount => 'Insufficient Blue Mana',
-      'U' when player.ultraMana < amount => 'Insufficient Ultra Mana',
+      'R' when player.redMana    < amount => 'Insufficient Red Mana',
+      'B' when player.blueMana   < amount => 'Insufficient Blue Mana',
+      'Y' when player.yellowMana < amount => 'Insufficient Yellow Mana',
+      'U' when player.ultraMana  < amount => 'Insufficient Ultra Mana',
       _ => null,
     };
   }
@@ -103,9 +118,10 @@ class CombatSystem {
     final (amount, letter) = costs[slot - 1];
     if (letter == '—') return;
     switch (letter) {
-      case 'R': player.redMana   = math.max(0, player.redMana   - amount);
-      case 'B': player.blueMana  = math.max(0, player.blueMana  - amount);
-      case 'U': player.ultraMana = math.max(0, player.ultraMana - amount);
+      case 'R': player.redMana    = math.max(0, player.redMana    - amount);
+      case 'B': player.blueMana   = math.max(0, player.blueMana   - amount);
+      case 'Y': player.yellowMana = math.max(0, player.yellowMana - amount);
+      case 'U': player.ultraMana  = math.max(0, player.ultraMana  - amount);
     }
   }
 
@@ -234,15 +250,20 @@ class CombatSystem {
 
     } else if (slot == 2) {
       // Raise Hill — hold-to-aim for human; AI calls directly
+      // Charge controls plateau steepness: 0% charge = flat top, 100% = spike
       if (p.slamCooldown > 0) return;
       p.slamCooldown = 20.0;
       gs.dataCollector?.onSlam(p.team == Team.opponent ? 'opponent' : 'player');
       final tx = (p.x + math.cos(p.facing) * GameState.terrainAimRange).clamp(0.0, p.maxFieldX);
       final ty = (p.y + math.sin(p.facing) * GameState.terrainAimRange).clamp(0.0, p.maxFieldY);
+      final plateauFrac = 0.70 - p.hillChargePercent * 0.65; // 0% → 0.70 flat; 100% → 0.05 spike
+      p.isChargingHill = false;
+      p.hillChargeTime = 0.0;
       TerrainSystem.applyEvent(gs, TerrainEvent(
         type: TerrainEventType.riseMountain,
         worldX: tx, worldY: ty,
-        radius: 5.0, intensity: 1.0, duration: 6.0,
+        radius: 9.0, intensity: 1.0, duration: 6.0,
+        plateauFrac: plateauFrac,
       ));
       addIndicator(gs, tx, ty - 1, 'RAISE HILL!', IndicatorType.event);
 
@@ -264,17 +285,17 @@ class CombatSystem {
       }
 
     } else if (slot == 4) {
-      // Open Sinkhole — hold-to-aim for human; AI calls directly
+      // Quagmire — create mud zone at aimed location; 5s CD, 25 blue
       if (p.ability4Cooldown > 0) return;
-      p.ability4Cooldown = 20.0;
+      p.ability4Cooldown = 5.0;
       final tx = (p.x + math.cos(p.facing) * GameState.terrainAimRange).clamp(0.0, p.maxFieldX);
       final ty = (p.y + math.sin(p.facing) * GameState.terrainAimRange).clamp(0.0, p.maxFieldY);
       TerrainSystem.applyEvent(gs, TerrainEvent(
-        type: TerrainEventType.openPit,
+        type: TerrainEventType.mudZone,
         worldX: tx, worldY: ty,
-        radius: 4.0, intensity: 1.0, duration: 6.0,
+        radius: 5.0, intensity: 1.0, duration: 8.0,
       ));
-      addIndicator(gs, tx, ty - 1, 'SINKHOLE!', IndicatorType.kill);
+      addIndicator(gs, tx, ty - 1, 'QUAGMIRE!', IndicatorType.event);
 
     } else if (slot == 5) {
       // Tremor — AoE 5m: 15 dmg + 1.5s snare (40% slow), 8s CD, 25 red
@@ -309,29 +330,40 @@ class CombatSystem {
       addIndicator(gs, p.x, p.y - 2, '+35 HP', IndicatorType.heal);
 
     } else if (slot == 8) {
-      // Upheaval — +20% speed 4s + gain 30 red mana, 10s CD, 20 blue
+      // Crevasse — hold-to-aim for human; AI calls directly
+      // Charge controls plateau steepness: 0% = wide flat bowl, 100% = narrow deep rift
       if (p.ability8Cooldown > 0) return;
-      p.ability8Cooldown = 5.0;
-      p.speedBoostTimer = 4.0;
-      p.speedBoostMax = 4.0;
-      p.gainRedMana(30.0);
-      addIndicator(gs, p.x, p.y - 2, 'UPHEAVAL!', IndicatorType.event);
+      p.ability8Cooldown = 20.0;
+      final tx = (p.x + math.cos(p.facing) * GameState.terrainAimRange).clamp(0.0, p.maxFieldX);
+      final ty = (p.y + math.sin(p.facing) * GameState.terrainAimRange).clamp(0.0, p.maxFieldY);
+      final plateauFrac = 0.70 - p.hillChargePercent * 0.65;
+      p.isChargingHill = false;
+      p.hillChargeTime = 0.0;
+      TerrainSystem.applyEvent(gs, TerrainEvent(
+        type: TerrainEventType.sinkValley,
+        worldX: tx, worldY: ty,
+        radius: 9.0, intensity: 1.0, duration: 6.0,
+        plateauFrac: plateauFrac,
+      ));
+      addIndicator(gs, tx, ty - 1, 'CREVASSE!', IndicatorType.event);
 
     } else if (slot == 9) {
-      // Fissure — dash 5m + leave pit strip along path (2 cells wide, 2s), 12s CD, 30 red
+      // Fissure — launch a rock projectile to the aimed location;
+      // ground cracks for 1.5 s (warning), then a deadly pit opens for 5 s.
       if (p.ability9Cooldown > 0) return;
-      p.ability9Cooldown = 5.0;
-      final destX = (p.x + math.cos(p.facing) * 5.0).clamp(0.0, p.maxFieldX);
-      final destY = (p.y + math.sin(p.facing) * 5.0).clamp(0.0, p.maxFieldY);
-      TerrainSystem.applyEvent(gs, TerrainEvent(
-        type: TerrainEventType.openPit,
-        worldX: (p.x + destX) / 2, worldY: (p.y + destY) / 2,
-        radius: 3.0, intensity: 1.0, duration: 2.0,
-        directionRad: p.facing,
+      p.ability9Cooldown = 15.0;
+      const hSpeed = 12.0;
+      final dist = p.fissureTargetDistance;
+      final tx = (p.x + math.cos(p.facing) * dist).clamp(0.0, p.maxFieldX);
+      final ty = (p.y + math.sin(p.facing) * dist).clamp(0.0, p.maxFieldY);
+      gs.fissureProjectiles.add(FissureProjectile(
+        launchX: p.x, launchY: p.y,
+        targetX: tx,  targetY: ty,
+        flightTime: dist / hSpeed,
+        radius: 4.0,
+        pitDuration: 5.0,
       ));
-      p.x = destX;
-      p.y = destY;
-      addIndicator(gs, destX, destY - 1, 'FISSURE!', IndicatorType.kill);
+      addIndicator(gs, p.x, p.y - 2, 'FISSURE!', IndicatorType.event);
 
     } else if (slot == 10) {
       // TERRA NOVA — raise hills + open pits under all enemies, costs 5 ultra
@@ -769,7 +801,8 @@ class CombatSystem {
     double range,
   ) {
     final tabTarget = attacker.isPlayerControlled ? gs.currentTarget : null;
-    if (tabTarget != null && tabTarget.isAlive && tabTarget.isOnField) {
+    if (tabTarget != null && tabTarget.isAlive && tabTarget.isOnField &&
+        tabTarget.team != attacker.team) {
       if (tabTarget.isAirborne) return null;
       final dx = tabTarget.x - attacker.x;
       final dy = tabTarget.y - attacker.y;
@@ -796,8 +829,8 @@ class CombatSystem {
     final range = player.playerClass.slotRange(slot);
     if (range > 0) {
       final target = gs.currentTarget;
-      if (target == null || !target.isAlive) {
-        player.abilityQueue.removeAt(0); // drop — nothing to wait for
+      if (target == null || !target.isAlive || target.team == player.team) {
+        player.abilityQueue.removeAt(0); // drop — no valid enemy target
         return;
       }
       final dx = target.x - player.x;
@@ -1366,6 +1399,221 @@ class CombatSystem {
       p.damageBoostMax = 5.0;
       addIndicator(gs, p.x, p.y - 2, 'DEMOLISH!', IndicatorType.kill);
       gs.showEvent('DEMOLISH! ${p.name} demolishes $stunned enemies — +40% dmg for 5s!');
+    }
+  }
+
+  // ─── VITALIST abilities ───────────────────────────────────────────────────
+  // Sustain healer. Light HP (90), medium speed (8 m/s). Yellow mana.
+
+  static void _vitalistAbility(GameState gs, UltraballPlayer p, int slot) {
+    if (slot == 1) {
+      // Tap — 10 dmg + self +5 HP
+      if (p.tackleCooldown > 0) return;
+      final t = _resolveTarget(gs, p, 2.5);
+      if (t == null) return;
+      p.tackleCooldown = 1.5;
+      applyDamage(gs, t, 10.0, p);
+      _applyHealing(gs, p, 5.0, p);
+      checkCombo(gs, p);
+
+    } else if (slot == 2) {
+      // Mend — 4s HoT (6 HP/sec) to nearest ally in 5m
+      if (p.slamCooldown > 0) return;
+      final t = _findNearestAlly(gs, p, 5.0);
+      if (t == null) return;
+      p.slamCooldown = 1.5;
+      t.applyHoT(4.0, 6.0, casterCredit: (amt) => p.totalHealingDone += amt);
+      addIndicator(gs, t.x, t.y - 2, '+HoT', IndicatorType.heal);
+
+    } else if (slot == 3) {
+      // Infuse — +30 HP + 4s HoT (8 HP/sec) to nearest ally in 5m
+      if (p.sprintCooldown > 0) return;
+      final t = _findNearestAlly(gs, p, 5.0);
+      if (t == null) return;
+      p.sprintCooldown = 5.0;
+      _applyHealing(gs, t, 30.0, p);
+      t.applyHoT(4.0, 8.0, casterCredit: (amt) => p.totalHealingDone += amt);
+      addIndicator(gs, t.x, t.y - 2, '+30 Infuse', IndicatorType.heal);
+
+    } else if (slot == 4) {
+      // Empower — +20% dmg for 4s to nearest ally in 5m
+      if (p.ability4Cooldown > 0) return;
+      final t = _findNearestAlly(gs, p, 5.0);
+      if (t == null) return;
+      p.ability4Cooldown = 5.0;
+      t.damageBoostFactor = math.max(t.damageBoostFactor, 1.20);
+      t.damageBoostTimer  = math.max(t.damageBoostTimer, 4.0);
+      t.damageBoostMax    = math.max(t.damageBoostMax, 4.0);
+      addIndicator(gs, t.x, t.y - 2, '+20% Dmg', IndicatorType.event);
+
+    } else if (slot == 5) {
+      // Bulwark — 30% dmg reduction for 4s to nearest ally in 5m
+      if (p.ability5Cooldown > 0) return;
+      final t = _findNearestAlly(gs, p, 5.0);
+      if (t == null) return;
+      p.ability5Cooldown = 5.0;
+      t.damageReductionFactor = math.min(t.damageReductionFactor, 0.70);
+      t.damageReductionTimer  = math.max(t.damageReductionTimer, 4.0);
+      t.damageReductionMax    = math.max(t.damageReductionMax, 4.0);
+      addIndicator(gs, t.x, t.y - 2, 'Bulwark', IndicatorType.event);
+
+    } else if (slot == 6) {
+      // Refresh — +45 HP + CC cleanse to nearest ally in 7m
+      if (p.ability6Cooldown > 0) return;
+      final t = _findNearestAlly(gs, p, 7.0);
+      if (t == null) return;
+      p.ability6Cooldown = 10.0;
+      _applyHealing(gs, t, 45.0, p);
+      t.cleanse();
+      addIndicator(gs, t.x, t.y - 2, '+45 Refresh', IndicatorType.heal);
+
+    } else if (slot == 7) {
+      // Cascade — +25 HP to all allies in 6m (including self)
+      if (p.ability7Cooldown > 0) return;
+      p.ability7Cooldown = 10.0;
+      int hit = 0;
+      for (final ally in gs.getTeamOnField(p.team)) {
+        if (!ally.isAlive) continue;
+        final dx = ally.x - p.x, dy = ally.y - p.y;
+        if (dx * dx + dy * dy <= 36.0) {
+          _applyHealing(gs, ally, 25.0, p);
+          hit++;
+        }
+      }
+      // Also heal self
+      _applyHealing(gs, p, 25.0, p);
+      hit++;
+      addIndicator(gs, p.x, p.y - 2, '+25 Cascade ×$hit', IndicatorType.heal);
+      gs.showEvent('CASCADE! ${p.name} heals $hit allies for 25 HP each!');
+
+    } else if (slot == 8) {
+      // Rebuke — 20 dmg + 2s stun; force fumble if target has ball
+      if (p.ability8Cooldown > 0) return;
+      final t = _resolveTarget(gs, p, 3.0);
+      if (t == null) return;
+      p.ability8Cooldown = 20.0;
+      applyDamage(gs, t, 20.0, p);
+      if (t.isAlive) {
+        t.stun(2.0);
+        if (gs.ball.holderId == t.id) {
+          gs.ball.holderId = null;
+          gs.ball.velX = 0;
+          gs.ball.velY = 0;
+          addIndicator(gs, t.x, t.y - 1, 'FUMBLE!', IndicatorType.event);
+          gs.showEvent('REBUKE! ${p.name} strips the ball from ${t.name}!');
+        } else {
+          addIndicator(gs, t.x, t.y - 1, 'Rebuke!', IndicatorType.event);
+        }
+      }
+
+    } else if (slot == 9) {
+      // Prolong — nearest ally in 10m: next ability buff durations doubled
+      if (p.ability9Cooldown > 0) return;
+      final t = _findNearestAlly(gs, p, 10.0);
+      if (t == null) return;
+      p.ability9Cooldown = 20.0;
+      t.durationDoubleNext = true;
+      t.durationDoubleNextTimer = 10.0;
+      t.durationDoubleNextMax = 10.0;
+      addIndicator(gs, t.x, t.y - 2, 'Prolong!', IndicatorType.event);
+      gs.showEvent('PROLONG! ${t.name}\'s next buff will last twice as long!');
+
+    } else if (slot == 10) {
+      // VERDURE — all allies in 8m get a periodic HoT: +20 HP every 2s for 10s (5 ticks)
+      int hit = 0;
+      for (final ally in gs.getTeamOnField(p.team)) {
+        if (!ally.isAlive) continue;
+        final dx = ally.x - p.x, dy = ally.y - p.y;
+        if (dx * dx + dy * dy <= 64.0) { // 8m radius
+          ally.applyPeriodicHoT(5, 20.0, 2.0, casterCredit: (amt) => p.totalHealingDone += amt);
+          hit++;
+        }
+      }
+      // Always include self
+      p.applyPeriodicHoT(5, 20.0, 2.0, casterCredit: (amt) => p.totalHealingDone += amt);
+      hit++;
+      addIndicator(gs, p.x, p.y - 2, 'VERDURE! ×$hit', IndicatorType.heal);
+      gs.showEvent('VERDURE! ${p.name} channels renewal — $hit allies heal 20 HP every 2s for 10s!');
+    }
+  }
+}
+
+// ─── Timer snapshot for Vitalist Prolong ────────────────────────────────────
+// Captures self-buff timer values before an ability fires so we can double
+// any timer that increased (i.e. a buff the ability just applied to self).
+
+class _TimerSnapshot {
+  final double speedBoost;
+  final double speedMult;
+  final double damageBoost;
+  final double damageReduction;
+  final double stunImmune;
+  final double dodge;
+  final double attacksApplySnare;
+  final double hot;
+
+  const _TimerSnapshot._(
+    this.speedBoost,
+    this.speedMult,
+    this.damageBoost,
+    this.damageReduction,
+    this.stunImmune,
+    this.dodge,
+    this.attacksApplySnare,
+    this.hot,
+  );
+
+  factory _TimerSnapshot.of(UltraballPlayer p) => _TimerSnapshot._(
+    p.speedBoostTimer,
+    p.speedMultiplierTimer,
+    p.damageBoostTimer,
+    p.damageReductionTimer,
+    p.stunImmuneTimer,
+    p.dodgeTimer,
+    p.attacksApplySnareTimer,
+    p.hotTimer,
+  );
+
+  void doubleIncreases(UltraballPlayer p) {
+    if (p.speedBoostTimer > speedBoost) {
+      final d = p.speedBoostTimer - speedBoost;
+      p.speedBoostTimer += d;
+      p.speedBoostMax = math.max(p.speedBoostMax, p.speedBoostTimer);
+    }
+    if (p.speedMultiplierTimer > speedMult) {
+      final d = p.speedMultiplierTimer - speedMult;
+      p.speedMultiplierTimer += d;
+      p.speedMultiplierMax = math.max(p.speedMultiplierMax, p.speedMultiplierTimer);
+    }
+    if (p.damageBoostTimer > damageBoost) {
+      final d = p.damageBoostTimer - damageBoost;
+      p.damageBoostTimer += d;
+      p.damageBoostMax = math.max(p.damageBoostMax, p.damageBoostTimer);
+    }
+    if (p.damageReductionTimer > damageReduction) {
+      final d = p.damageReductionTimer - damageReduction;
+      p.damageReductionTimer += d;
+      p.damageReductionMax = math.max(p.damageReductionMax, p.damageReductionTimer);
+    }
+    if (p.stunImmuneTimer > stunImmune) {
+      final d = p.stunImmuneTimer - stunImmune;
+      p.stunImmuneTimer += d;
+      p.stunImmuneMax = math.max(p.stunImmuneMax, p.stunImmuneTimer);
+    }
+    if (p.dodgeTimer > dodge) {
+      final d = p.dodgeTimer - dodge;
+      p.dodgeTimer += d;
+      p.dodgeMax = math.max(p.dodgeMax, p.dodgeTimer);
+    }
+    if (p.attacksApplySnareTimer > attacksApplySnare) {
+      final d = p.attacksApplySnareTimer - attacksApplySnare;
+      p.attacksApplySnareTimer += d;
+      p.attacksApplySnareMax = math.max(p.attacksApplySnareMax, p.attacksApplySnareTimer);
+    }
+    if (p.hotTimer > hot) {
+      final d = p.hotTimer - hot;
+      p.hotTimer += d;
+      p.hotMax = math.max(p.hotMax, p.hotTimer);
     }
   }
 }

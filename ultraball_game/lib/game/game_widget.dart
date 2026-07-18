@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/player.dart';
 import '../models/game_settings.dart';
+import '../models/fissure_event.dart';
 import 'game_state.dart';
 import 'field_painter.dart';
 import 'systems/combat_system.dart';
@@ -145,6 +146,8 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       _gs.pressedKeys.clear();
       _gs.isAimingTerrain = false;
       _gs.terrainAimEventType = null;
+      _gs.selectedPlayer?.isFissureAiming = false;
+      _gs.selectedPlayer?.fissureAimTime = 0.0;
     }
   }
 
@@ -213,6 +216,23 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
         selPlayer.isChargingThrow = false;
         selPlayer.throwChargeTime = 0.0;
       }
+
+      // Fissure aim-charge while Digit9 is held (Geomancer ability 9)
+      if (selPlayer.isFissureAiming) {
+        if (_gs.pressedKeys.contains(LogicalKeyboardKey.digit9)) {
+          selPlayer.fissureAimTime = (selPlayer.fissureAimTime + dt)
+              .clamp(0.0, UltraballPlayer.maxFissureAimTime);
+        }
+      }
+
+      // Hill/valley charge while Digit2 or Digit8 is held (Geomancer abilities 2 and 8)
+      if (selPlayer.isChargingHill) {
+        if (_gs.pressedKeys.contains(LogicalKeyboardKey.digit2) ||
+            _gs.pressedKeys.contains(LogicalKeyboardKey.digit8)) {
+          selPlayer.hillChargeTime = (selPlayer.hillChargeTime + dt)
+              .clamp(0.0, UltraballPlayer.maxHillChargeTime);
+        }
+      }
     }
 
     // Handle player input
@@ -252,6 +272,9 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     // Process Trickster traps
     CombatSystem.processTraps(_gs, dt);
 
+    // Tick fissure projectiles → warnings → pit openings
+    _processFissureEvents(dt);
+
     // Update creature
     CreatureSystem.update(_gs, dt);
 
@@ -288,6 +311,34 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     // ValueListenableBuilder widgets in build() subscribe to this and rebuild their
     // own subtrees, so a full setState() is no longer needed every frame.
     if (mounted) _canvasRepaint.value++;
+  }
+
+  void _processFissureEvents(double dt) {
+    for (final proj in _gs.fissureProjectiles) proj.age += dt;
+    final landed = _gs.fissureProjectiles.where((p) => p.isDone).toList();
+    _gs.fissureProjectiles.removeWhere((p) => p.isDone);
+    for (final proj in landed) {
+      _gs.fissureWarnings.add(FissureWarning(
+        worldX: proj.targetX,
+        worldY: proj.targetY,
+        radius: proj.radius,
+        pitDuration: proj.pitDuration,
+      ));
+    }
+
+    for (final warn in _gs.fissureWarnings) warn.age += dt;
+    final expired = _gs.fissureWarnings.where((w) => w.isDone).toList();
+    _gs.fissureWarnings.removeWhere((w) => w.isDone);
+    for (final warn in expired) {
+      TerrainSystem.applyEvent(_gs, TerrainEvent(
+        type: TerrainEventType.openPit,
+        worldX: warn.worldX,
+        worldY: warn.worldY,
+        radius: warn.radius,
+        intensity: 1.0,
+        duration: warn.pitDuration,
+      ));
+    }
   }
 
   // ==================== WOW-STYLE MOVEMENT ====================
@@ -459,6 +510,8 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
         // Cancel any in-progress Geomancer terrain aim before switching players
         _gs.isAimingTerrain = false;
         _gs.terrainAimEventType = null;
+        _gs.selectedPlayer?.isFissureAiming = false;
+        _gs.selectedPlayer?.fissureAimTime = 0.0;
         _gs.selectNextPlayer();
       } else {
         _gs.tabToNextEnemyTarget();
@@ -474,10 +527,12 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     if (key == LogicalKeyboardKey.digit2) {
       if (player != null) {
         if (player.playerClass == PlayerClass.geomancer) {
-          // Hold-to-aim: start aiming terrain placement (Geomancer special case)
-          if (player.slamCooldown <= 0 && player.redMana >= 25 && player.gcdRemaining <= 0) {
+          // Hold-to-aim: start aiming terrain placement + begin charge
+          if (player.slamCooldown <= 0 && player.blueMana >= 15 && player.gcdRemaining <= 0) {
             _gs.isAimingTerrain = true;
             _gs.terrainAimEventType = TerrainEventType.riseMountain;
+            player.isChargingHill = true;
+            player.hillChargeTime = 0.0;
           } else {
             // On CD, no mana, or GCD active: enqueue via normal path
             _tryFireAbility(player, 2);
@@ -496,9 +551,9 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       if (player != null) {
         if (player.playerClass == PlayerClass.geomancer) {
           // Hold-to-aim: start aiming terrain placement (Geomancer special case)
-          if (player.ability4Cooldown <= 0 && player.redMana >= 35 && player.gcdRemaining <= 0) {
+          if (player.ability4Cooldown <= 0 && player.blueMana >= 25 && player.gcdRemaining <= 0) {
             _gs.isAimingTerrain = true;
-            _gs.terrainAimEventType = TerrainEventType.openPit;
+            _gs.terrainAimEventType = TerrainEventType.mudZone;
           } else {
             // On CD, no mana, or GCD active: enqueue via normal path
             _tryFireAbility(player, 4);
@@ -522,11 +577,37 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       return;
     }
     if (key == LogicalKeyboardKey.digit8) {
-      if (player != null) _tryFireAbility(player, 8);
+      if (player != null) {
+        if (player.playerClass == PlayerClass.geomancer) {
+          // Hold-to-aim: start aiming valley placement + begin charge
+          if (player.ability8Cooldown <= 0 && player.blueMana >= 60 && player.gcdRemaining <= 0) {
+            _gs.isAimingTerrain = true;
+            _gs.terrainAimEventType = TerrainEventType.sinkValley;
+            player.isChargingHill = true;
+            player.hillChargeTime = 0.0;
+          } else {
+            _tryFireAbility(player, 8);
+          }
+        } else {
+          _tryFireAbility(player, 8);
+        }
+      }
       return;
     }
     if (key == LogicalKeyboardKey.digit9) {
-      if (player != null) _tryFireAbility(player, 9);
+      if (player != null) {
+        if (player.playerClass == PlayerClass.geomancer) {
+          if (player.ability9Cooldown <= 0 && player.blueMana >= 70 &&
+              player.gcdRemaining <= 0) {
+            player.isFissureAiming = true;
+            player.fissureAimTime = 0.0;
+          } else {
+            _tryFireAbility(player, 9);
+          }
+        } else {
+          _tryFireAbility(player, 9);
+        }
+      }
       return;
     }
     if (key == LogicalKeyboardKey.digit0) {
@@ -624,14 +705,17 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       player?.throwChargeTime = 0.0;
     }
 
-    // Digit2 / Digit4 release: fire terrain ability if Geomancer was aiming.
+    // Digit2 / Digit4 / Digit8 release: fire terrain ability if Geomancer was aiming.
     // Guard on playerClass so a mid-aim player-switch doesn't fire the wrong unit's slot.
     if (event.logicalKey == LogicalKeyboardKey.digit2 ||
-        event.logicalKey == LogicalKeyboardKey.digit4) {
+        event.logicalKey == LogicalKeyboardKey.digit4 ||
+        event.logicalKey == LogicalKeyboardKey.digit8) {
       if (_gs.isAimingTerrain && !_gs.paused && !_gs.actState.gameOver) {
         final player = _gs.selectedPlayer;
         if (player != null && player.playerClass == PlayerClass.geomancer) {
-          final slot = event.logicalKey == LogicalKeyboardKey.digit2 ? 2 : 4;
+          int slot = 4;
+          if (event.logicalKey == LogicalKeyboardKey.digit2) slot = 2;
+          if (event.logicalKey == LogicalKeyboardKey.digit8) slot = 8;
           CombatSystem.useClassAbility(_gs, player, slot);
           player.gcdRemaining = 1.0;
           player.gcdMax = 1.0;
@@ -644,6 +728,28 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
         _gs.isAimingTerrain = false;
         _gs.terrainAimEventType = null;
       }
+      // Clear hill charge on key release regardless of whether it fired
+      _gs.selectedPlayer?.isChargingHill = false;
+      _gs.selectedPlayer?.hillChargeTime = 0.0;
+    }
+
+    // Digit9 release: fire Fissure if Geomancer was holding to aim.
+    if (event.logicalKey == LogicalKeyboardKey.digit9) {
+      final player = _gs.selectedPlayer;
+      if (player != null && player.isFissureAiming &&
+          player.playerClass == PlayerClass.geomancer &&
+          !_gs.paused && !_gs.actState.gameOver) {
+        CombatSystem.useClassAbility(_gs, player, 9);
+        player.gcdRemaining = 1.0;
+        player.gcdMax = 1.0;
+        final names = player.playerClass.abilityNames;
+        if (names.length >= 9) {
+          player.lastExecutedAbility = names[8];
+          player.lastExecutedTimer = 1.2;
+        }
+      }
+      player?.isFissureAiming = false;
+      player?.fissureAimTime = 0.0;
     }
   }
 
@@ -667,15 +773,20 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       }
     }
 
-    if (closest == null || closestDist > selectionRadius) {
-      return;
-    }
+    if (closest == null || closestDist > selectionRadius) return;
 
-    if (closest.team == Team.player) {
+    final isShift = _gs.pressedKeys.contains(LogicalKeyboardKey.shiftLeft) ||
+        _gs.pressedKeys.contains(LogicalKeyboardKey.shiftRight);
+
+    if (isShift && closest.team == Team.player) {
+      // Shift+click teammate → select as active player (mirrors Shift+Tab)
       _gs.isAimingTerrain = false;
       _gs.terrainAimEventType = null;
+      _gs.selectedPlayer?.isFissureAiming = false;
+      _gs.selectedPlayer?.fissureAimTime = 0.0;
       setState(() => _gs.selectPlayer(closest!));
     } else {
+      // Normal click on any player → set as target
       setState(() => _gs.currentTargetId = closest!.id);
     }
     _focusNode.requestFocus();
@@ -768,12 +879,15 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
     _fieldPainter.offsetY = _offsetY;
 
     // Sync WebGL viewport to new window dimensions
-    if (_renderSystem != null && _renderSystem!.ready) {
+    {
       final w = html.window.innerWidth  ?? size.width.toInt();
       final h = html.window.innerHeight ?? size.height.toInt();
-      _webglCanvas?.width  = w;
-      _webglCanvas?.height = h;
-      _renderSystem!.resize(w, h);
+      _fieldPainter.windowSize = Size(w.toDouble(), h.toDouble());
+      if (_renderSystem != null && _renderSystem!.ready) {
+        _webglCanvas?.width  = w;
+        _webglCanvas?.height = h;
+        _renderSystem!.resize(w, h);
+      }
     }
   }
 
