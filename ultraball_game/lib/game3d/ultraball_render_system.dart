@@ -54,6 +54,8 @@ class UltraballRenderSystem {
   Mesh? _mudCellMesh;
   Mesh? _hillCellMesh;
   Mesh? _valleyCellMesh;
+  Mesh? _valleyCellMesh2;
+  Mesh? _valleyCellMesh3;
 
   bool _ready = false;
   bool get ready => _ready;
@@ -115,7 +117,10 @@ class UltraballRenderSystem {
     _pitDiscMesh    = Mesh.disc(segments: 28, color: Vector3(0.04, 0.0, 0.07));
     _mudCellMesh    = Mesh.plane(width: 1.0, height: 1.0, color: Vector3(0.36, 0.23, 0.10));
     _hillCellMesh   = Mesh.box(width: 1.0, height: 1.0, depth: 1.0, color: Vector3(0.10, 0.70, 0.15));
-    _valleyCellMesh = Mesh.plane(width: 1.0, height: 1.0, color: Vector3(0.04, 0.02, 0.12));
+    // Valley: three nested planes — outer floor, mid shadow, core — suggesting depth
+    _valleyCellMesh  = Mesh.plane(width: 1.0, height: 1.0, color: Vector3(0.05, 0.03, 0.15));
+    _valleyCellMesh2 = Mesh.plane(width: 1.0, height: 1.0, color: Vector3(0.02, 0.01, 0.08));
+    _valleyCellMesh3 = Mesh.plane(width: 1.0, height: 1.0, color: Vector3(0.00, 0.00, 0.03));
 
     // Cache immutable field transforms
     _homeEndzoneT  = FieldMeshes.homeEndzoneTransform();
@@ -323,6 +328,8 @@ class UltraballRenderSystem {
     _mudCellMesh = null;
     _hillCellMesh = null;
     _valleyCellMesh = null;
+    _valleyCellMesh2 = null;
+    _valleyCellMesh3 = null;
     _playerRigs.clear();
     _selectedCubeRigs.clear();
     _ready = false;
@@ -332,10 +339,12 @@ class UltraballRenderSystem {
   // ── Private: terrain overlays ─────────────────────────────────────────────
 
   void _renderTerrainOverlays(WebGLRenderer r, PerspectiveCamera c, GameState gs) {
-    final disc   = _pitDiscMesh;
-    final mud    = _mudCellMesh;
-    final hill   = _hillCellMesh;
-    final valley = _valleyCellMesh;
+    final disc    = _pitDiscMesh;
+    final mud     = _mudCellMesh;
+    final hill    = _hillCellMesh;
+    final valley  = _valleyCellMesh;
+    final valley2 = _valleyCellMesh2;
+    final valley3 = _valleyCellMesh3;
 
     // Pits — one disc per PitEffect (world-space circle, not cell-grid squares)
     if (disc != null) {
@@ -360,15 +369,32 @@ class UltraballRenderSystem {
       });
     }
 
-    // Valleys: dark flat overlay for negative elevation cells
-    if (valley != null) {
+    // Valleys: three nested planes create a depth-suggesting shadow funnel.
+    // The opaque field mesh at y=0 blocks anything below it, so we stack dark
+    // planes slightly above ground at 100 / 65 / 35% of cell size.  Deeper
+    // cells produce a proportionally wider darkest core.
+    if (valley != null && valley2 != null && valley3 != null) {
       gs.elevGrid.forEach((col, row, elev) {
         if (elev.current >= -0.5) return;
+        final t  = (-elev.current / 4.0).clamp(0.0, 1.0); // 0=shallow → 1=max depth
         final cx = (col + 0.5) * kElevCellW;
         final cz = (row + 0.5) * kElevCellH;
+        final w  = kElevCellW;
+        final h  = kElevCellH;
+        // Layer 1: full cell floor
         r.renderUnlit(valley, Transform3d(
           position: Vector3(cx, 0.01, cz),
-          scale:    Vector3(kElevCellW, 1.0, kElevCellH),
+          scale:    Vector3(w, 1.0, h),
+        ), c);
+        // Layer 2: 65% scale — mid shadow (depth-scaled inner area)
+        r.renderUnlit(valley2, Transform3d(
+          position: Vector3(cx, 0.03, cz),
+          scale:    Vector3(w * 0.65 * t, 1.0, h * 0.65 * t),
+        ), c);
+        // Layer 3: 35% scale — darkest core
+        r.renderUnlit(valley3, Transform3d(
+          position: Vector3(cx, 0.05, cz),
+          scale:    Vector3(w * 0.35 * t, 1.0, h * 0.35 * t),
         ), c);
       });
     }

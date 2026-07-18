@@ -70,7 +70,7 @@ class FieldPainter extends CustomPainter {
         return Offset(sx(p.x), sy(p.y));
       case ViewMode.threeQuarter:
         _camera3D.update(canvasSize);
-        return _camera3D.project(p.x, p.y, math.max(0.0, p.totalElevation) * 1.2);
+        return _camera3D.project(p.x, p.y, p.totalElevation * 1.2);
       case ViewMode.full3D:
         final rs = renderSystem;
         if (rs == null || !rs.ready) return null;
@@ -726,13 +726,16 @@ class FieldPainter extends CustomPainter {
   void _drawValleyCells3D(Canvas canvas) {
     gs.elevGrid.forEach((col, row, elev) {
       if (elev.current >= -0.5) return;
-      final depth = -elev.current; // positive depth value
-      final t     = (depth / 4.0).clamp(0.0, 1.0);
+      final depth = -elev.current;
+      final t = (depth / 4.0).clamp(0.0, 1.0);
       final x0 = col * kElevCellW;
       final y0 = row * kElevCellH;
       final x1 = x0 + kElevCellW;
       final y1 = y0 + kElevCellH;
-      _fp.color = Color.fromARGB((120 + (t * 100).toInt()).clamp(0, 220), 10, 5, 25);
+      // Draw AT ground level (z=0) so the overlay lands exactly on the field surface.
+      // Negative z shifts quads toward the camera, covering the wrong screen area.
+      // Depth illusion comes from contrast: center cells are deeper → darker alpha.
+      _fp.color = Color.fromARGB((100 + (t * 130).toInt()).clamp(0, 230), 8, 5, 20);
       _draw3DQuadAtZ(canvas, x0, y0, x1, y1, 0.0, _fp);
     });
   }
@@ -2935,7 +2938,7 @@ class FieldPainter extends CustomPainter {
     // Players
     for (final pl in gs.fieldPlayers) {
       if (!pl.isAlive) continue;
-      final dep = _camera3D.projectWithDepth(pl.x, pl.y, math.max(0.0, pl.totalElevation) * 1.2);
+      final dep = _camera3D.projectWithDepth(pl.x, pl.y, pl.totalElevation * 1.2);
       if (dep == null) continue;
       final pos = dep.$1; final cw = dep.$2;
       items.add((cw, () => _draw3DPlayer(canvas, pl, pos, cw)));
@@ -3098,7 +3101,7 @@ class FieldPainter extends CustomPainter {
 
   void _draw3DFacingIndicator(Canvas canvas, UltraballPlayer p) {
     final f = p.facing;
-    final z = math.max(0.0, p.totalElevation) * 1.2;
+    final z = p.totalElevation * 1.2;
     const tipDist  = 2.2;   // world units ahead of center
     const baseR    = 0.7;   // world units from center to base corners
     const halfAngle = 0.55; // half-width of triangle base in radians
