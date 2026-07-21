@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd000002e"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://dcv418at6fbvp" path="res://data/abilities/effects/DamageEffect.gd" id="2_dmg"]
+[ext_resource type="Script" uid="uid://cwhx3nh862vce" path="res://data/abilities/effects/KnockbackEffect.gd" id="3_kb"]
+[ext_resource type="Script" uid="uid://nwjwptslhmfe" path="res://data/abilities/effects/SnareEffect.gd" id="4_snare"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_dmg")
+damage = 20.0
+knockback_distance = 0.0
+
+[sub_resource type="Resource" id="E2"]
+script = ExtResource("3_kb")
+distance = 4.0
+launches_airborne = false
+launch_height = 0.0
+
+[sub_resource type="Resource" id="E3"]
+script = ExtResource("4_snare")
+duration = 1.5
+slow_factor = 0.5
+aoe_radius = 0.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "whiplash"
+display_name = "Clothesline"
+description = "20 dmg · 4m knockback · 1.5s snare (50% slow)"
+slot = 6
+cooldown = 10.0
+mana_cost = 30.0
+mana_type = 1
+range = 8.0
+effects = [SubResource("E1"), SubResource("E2"), SubResource("E3")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

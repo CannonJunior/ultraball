@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd0000048"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://v4phcueae8yi" path="res://data/abilities/effects/HoTEffect.gd" id="2_hot"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_hot")
+heal_per_second = 6.0
+duration = 4.0
+targets_self = false
+auto_ally_range = 5.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "mend"
+display_name = "Mend"
+description = "HoT 4s (6 HP/s) to nearest ally (5m)"
+slot = 2
+cooldown = 1.5
+mana_cost = 0.0
+mana_type = 0
+range = 5.0
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

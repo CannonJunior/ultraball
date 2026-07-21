@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd0000031"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://cwhx3nh862vce" path="res://data/abilities/effects/KnockbackEffect.gd" id="2_kb"]
+[ext_resource type="Script" uid="uid://ct3nr0hic2e3e" path="res://data/abilities/effects/MarkEffect.gd" id="3_mark"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_kb")
+distance = 4.0
+launches_airborne = false
+launch_height = 0.0
+
+[sub_resource type="Resource" id="E2"]
+script = ExtResource("3_mark")
+duration = 5.0
+damage_taken_multiplier = 1.25
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "feed_the_beast"
+display_name = "Creature Bait"
+description = "Push enemy 4m toward creature · mark 5s"
+slot = 9
+cooldown = 20.0
+mana_cost = 25.0
+mana_type = 1
+range = 8.0
+effects = [SubResource("E1"), SubResource("E2")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd0000004"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://b5eqvjb87eku1" path="res://data/abilities/effects/TeleportEffect.gd" id="2_tp"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_tp")
+distance = 6.0
+use_facing = true
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "phase"
+display_name = "Phase"
+description = "Dash 6m forward"
+slot = 4
+cooldown = 7.0
+mana_cost = 20.0
+mana_type = 2
+range = 0.0
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

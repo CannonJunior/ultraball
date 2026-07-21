@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd0000044"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" path="res://data/abilities/effects/AoEDamageEffect.gd" id="2_aoe"]
+[ext_resource type="Script" uid="uid://nwjwptslhmfe" path="res://data/abilities/effects/SnareEffect.gd" id="3_snare"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_aoe")
+damage = 30.0
+radius = 3.0
+knockback_distance = 0.0
+use_aim_position = false
+
+[sub_resource type="Resource" id="E2"]
+script = ExtResource("3_snare")
+duration = 1.5
+slow_factor = 0.0
+aoe_radius = 3.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "ground_pound"
+display_name = "Ground Pound"
+description = "AoE 3m: 30 dmg · 1.5s stun"
+slot = 8
+cooldown = 20.0
+mana_cost = 30.0
+mana_type = 1
+range = 0.0
+effects = [SubResource("E1"), SubResource("E2")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

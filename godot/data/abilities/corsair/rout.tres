@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd0000030"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" path="res://data/abilities/effects/PullEffect.gd" id="2_pull"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_pull")
+distance = 3.0
+toward_caster = false
+targets_enemies = true
+aoe_radius = 4.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "rout"
+display_name = "Intimidate"
+description = "AoE 4m: push all enemies 3m"
+slot = 8
+cooldown = 10.0
+mana_cost = 25.0
+mana_type = 2
+range = 0.0
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

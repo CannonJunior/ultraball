@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ClassDefinition" format=3 uid="uid://eanq4ward3n04"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_hho0j"]
+[ext_resource type="Script" uid="uid://5f1jo2xhiwb3" path="res://data/classes/ClassDefinition.gd" id="2_dcdiu"]
+
+[resource]
+script = ExtResource("2_dcdiu")
+class_id = "warden"
+display_name = "WARDEN"
+base_speed = 8.0
+max_health = 95.0
+primary_mana = 1
+body_color = Color(1, 0.8, 0.26666668, 1)
+helmet_color = Color(0.6666667, 0.53333336, 0.13333334, 1)
+jersey_color = Color(0.10196078, 0.08627451, 0.03921569, 1)
+metadata/_custom_type_script = "uid://5f1jo2xhiwb3"

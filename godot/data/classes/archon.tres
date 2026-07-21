@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ClassDefinition" format=3 uid="uid://dzmp3arch0n03"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_hho0j"]
+[ext_resource type="Script" uid="uid://5f1jo2xhiwb3" path="res://data/classes/ClassDefinition.gd" id="2_dcdiu"]
+
+[resource]
+script = ExtResource("2_dcdiu")
+class_id = "archon"
+display_name = "ARCHON"
+base_speed = 7.5
+max_health = 120.0
+primary_mana = 1
+body_color = Color(0.26666668, 0.53333336, 1, 1)
+helmet_color = Color(0.13333334, 0.33333334, 0.6666667, 1)
+jersey_color = Color(0.03137255, 0.0627451, 0.10196078, 1)
+metadata/_custom_type_script = "uid://5f1jo2xhiwb3"

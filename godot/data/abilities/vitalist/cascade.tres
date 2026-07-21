@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd000004d"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" path="res://data/abilities/effects/AoEHealEffect.gd" id="2_aoeheal"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_aoeheal")
+amount = 25.0
+radius = 6.0
+include_self = true
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "cascade"
+display_name = "Cascade"
+description = "AoE 6m: +25 HP to all allies + self"
+slot = 7
+cooldown = 10.0
+mana_cost = 25.0
+mana_type = 3
+range = 0.0
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

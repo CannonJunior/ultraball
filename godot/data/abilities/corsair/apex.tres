@@ -1,0 +1,37 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd0000032"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://difsutgisynhx" path="res://data/abilities/effects/SpeedBoostEffect.gd" id="2_speed"]
+[ext_resource type="Script" uid="uid://d2qp04dvwrwdi" path="res://data/abilities/effects/DamageBoostEffect.gd" id="3_dmgboost"]
+[ext_resource type="Script" uid="uid://d2cxkakf6nl4f" path="res://data/abilities/effects/StunImmuneEffect.gd" id="4_stunim"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_speed")
+speed_multiplier = 2.0
+duration = 7.0
+targets_self = true
+
+[sub_resource type="Resource" id="E2"]
+script = ExtResource("3_dmgboost")
+damage_multiplier = 1.35
+duration = 7.0
+targets_self = true
+auto_ally_range = 0.0
+
+[sub_resource type="Resource" id="E3"]
+script = ExtResource("4_stunim")
+duration = 7.0
+targets_self = true
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "apex"
+display_name = "BLOOD RUSH"
+description = "7s: 2× speed + 35% dmg boost + stun immune"
+slot = 10
+cooldown = 0.0
+mana_cost = 5.0
+mana_type = 4
+range = 0.0
+effects = [SubResource("E1"), SubResource("E2"), SubResource("E3")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

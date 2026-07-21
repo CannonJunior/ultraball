@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd0000028"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" path="res://data/abilities/effects/AoEHealEffect.gd" id="2_aoeheal"]
+[ext_resource type="Script" path="res://data/abilities/effects/ManaRestoreEffect.gd" id="3_mana"]
+[ext_resource type="Script" path="res://data/abilities/effects/CCCleanseEffect.gd" id="4_cleanse"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_aoeheal")
+amount = 35.0
+radius = 100.0
+include_self = true
+
+[sub_resource type="Resource" id="E2"]
+script = ExtResource("3_mana")
+amount = 40.0
+mana_type = 1
+targets_self = true
+auto_ally_range = 0.0
+
+[sub_resource type="Resource" id="E3"]
+script = ExtResource("4_cleanse")
+targets_self = false
+clear_dots = false
+auto_ally_range = 100.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "symphony"
+display_name = "GAME PLAN"
+description = "All teammates +35 HP + 40B + cleanse"
+slot = 10
+cooldown = 0.0
+mana_cost = 5.0
+mana_type = 4
+range = 0.0
+effects = [SubResource("E1"), SubResource("E2"), SubResource("E3")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

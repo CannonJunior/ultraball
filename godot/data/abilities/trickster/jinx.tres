@@ -1,0 +1,33 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd0000039"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://dns3px6hbc6wp" path="res://data/abilities/effects/ManaDrainEffect.gd" id="2_drain1"]
+[ext_resource type="Script" uid="uid://dns3px6hbc6wp" path="res://data/abilities/effects/ManaDrainEffect.gd" id="3_drain2"]
+[ext_resource type="Script" uid="uid://yrako34mp3x4" path="res://data/abilities/effects/StunEffect.gd" id="4_stun"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_drain1")
+drain_amount = 25.0
+mana_type = 0
+
+[sub_resource type="Resource" id="E2"]
+script = ExtResource("3_drain2")
+drain_amount = 20.0
+mana_type = 1
+
+[sub_resource type="Resource" id="E3"]
+script = ExtResource("4_stun")
+duration = 1.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "jinx"
+display_name = "Jinx"
+description = "Drain 25R + 20B from target · stun 1s"
+slot = 7
+cooldown = 10.0
+mana_cost = 25.0
+mana_type = 2
+range = 8.0
+effects = [SubResource("E1"), SubResource("E2"), SubResource("E3")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

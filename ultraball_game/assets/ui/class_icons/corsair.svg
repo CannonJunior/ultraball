@@ -1,4 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <!-- Triple diagonal slash marks — disruption / predation / strip & mark -->
-  <path fill="currentColor" d="M5 2h3L5 20H2zM12 2h3l-3 18H9zM19 2h3l-3 18h-3z"/>
+  <!-- Three steep diagonal slash marks — disruption / predation / strip & mark -->
+  <path fill="currentColor" d="M1 20L7 2H10L4 20ZM8 20L14 2H17L11 20ZM15 20L21 2H24L18 20Z"/>
 </svg>

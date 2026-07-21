@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd000001d"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" path="res://data/abilities/effects/AoEHealEffect.gd" id="2_aoeheal"]
+[ext_resource type="Script" path="res://data/abilities/effects/CCCleanseEffect.gd" id="3_cleanse"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_aoeheal")
+amount = 25.0
+radius = 7.0
+include_self = true
+
+[sub_resource type="Resource" id="E2"]
+script = ExtResource("3_cleanse")
+targets_self = false
+clear_dots = false
+auto_ally_range = 7.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "salvation"
+display_name = "Rally"
+description = "AoE 7m: heal allies 25 HP + cleanse snares"
+slot = 9
+cooldown = 20.0
+mana_cost = 50.0
+mana_type = 2
+range = 0.0
+effects = [SubResource("E1"), SubResource("E2")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

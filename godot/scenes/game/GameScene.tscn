@@ -1,0 +1,63 @@
+[gd_scene load_steps=16 format=3]
+
+[ext_resource type="Script" path="res://scenes/game/GameScene.gd" id="1"]
+[ext_resource type="Script" path="res://scenes/game/InputManager.gd" id="13"]
+[ext_resource type="Script" path="res://systems/AbilitySystem.gd" id="2"]
+[ext_resource type="Script" path="res://systems/BallSystem.gd" id="3"]
+[ext_resource type="Script" path="res://systems/ScoringSystem.gd" id="4"]
+[ext_resource type="Script" path="res://systems/SubstitutionSystem.gd" id="5"]
+[ext_resource type="Script" path="res://systems/TerrainMutationSystem.gd" id="6"]
+[ext_resource type="Script" path="res://systems/CollisionSystem.gd" id="7"]
+[ext_resource type="Script" path="res://systems/CreatureSystem.gd" id="8"]
+[ext_resource type="PackedScene" path="res://scenes/game/field/Field.tscn" id="9"]
+[ext_resource type="PackedScene" path="res://scenes/entities/ball/Ball.tscn" id="10"]
+[ext_resource type="PackedScene" path="res://scenes/entities/creature/Creature.tscn" id="11"]
+[ext_resource type="PackedScene" path="res://scenes/entities/player/Player.tscn" id="12"]
+
+[node name="GameScene" type="Node2D"]
+script = ExtResource("1")
+
+[node name="Field" parent="." instance=ExtResource("9")]
+
+[node name="Systems" type="Node" parent="."]
+
+[node name="AbilitySystem" type="Node" parent="Systems"]
+script = ExtResource("2")
+
+[node name="BallSystem" type="Node" parent="Systems"]
+script = ExtResource("3")
+
+[node name="ScoringSystem" type="Node" parent="Systems"]
+script = ExtResource("4")
+
+[node name="SubstitutionSystem" type="Node" parent="Systems"]
+script = ExtResource("5")
+
+[node name="TerrainMutationSystem" type="Node" parent="Systems"]
+script = ExtResource("6")
+
+[node name="CollisionSystem" type="Node" parent="Systems"]
+script = ExtResource("7")
+
+[node name="CreatureSystem" type="Node" parent="Systems"]
+script = ExtResource("8")
+
+[node name="Entities" type="Node2D" parent="."]
+
+[node name="Ball" parent="Entities" instance=ExtResource("10")]
+
+[node name="Creature" parent="Entities" instance=ExtResource("11")]
+
+[node name="PlayerSpawner" type="MultiplayerSpawner" parent="."]
+spawn_path = NodePath("..")
+spawn_limit = 0
+
+[node name="HUD" type="CanvasLayer" parent="."]
+layer = 10
+
+[node name="InputManager" type="Node" parent="."]
+script = ExtResource("13")
+
+[node name="Camera2D" type="Camera2D" parent="."]
+position = Vector2(70.0, 20.0)
+zoom = Vector2(9.0, 9.0)

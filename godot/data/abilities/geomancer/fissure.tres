@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd0000013"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://cuqchsoqjjk8k" path="res://data/abilities/effects/TerrainShapeEffect.gd" id="2_terrain"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_terrain")
+shape_type = 5
+radius = 4.0
+intensity = 1.0
+duration = 5.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "fissure"
+display_name = "Fissure"
+description = "Projectile: pit opens (r=4m, 5s)"
+slot = 9
+cooldown = 15.0
+mana_cost = 35.0
+mana_type = 2
+range = 0.0
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

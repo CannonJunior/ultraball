@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd000002a"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://dcv418at6fbvp" path="res://data/abilities/effects/DamageEffect.gd" id="2_dmg"]
+[ext_resource type="Script" uid="uid://yrako34mp3x4" path="res://data/abilities/effects/StunEffect.gd" id="3_stun"]
+[ext_resource type="Script" uid="uid://55c0hqjbrslw" path="res://data/abilities/effects/FumbleEffect.gd" id="4_fumble"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_dmg")
+damage = 25.0
+knockback_distance = 0.0
+
+[sub_resource type="Resource" id="E2"]
+script = ExtResource("3_stun")
+duration = 1.5
+
+[sub_resource type="Resource" id="E3"]
+script = ExtResource("4_fumble")
+fumble_velocity_scale = 1.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "bloodscent"
+display_name = "Strip Tackle"
+description = "25 dmg · 1.5s stun · fumble"
+slot = 2
+cooldown = 20.0
+mana_cost = 25.0
+mana_type = 1
+range = 8.0
+effects = [SubResource("E1"), SubResource("E2"), SubResource("E3")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

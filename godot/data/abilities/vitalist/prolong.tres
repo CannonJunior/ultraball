@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd000004f"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://c2nuieao5nh5y" path="res://data/abilities/effects/DurationDoubleNextEffect.gd" id="2_prolong"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_prolong")
+range = 10.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "prolong"
+display_name = "Prolong"
+description = "Nearest ally in 10m: next buffs doubled"
+slot = 9
+cooldown = 20.0
+mana_cost = 35.0
+mana_type = 3
+range = 10.0
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

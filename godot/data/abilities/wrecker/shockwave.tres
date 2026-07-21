@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd0000041"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" path="res://data/abilities/effects/AoEDamageEffect.gd" id="2_aoe"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_aoe")
+damage = 10.0
+radius = 4.0
+knockback_distance = 1.0
+use_aim_position = false
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "shockwave"
+display_name = "Shockwave"
+description = "AoE 4m: 10 dmg · 1m knockback"
+slot = 5
+cooldown = 1.5
+mana_cost = 15.0
+mana_type = 1
+range = 0.0
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

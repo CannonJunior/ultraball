@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd0000033"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://dcv418at6fbvp" path="res://data/abilities/effects/DamageEffect.gd" id="2_dmg"]
+[ext_resource type="Script" uid="uid://colutiqdqrjnp" path="res://data/abilities/effects/HexEffect.gd" id="3_hex"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_dmg")
+damage = 10.0
+knockback_distance = 0.0
+
+[sub_resource type="Resource" id="E2"]
+script = ExtResource("3_hex")
+duration = 3.0
+damage_factor = 0.8
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "hex_strike"
+display_name = "Hex Strike"
+description = "10 dmg · 3s hex (−20% dmg output)"
+slot = 1
+cooldown = 1.5
+mana_cost = 0.0
+mana_type = 0
+range = 8.0
+effects = [SubResource("E1"), SubResource("E2")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

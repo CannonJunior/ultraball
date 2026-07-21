@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd000004a"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://d2qp04dvwrwdi" path="res://data/abilities/effects/DamageBoostEffect.gd" id="2_dmgboost"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_dmgboost")
+damage_multiplier = 1.2
+duration = 4.0
+targets_self = false
+auto_ally_range = 5.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "empower"
+display_name = "Empower"
+description = "+20% dmg 4s to nearest ally (5m)"
+slot = 4
+cooldown = 5.0
+mana_cost = 15.0
+mana_type = 3
+range = 5.0
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

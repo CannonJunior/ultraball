@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd000001e"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://c54w4u4aiibf2" path="res://data/abilities/effects/DamageReductionEffect.gd" id="2_dr"]
+[ext_resource type="Script" uid="uid://d2cxkakf6nl4f" path="res://data/abilities/effects/StunImmuneEffect.gd" id="3_stunim"]
+[ext_resource type="Script" uid="uid://v4phcueae8yi" path="res://data/abilities/effects/HoTEffect.gd" id="4_hot"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_dr")
+reduction_factor = 0.5
+duration = 6.0
+targets_self = true
+auto_ally_range = 0.0
+
+[sub_resource type="Resource" id="E2"]
+script = ExtResource("3_stunim")
+duration = 6.0
+targets_self = true
+
+[sub_resource type="Resource" id="E3"]
+script = ExtResource("4_hot")
+heal_per_second = 8.0
+duration = 6.0
+targets_self = true
+auto_ally_range = 0.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "citadel"
+display_name = "SANCTUARY"
+description = "6s: 50% dmg reduction + stun immune + HoT 8/s"
+slot = 10
+cooldown = 0.0
+mana_cost = 5.0
+mana_type = 4
+range = 0.0
+effects = [SubResource("E1"), SubResource("E2"), SubResource("E3")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

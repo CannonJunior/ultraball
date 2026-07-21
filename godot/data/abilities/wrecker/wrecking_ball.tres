@@ -1,0 +1,33 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd0000043"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://cy2gny3ykkfvr" path="res://data/abilities/effects/DashEffect.gd" id="2_dash"]
+[ext_resource type="Script" path="res://data/abilities/effects/AoEDamageEffect.gd" id="3_aoe"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_dash")
+distance = 6.0
+toward_target = false
+reverse_direction = false
+invulnerable = false
+invulnerable_duration = 0.0
+
+[sub_resource type="Resource" id="E2"]
+script = ExtResource("3_aoe")
+damage = 20.0
+radius = 6.5
+knockback_distance = 2.0
+use_aim_position = false
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "wrecking_ball"
+display_name = "Wrecking Ball"
+description = "Dash 6m · AoE 20 dmg · 2m knockback to all hit"
+slot = 7
+cooldown = 10.0
+mana_cost = 25.0
+mana_type = 1
+range = 0.0
+effects = [SubResource("E1"), SubResource("E2")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

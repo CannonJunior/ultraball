@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd000004c"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://k0u24hsmwfle" path="res://data/abilities/effects/HealEffect.gd" id="2_heal"]
+[ext_resource type="Script" path="res://data/abilities/effects/CCCleanseEffect.gd" id="3_cleanse"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_heal")
+amount = 45.0
+targets_self = false
+auto_ally_range = 7.0
+
+[sub_resource type="Resource" id="E2"]
+script = ExtResource("3_cleanse")
+targets_self = false
+clear_dots = false
+auto_ally_range = 7.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "refresh"
+display_name = "Refresh"
+description = "+45 HP + CC cleanse to nearest ally (7m)"
+slot = 6
+cooldown = 10.0
+mana_cost = 30.0
+mana_type = 3
+range = 7.0
+effects = [SubResource("E1"), SubResource("E2")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd0000037"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://0327w7uvmftv" path="res://data/abilities/effects/SwapEffect.gd" id="2_swap"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_swap")
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "position_swap"
+display_name = "Position Swap"
+description = "Swap positions with nearest enemy (8m)"
+slot = 6
+cooldown = 20.0
+mana_cost = 35.0
+mana_type = 2
+range = 8.0
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

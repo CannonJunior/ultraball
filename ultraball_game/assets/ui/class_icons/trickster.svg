@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <!-- Open eye with iris cutout and pupil — confusion / traps / illusion -->
-  <path fill="currentColor" fill-rule="evenodd" d="M12 7C7 7 3 12 3 12C3 12 7 17 12 17C17 17 21 12 21 12C21 12 17 7 12 7Z M12 15A3 3 0 1 0 12 9A3 3 0 1 0 12 15Z"/>
-  <circle fill="currentColor" cx="12" cy="12" r="1.5"/>
+  <!-- Eye with diamond cat-slit pupil — confusion / traps / illusion -->
+  <path fill="currentColor" fill-rule="evenodd"
+        d="M12 7C7 7 3 12 3 12C3 12 7 17 12 17C17 17 21 12 21 12C21 12 17 7 12 7Z
+           M12 9L14.5 12L12 15L9.5 12Z"/>
 </svg>

@@ -719,38 +719,124 @@ class FieldPainter extends CustomPainter {
     });
     // Pits as projected ellipses using world-space PitEffects
     _drawPitCircles3D(canvas, gs.matchTimeElapsed);
-    _drawValleyCells3D(canvas);
-    _drawHillCells3D(canvas);
   }
 
-  void _drawValleyCells3D(Canvas canvas) {
-    gs.elevGrid.forEach((col, row, elev) {
-      if (elev.current >= -0.5) return;
-      final depth = -elev.current;
-      final t = (depth / 4.0).clamp(0.0, 1.0);
-      final x0 = col * kElevCellW;
-      final y0 = row * kElevCellH;
-      final x1 = x0 + kElevCellW;
-      final y1 = y0 + kElevCellH;
-      // Draw AT ground level (z=0) so the overlay lands exactly on the field surface.
-      // Negative z shifts quads toward the camera, covering the wrong screen area.
-      // Depth illusion comes from contrast: center cells are deeper → darker alpha.
-      _fp.color = Color.fromARGB((100 + (t * 130).toInt()).clamp(0, 230), 8, 5, 20);
-      _draw3DQuadAtZ(canvas, x0, y0, x1, y1, 0.0, _fp);
-    });
+  /// Renders the main playing field as a per-cell height map so that both
+  /// positive (hill) and negative (valley) elevations are drawn at their actual
+  /// z position in 3D space.  All 168×48 elevation cells are iterated
+  /// far-to-near; each cell's top face is drawn at z=elev.current.
+  /// Where a cell drops below its camera-side (south) neighbour, a wall face
+  /// fills the vertical gap, making the cliff edge of a valley clearly visible.
+  ///
+  /// When no terrain modification is active the fast-path draws the field as a
+  /// single quad (identical appearance, far fewer draw calls).
+  void _draw3DTerrainMesh(Canvas canvas) {
+    final cells = gs.elevGrid.cells;
+
+    // Fast path: if the entire grid is flat, use the single-quad background.
+    bool anyElevation = false;
+    outer:
+    for (int c = 0; c < kElevCols; c++) {
+      for (int r = 0; r < kElevRows; r++) {
+        if (cells[c][r].current.abs() > 0.05) { anyElevation = true; break outer; }
+      }
+    }
+    if (!anyElevation) {
+      _draw3DQuad(canvas, 30, 0, 110, 40, _mainFieldPaint);
+      for (int i = 0; i < 4; i++) {
+        _draw3DQuad(canvas, 30.0 + i * 20.0, 0, 40.0 + i * 20.0, 40, _stripePaint);
+      }
+      return;
+    }
+
+    // Pass 1 — top faces, far-to-near.
+    // Each cell's top face is drawn at z=elev.current.  Flat cells (z≈0)
+    // look identical to the former single-quad background.  Elevated cells
+    // (hills) appear above; depressed cells (valleys) appear below.
+    for (int row = kElevRows - 1; row >= 0; row--) {
+      for (int col = 0; col < kElevCols; col++) {
+        final z  = cells[col][row].current;
+        final x0 = col * kElevCellW;
+        final y0 = row * kElevCellH;
+        final x1 = x0 + kElevCellW;
+        final y1 = y0 + kElevCellH;
+        _fp.color = _meshTopColor(x0, z);
+        _draw3DQuadAtZ(canvas, x0, y0, x1, y1, z, _fp);
+      }
+    }
+
+    // Pass 2 — cliff walls, drawn AFTER all top faces.
+    //
+    // Why a separate pass?  A valley cliff wall sits at y=y0 (the near edge
+    // of the depressed cell), spanning z=southZ down to z=this cell's z.  In
+    // screen space the wall projects into the same region as the adjacent
+    // ground cell just south.  Because that ground cell is closer to the
+    // camera it is drawn after the wall in pass 1, covering it completely.
+    // Drawing walls last lets them paint over those ground cells and be
+    // correctly visible — which matches what a z-buffer would produce.
+    //
+    // Only cells that are lower than their camera-facing (south) neighbour
+    // generate a wall; this targets the near-side cliff of every depression.
+    for (int row = kElevRows - 1; row >= 0; row--) {
+      for (int col = 0; col < kElevCols; col++) {
+        final z      = cells[col][row].current;
+        final southZ = row > 0 ? cells[col][row - 1].current : 0.0;
+        if (z >= southZ - 0.05) continue;
+        final x0 = col * kElevCellW;
+        final y0 = row * kElevCellH;
+        final x1 = x0 + kElevCellW;
+        _fp.color = _meshWallColor(x0, z);
+        final w0 = _camera3D.project(x0, y0, southZ);
+        final w1 = _camera3D.project(x1, y0, southZ);
+        final w2 = _camera3D.project(x1, y0, z);
+        final w3 = _camera3D.project(x0, y0, z);
+        if (w0 != null && w1 != null && w2 != null && w3 != null) {
+          _path
+            ..reset()
+            ..moveTo(w0.dx, w0.dy)
+            ..lineTo(w1.dx, w1.dy)
+            ..lineTo(w2.dx, w2.dy)
+            ..lineTo(w3.dx, w3.dy)
+            ..close();
+          canvas.drawPath(_path, _fp);
+        }
+      }
+    }
   }
 
-  void _drawHillCells3D(Canvas canvas) {
-    gs.elevGrid.forEach((col, row, elev) {
-      if (elev.current <= 0.5) return;
-      final h  = elev.current;
-      final x0 = col * kElevCellW;
-      final y0 = row * kElevCellH;
-      final x1 = x0 + kElevCellW;
-      final y1 = y0 + kElevCellH;
-      _fp.color = Color.fromARGB(180, (30 + h * 8).toInt().clamp(0, 255), 100, 20);
-      _draw3DQuadAtZ(canvas, x0, y0, x1, y1, h, _fp);
-    });
+  /// Top-face colour for a terrain cell at world-x [x] and elevation [z].
+  Color _meshTopColor(double x, double z) {
+    if (x < 20)  return z < -0.1 ? const Color(0xFF5A3A22) : _lEndPaint.color;
+    if (x >= 120) return z < -0.1 ? const Color(0xFF5A3A22) : _rEndPaint.color;
+    if (x < 30 || x >= 110) return z < -0.1 ? const Color(0xFF4A3018) : _channelPaint.color;
+
+    // Main field
+    if (z > 0.1) {
+      // Hill: earthy orange-brown
+      return Color.fromARGB(255, (30 + z * 8).toInt().clamp(0, 255), 100, 20);
+    }
+    if (z < -0.1) {
+      // Valley floor: sandy clay/rock fading to dark brown at full depth
+      final t = (-z / 4.0).clamp(0.0, 1.0);
+      return Color.fromARGB(255,
+          (155 - (t * 60).toInt()).clamp(80, 255),  // r: 155 → 95
+          (110 - (t * 45).toInt()).clamp(55, 255),  // g: 110 → 65
+          (70  - (t * 30).toInt()).clamp(30, 255)); // b:  70 → 40
+    }
+    // Flat: zone colour
+    return ((x - 30) % 20) < 10 ? _stripePaint.color : _mainFieldPaint.color;
+  }
+
+  /// Cliff-face colour — darker than the top face to read as a shadow.
+  Color _meshWallColor(double x, double z) {
+    if (z < -0.1) {
+      final t = (-z / 4.0).clamp(0.0, 1.0);
+      return Color.fromARGB(255,
+          (110 - (t * 45).toInt()).clamp(55, 255),  // r: 110 → 65
+          (75  - (t * 30).toInt()).clamp(35, 255),  // g:  75 → 45
+          (45  - (t * 20).toInt()).clamp(20, 255)); // b:  45 → 25
+    }
+    return const Color(0xFF06040E);
   }
 
   void _drawPitCircles3D(Canvas canvas, double t) {
@@ -1047,22 +1133,40 @@ class FieldPainter extends CustomPainter {
       double cw, double ch, double height) {
     final t = (-height / 4.0).clamp(0.0, 1.0);
 
-    _fp.color = Color.fromARGB((100 + (t * 120).toInt()), 8, 5, 20);
+    // Sandy clay fill — clearly visible against the green field
+    _fp.color = Color.fromARGB((90 + (t * 150).toInt()), 150, 105, 60);
     canvas.drawRect(rect, _fp);
 
-    _fp.color = Color.fromARGB((30 + (t * 40).toInt()), 50, 30, 70);
-    canvas.drawRect(Rect.fromLTRB(
-        rect.left + cw * 0.2, rect.top + ch * 0.2,
-        rect.right - cw * 0.2, rect.bottom - ch * 0.2), _fp);
+    // Lighter upper-left rim (light catches the near slope)
+    _fp.color = Color.fromARGB((50 + (t * 80).toInt()), 210, 170, 120);
+    canvas.drawRect(
+        Rect.fromLTRB(rect.left, rect.top,
+            rect.left + cw * 0.55, rect.top + ch * 0.55), _fp);
 
-    _fp.color = Color.fromARGB((150 + (t * 80).toInt()), 3, 1, 10);
+    // Darker lower-right (shadow side of depression)
+    _fp.color = Color.fromARGB((60 + (t * 80).toInt()), 80, 50, 25);
+    canvas.drawRect(
+        Rect.fromLTRB(rect.left + cw * 0.45, rect.top + ch * 0.45,
+            rect.right, rect.bottom), _fp);
+
+    // Dark center — the bottom of the pit
+    _fp.color = Color.fromARGB((160 + (t * 80).toInt()), 50, 30, 15);
     canvas.drawOval(
         Rect.fromCenter(center: Offset(cx, cy), width: cw * 0.45, height: ch * 0.45),
         _fp);
 
-    _sp.color = Color.fromARGB((60 + (t * 50).toInt()), 55, 35, 80);
-    _sp.strokeWidth = (sm(0.15)).clamp(0.6, 1.5);
-    canvas.drawRect(rect, _sp);
+    // Concentric contour rings (topographic depression lines)
+    _sp.color = Color.fromARGB((70 + (t * 60).toInt()), 90, 55, 25);
+    _sp.strokeWidth = (sm(0.15)).clamp(0.7, 2.0);
+    final levels = (-height).floor().clamp(1, 3);
+    for (int i = 1; i <= levels; i++) {
+      final f = 1.0 - (i / 4.0);
+      canvas.drawRect(
+          Rect.fromLTRB(
+              rect.left + cw * f * 0.35, rect.top + ch * f * 0.35,
+              rect.right - cw * f * 0.35, rect.bottom - ch * f * 0.35),
+          _sp);
+    }
   }
 
   void _drawValleyCell(Canvas canvas, Rect rect, double cx, double cy,
@@ -2210,10 +2314,7 @@ class FieldPainter extends CustomPainter {
     _draw3DQuad(canvas, 20, -5, 30, 45, _channelPaint);
     _draw3DQuad(canvas, 110, -5, 120, 45, _channelPaint);
     _draw3DQuad(canvas, 120, 0, 140, 40, _rEndPaint);
-    _draw3DQuad(canvas, 30, 0, 110, 40, _mainFieldPaint);
-    for (int i = 0; i < 4; i++) {
-      _draw3DQuad(canvas, 30.0 + i * 20.0, 0, 40.0 + i * 20.0, 40, _stripePaint);
-    }
+    _draw3DTerrainMesh(canvas);
     _draw3DQuad(canvas, 30, -5, 110, 0, _channelPaint);
     _draw3DQuad(canvas, 30, 40, 110, 45, _channelPaint);
 

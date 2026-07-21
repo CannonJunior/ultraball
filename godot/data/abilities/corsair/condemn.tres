@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd000002f"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://ct3nr0hic2e3e" path="res://data/abilities/effects/MarkEffect.gd" id="2_mark"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_mark")
+duration = 5.0
+damage_taken_multiplier = 1.25
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "condemn"
+display_name = "Mark"
+description = "Mark enemy 5s (+25% dmg taken)"
+slot = 7
+cooldown = 10.0
+mana_cost = 20.0
+mana_type = 2
+range = 8.0
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

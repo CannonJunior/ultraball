@@ -125,7 +125,8 @@ class ActSystem {
         : gs.actState.thirdSubUsed;
     final hasEligibleSub = roster.any((p) => !p.isOnField && p.isAlive && !p.isInactive);
 
-    if (onField == 0 && (subUsed || !hasEligibleSub)) {
+    if (onField == 0 && !hasEligibleSub) {
+      // No players on field and no reserves remain — forfeit
       if (victim.team == Team.player) {
         gs.actState.playerForfeit = true;
         gs.showEvent('PLAYER TEAM FORFEIT!');
@@ -139,6 +140,14 @@ class ActSystem {
       if (gs.actState.gameOver) {
         endAct(gs);
       }
+      return;
+    }
+
+    if (onField == 0 && subUsed) {
+      // Sub slot used up but reserves exist — they'll join at next act intermission
+      final teamName = victim.team == Team.player ? 'PLAYER'
+          : victim.team == Team.opponent ? 'OPPONENT' : 'THIRD';
+      gs.showEvent('$teamName TEAM DOWN — RESERVES NEXT ACT!');
       return;
     }
 
