@@ -34,6 +34,21 @@ var _ht_radios   : Array = []   # home tactics radio rows
 var _os_radios   : Array = []   # opp strategy radio rows
 var _ot_radios   : Array = []   # opp tactics radio rows
 
+# Roster
+var _home_roster       : Array  = []
+var _home_roster_vbox  : VBoxContainer = null
+var _roster_content    : Control       = null
+var _roster_expanded   : bool   = false
+var _roster_toggle_btn : Button = null
+var _dragging          : bool   = false
+var _drag_from_slot    : int    = -1
+var _drag_ghost        : Control       = null
+var _drag_slot_panels  : Array  = []
+
+# Classes
+var _inactive_classes  : Array  = []   # set of inactive class indices
+var _class_btns        : Array  = []   # toggle Button refs per class
+
 # ── Data ──────────────────────────────────────────────────────────────────────
 const STRATEGIES := [
 	["💣", "TEMPO TRAP",      "Deny phase lines; force opponent to hold the ball until it explodes"],
@@ -128,6 +143,30 @@ const RULES := [
 	]],
 ]
 
+const CLASS_NAMES := [
+	"SPECTRE", "CORSAIR", "GEOMANCER", "ARCHON", "WARDEN", "TRICKSTER", "WRECKER", "VITALIST"
+]
+const CLASS_DESCS := [
+	"Ghost phase — evasion and burst speed",
+	"Dual blades — sustained bleed damage",
+	"Stone pillars — terrain and field control",
+	"Battle mage — heavy strikes and shield",
+	"Guardian — protect and sustain teammates",
+	"Deceiver — illusions and flanking",
+	"Berserker — brutal knockback and brute force",
+	"Healer — team sustain and revival support",
+]
+const CLASS_COLORS := [
+	Color(0.267, 1.000, 0.800),   # Spectre   #44FFCC
+	Color(1.000, 0.267, 0.667),   # Corsair   #FF44AA
+	Color(1.000, 0.333, 0.267),   # Geomancer #FF5544
+	Color(0.267, 0.533, 1.000),   # Archon    #4488FF
+	Color(1.000, 0.800, 0.267),   # Warden    #FFCC44
+	Color(0.667, 0.267, 1.000),   # Trickster #AA44FF
+	Color(1.000, 0.467, 0.000),   # Wrecker   #FF7700
+	Color(0.267, 0.867, 0.533),   # Vitalist  #44DD88
+]
+
 # ─────────────────────────────────────────────────────────────────────────────
 func _ready() -> void:
 	_apply_bg()
@@ -151,6 +190,7 @@ func _build_ui() -> void:
 	# Dark background panel
 	var bg_panel := ColorRect.new()
 	bg_panel.color = C_BG
+	bg_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg_panel.z_index = -1
 	add_child(bg_panel)
@@ -180,6 +220,7 @@ func _build_ui() -> void:
 
 	var left_vbox := VBoxContainer.new()
 	left_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left_vbox.size_flags_vertical   = Control.SIZE_SHRINK_BEGIN
 	left_vbox.add_theme_constant_override("separation", 0)
 	left_scroll.add_child(left_vbox)
 
@@ -200,6 +241,7 @@ func _build_ui() -> void:
 
 	var right_vbox := VBoxContainer.new()
 	right_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_vbox.size_flags_vertical   = Control.SIZE_SHRINK_BEGIN
 	right_vbox.add_theme_constant_override("separation", 0)
 	right_scroll.add_child(right_vbox)
 
@@ -271,8 +313,8 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 	mode_row.add_child(btn2)
 	mode_row.add_child(btn3)
 	_mode_btns = [btn2, btn3]
-	btn2.pressed.connect(func(): _set_match_mode(0))
-	btn3.pressed.connect(func(): _set_match_mode(1))
+	btn2.pressed.connect(_set_match_mode.bind(0))
+	btn3.pressed.connect(_set_match_mode.bind(1))
 
 	# ── Match Duration ────────────────────────────────────────────────────────
 	var dur_card := _make_card()
@@ -291,8 +333,8 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 	dur_row.add_child(btn_norm)
 	dur_row.add_child(btn_fast)
 	_dur_btns = [btn_norm, btn_fast]
-	btn_norm.pressed.connect(func(): _set_fast_mode(false))
-	btn_fast.pressed.connect(func(): _set_fast_mode(true))
+	btn_norm.pressed.connect(_set_fast_mode.bind(false))
+	btn_fast.pressed.connect(_set_fast_mode.bind(true))
 
 	# ── Creature ──────────────────────────────────────────────────────────────
 	var crea_card := _make_card()
@@ -304,15 +346,11 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 	_crea_btns.clear()
 	for i in range(CREATURES.size()):
 		var c: Array = CREATURES[i]
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
 		var rb := _make_choice_radio(c[0], c[1], c[2], _creature == i)
 		rb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(rb)
-		crea_vbox.add_child(row)
+		crea_vbox.add_child(rb)
 		_crea_btns.append(rb)
-		var ci := i
-		rb.pressed.connect(func(): _set_creature(ci))
+		rb.pressed.connect(_set_creature.bind(i))
 
 	# ── Home Strategy + Tactics ───────────────────────────────────────────────
 	var strat_row := HBoxContainer.new()
@@ -336,8 +374,7 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 		var rb := _make_choice_radio(s[0], s[1], s[2], _home_strat == i)
 		home_strat_vbox.add_child(rb)
 		_hs_radios.append(rb)
-		var si := i
-		rb.pressed.connect(func(): _set_home_strat(si))
+		rb.pressed.connect(_set_home_strat.bind(i))
 
 	home_strat_vbox.add_child(_make_divider())
 	home_strat_vbox.add_child(_make_spacer(4))
@@ -350,8 +387,7 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 		var rb := _make_choice_radio(t[0], t[1], t[2], _home_tact == i)
 		home_strat_vbox.add_child(rb)
 		_ht_radios.append(rb)
-		var ti := i
-		rb.pressed.connect(func(): _set_home_tact(ti))
+		rb.pressed.connect(_set_home_tact.bind(i))
 
 	# Opponent side
 	var opp_card := _make_card()
@@ -370,8 +406,7 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 		var rb := _make_choice_radio(s[0], s[1], s[2], _opp_strat == i)
 		opp_strat_vbox.add_child(rb)
 		_os_radios.append(rb)
-		var si := i
-		rb.pressed.connect(func(): _set_opp_strat(si))
+		rb.pressed.connect(_set_opp_strat.bind(i))
 
 	opp_strat_vbox.add_child(_make_divider())
 	opp_strat_vbox.add_child(_make_spacer(4))
@@ -384,8 +419,7 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 		var rb := _make_choice_radio(t[0], t[1], t[2], _opp_tact == i)
 		opp_strat_vbox.add_child(rb)
 		_ot_radios.append(rb)
-		var ti := i
-		rb.pressed.connect(func(): _set_opp_tact(ti))
+		rb.pressed.connect(_set_opp_tact.bind(i))
 
 	# ── Controls ──────────────────────────────────────────────────────────────
 	var ctrl_card := _make_card()
@@ -433,10 +467,16 @@ func _build_rules_panel(vbox: VBoxContainer) -> void:
 
 	inner.add_child(_make_section_header("GAME RULES"))
 	inner.add_child(_make_spacer(4))
+	_home_roster.clear()
+	for i in range(15):
+		_home_roster.append(i)
+	inner.add_child(_build_roster_section())
+	inner.add_child(_make_spacer(8))
 
 	for rule_data: Array in RULES:
 		inner.add_child(_make_rule_section(rule_data[0], rule_data[1], rule_data[2]))
 
+	inner.add_child(_build_classes_section())
 	inner.add_child(_make_spacer(24))
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -489,6 +529,7 @@ func _on_start_pressed() -> void:
 	cfg.away_team_name = "AWAY"
 	cfg.third_team_name = "THIRD"
 	cfg.is_human_controlled = [true, false, false]
+	cfg.inactive_class_indices = PackedInt32Array(_inactive_classes)
 	emit_signal("match_ready", cfg)
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -556,6 +597,7 @@ func _make_speed_btn(label: String, sublabel: String, selected: bool) -> Button:
 	btn.custom_minimum_size = Vector2(0, 52)
 
 	var inner := VBoxContainer.new()
+	inner.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	inner.alignment = BoxContainer.ALIGNMENT_CENTER
 	inner.add_theme_constant_override("separation", 2)
 	inner.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -615,6 +657,7 @@ func _make_choice_radio(emoji: String, label: String, desc: String, selected: bo
 	btn.focus_mode = Control.FOCUS_NONE
 
 	var row := HBoxContainer.new()
+	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	row.add_theme_constant_override("separation", 10)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
@@ -718,19 +761,21 @@ func _make_control_row(key: String, desc: String) -> Control:
 
 func _make_rule_section(icon: String, title: String, rules) -> Control:
 	var card := _make_card()
-
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 0)
 	card.add_child(vbox)
 
-	# Header row (always visible)
+	# Clickable header row
 	var header_row := HBoxContainer.new()
 	header_row.add_theme_constant_override("separation", 10)
+	header_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header_row.mouse_filter = Control.MOUSE_FILTER_STOP
 	vbox.add_child(header_row)
 
 	var icon_lbl := Label.new()
 	icon_lbl.text = icon
 	icon_lbl.add_theme_font_size_override("font_size", 18)
+	icon_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	header_row.add_child(icon_lbl)
 
 	var title_lbl := Label.new()
@@ -738,15 +783,25 @@ func _make_rule_section(icon: String, title: String, rules) -> Control:
 	title_lbl.add_theme_font_size_override("font_size", 14)
 	title_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
 	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	header_row.add_child(title_lbl)
 
-	# Rules list
+	var arrow := Label.new()
+	arrow.text = "▶"
+	arrow.add_theme_font_size_override("font_size", 10)
+	arrow.add_theme_color_override("font_color", Color(1, 1, 1, 0.35))
+	arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	header_row.add_child(arrow)
+
+	# Collapsible rules list — hidden by default
+	var rules_container := MarginContainer.new()
+	rules_container.add_theme_constant_override("margin_top", 10)
+	rules_container.visible = false
+	vbox.add_child(rules_container)
+
 	var rules_vbox := VBoxContainer.new()
 	rules_vbox.add_theme_constant_override("separation", 5)
-	var rules_margin := MarginContainer.new()
-	rules_margin.add_theme_constant_override("margin_top", 10)
-	rules_margin.add_child(rules_vbox)
-	vbox.add_child(rules_margin)
+	rules_container.add_child(rules_vbox)
 
 	for rule_text in rules:
 		var rule_row := HBoxContainer.new()
@@ -768,6 +823,12 @@ func _make_rule_section(icon: String, title: String, rules) -> Control:
 
 		rules_vbox.add_child(rule_row)
 
+	header_row.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			rules_container.visible = !rules_container.visible
+			arrow.text = "▼" if rules_container.visible else "▶"
+	)
+
 	return card
 
 func _make_divider() -> ColorRect:
@@ -780,3 +841,508 @@ func _make_spacer(h: int) -> Control:
 	var s := Control.new()
 	s.custom_minimum_size = Vector2(0, h)
 	return s
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Roster section
+# ─────────────────────────────────────────────────────────────────────────────
+func _build_roster_section() -> Control:
+	var card := _make_card()
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", 0)
+	card.add_child(outer)
+
+	# ── Clickable header row ──────────────────────────────────────────────────
+	var hrow := HBoxContainer.new()
+	hrow.add_theme_constant_override("separation", 10)
+	hrow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hrow.mouse_filter = Control.MOUSE_FILTER_STOP
+	outer.add_child(hrow)
+
+	var icon_lbl := Label.new()
+	icon_lbl.text = "👥"
+	icon_lbl.add_theme_font_size_override("font_size", 18)
+	icon_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	icon_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hrow.add_child(icon_lbl)
+
+	var title_col := VBoxContainer.new()
+	title_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_col.add_theme_constant_override("separation", 2)
+	title_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hrow.add_child(title_col)
+
+	var title_lbl := Label.new()
+	title_lbl.text = "TEAM ROSTERS"
+	title_lbl.add_theme_font_size_override("font_size", 14)
+	title_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
+	title_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_col.add_child(title_lbl)
+
+	var sub_lbl := Label.new()
+	sub_lbl.text = "Drag home rows to set lineup order"
+	sub_lbl.add_theme_font_size_override("font_size", 8)
+	sub_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.3))
+	sub_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_col.add_child(sub_lbl)
+
+	_roster_toggle_btn = Button.new()
+	_roster_toggle_btn.text = "▶"
+	_roster_toggle_btn.flat = true
+	_roster_toggle_btn.focus_mode = Control.FOCUS_NONE
+	_roster_toggle_btn.add_theme_color_override("font_color", C_GOLD)
+	_roster_toggle_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hrow.add_child(_roster_toggle_btn)
+
+	# ── Expandable content ────────────────────────────────────────────────────
+	_roster_content = VBoxContainer.new()
+	_roster_content.add_theme_constant_override("separation", 6)
+	_roster_content.visible = false
+	outer.add_child(_roster_content)
+
+	_roster_content.add_child(_make_spacer(10))
+
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 12)
+	_roster_content.add_child(cols)
+
+	# Home column
+	var home_col := VBoxContainer.new()
+	home_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	home_col.add_theme_constant_override("separation", 4)
+	cols.add_child(home_col)
+
+	var home_hdr := Label.new()
+	home_hdr.text = "HOME — DRAG TO REORDER"
+	home_hdr.add_theme_font_size_override("font_size", 8)
+	home_hdr.add_theme_color_override("font_color", Color(0.267, 1.0, 0.533, 0.7))
+	home_col.add_child(home_hdr)
+
+	_home_roster_vbox = VBoxContainer.new()
+	_home_roster_vbox.add_theme_constant_override("separation", 2)
+	home_col.add_child(_home_roster_vbox)
+	_rebuild_home_roster()
+
+	# Away column
+	var away_col := VBoxContainer.new()
+	away_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	away_col.add_theme_constant_override("separation", 4)
+	cols.add_child(away_col)
+
+	var away_hdr := Label.new()
+	away_hdr.text = "AWAY — AI CONTROLLED"
+	away_hdr.add_theme_font_size_override("font_size", 8)
+	away_hdr.add_theme_color_override("font_color", Color(1, 1, 1, 0.3))
+	away_col.add_child(away_hdr)
+
+	var away_rows := VBoxContainer.new()
+	away_rows.add_theme_constant_override("separation", 2)
+	away_col.add_child(away_rows)
+	for slot in range(15):
+		if slot == 7:
+			away_rows.add_child(_make_roster_divider())
+		away_rows.add_child(_make_roster_row(slot, slot, false))
+
+	hrow.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			_toggle_roster()
+	)
+	return card
+
+
+func _toggle_roster() -> void:
+	_roster_expanded = !_roster_expanded
+	_roster_content.visible = _roster_expanded
+	_roster_toggle_btn.text = "▼" if _roster_expanded else "▶"
+
+
+func _rebuild_home_roster() -> void:
+	for child in _home_roster_vbox.get_children():
+		_home_roster_vbox.remove_child(child)
+		child.queue_free()
+	_drag_slot_panels.clear()
+	for slot in range(15):
+		if slot == 7:
+			_home_roster_vbox.add_child(_make_roster_divider())
+		var panel := _make_roster_row(slot, _home_roster[slot], true)
+		_home_roster_vbox.add_child(panel)
+		_drag_slot_panels.append(panel)
+
+
+func _make_roster_divider() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+
+	var left := ColorRect.new()
+	left.color = Color(0.2, 0.267, 0.4)
+	left.custom_minimum_size = Vector2(0, 1)
+	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left.size_flags_vertical   = Control.SIZE_SHRINK_CENTER
+	row.add_child(left)
+
+	var lbl := Label.new()
+	lbl.text = "RESERVE"
+	lbl.add_theme_font_size_override("font_size", 8)
+	lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.3))
+	row.add_child(lbl)
+
+	var right := ColorRect.new()
+	right.color = Color(0.2, 0.267, 0.4)
+	right.custom_minimum_size = Vector2(0, 1)
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.size_flags_vertical   = Control.SIZE_SHRINK_CENTER
+	row.add_child(right)
+
+	return row
+
+
+func _make_roster_row(slot_idx: int, player_idx: int, clickable: bool) -> Control:
+	var class_idx  : int    = player_idx % 8
+	var cls_color  : Color  = CLASS_COLORS[class_idx]
+	var cls_name   : String = CLASS_NAMES[class_idx]
+	var is_field   : bool   = slot_idx < 7
+	var slot_label : String = ("FIELD " + str(slot_idx + 1)) if is_field else ("RES " + str(slot_idx - 6))
+	var slot_color : Color  = Color(0.267, 1.0, 0.533) if is_field else Color(1, 1, 1, 0.3)
+
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var sb := StyleBoxFlat.new()
+	if is_field:
+		sb.bg_color     = Color(0.039, 0.078, 0.039)
+		sb.border_color = Color(0.267, 1.0, 0.533, 0.2)
+	else:
+		sb.bg_color     = Color(0.039, 0.039, 0.071)
+		sb.border_color = Color(0.102, 0.102, 0.180)
+	sb.border_width_left   = 1
+	sb.border_width_right  = 1
+	sb.border_width_top    = 1
+	sb.border_width_bottom = 1
+	sb.corner_radius_top_left     = 4
+	sb.corner_radius_top_right    = 4
+	sb.corner_radius_bottom_left  = 4
+	sb.corner_radius_bottom_right = 4
+	sb.content_margin_left   = 4
+	sb.content_margin_right  = 6
+	sb.content_margin_top    = 4
+	sb.content_margin_bottom = 4
+	panel.add_theme_stylebox_override("panel", sb)
+	if clickable:
+		panel.mouse_filter = Control.MOUSE_FILTER_STOP
+		panel.mouse_default_cursor_shape = Control.CURSOR_DRAG
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(row)
+
+	var slot_lbl := Label.new()
+	slot_lbl.text = slot_label
+	slot_lbl.custom_minimum_size = Vector2(52, 0)
+	slot_lbl.add_theme_font_size_override("font_size", 9)
+	slot_lbl.add_theme_color_override("font_color", slot_color)
+	slot_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(slot_lbl)
+
+	var swatch := PanelContainer.new()
+	swatch.custom_minimum_size = Vector2(22, 22)
+	swatch.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	swatch.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sw_sb := StyleBoxFlat.new()
+	sw_sb.bg_color     = Color(cls_color.r, cls_color.g, cls_color.b, 0.15)
+	sw_sb.border_color = Color(cls_color.r, cls_color.g, cls_color.b, 0.35)
+	sw_sb.border_width_left   = 1
+	sw_sb.border_width_right  = 1
+	sw_sb.border_width_top    = 1
+	sw_sb.border_width_bottom = 1
+	sw_sb.corner_radius_top_left     = 4
+	sw_sb.corner_radius_top_right    = 4
+	sw_sb.corner_radius_bottom_left  = 4
+	sw_sb.corner_radius_bottom_right = 4
+	swatch.add_theme_stylebox_override("panel", sw_sb)
+	var sw_lbl := Label.new()
+	sw_lbl.text = cls_name[0]
+	sw_lbl.add_theme_font_size_override("font_size", 10)
+	sw_lbl.add_theme_color_override("font_color", cls_color)
+	sw_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sw_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	swatch.add_child(sw_lbl)
+	row.add_child(swatch)
+
+	var name_lbl := Label.new()
+	name_lbl.text = cls_name
+	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_lbl.add_theme_font_size_override("font_size", 12)
+	name_lbl.add_theme_color_override("font_color", Color(1,1,1,0.9) if is_field else Color(1,1,1,0.45))
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(name_lbl)
+
+	if clickable:
+		var drag_dots := Label.new()
+		drag_dots.text = "⠿"
+		drag_dots.add_theme_font_size_override("font_size", 14)
+		drag_dots.add_theme_color_override("font_color", Color(1, 1, 1, 0.18))
+		drag_dots.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		drag_dots.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(drag_dots)
+
+		panel.gui_input.connect(func(event: InputEvent) -> void:
+			if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+				_begin_drag(slot_idx)
+		)
+
+	return panel
+
+
+func _begin_drag(slot_idx: int) -> void:
+	if _dragging:
+		return
+	_dragging = true
+	_drag_from_slot = slot_idx
+
+	var player_idx : int    = _home_roster[slot_idx]
+	var class_idx  : int    = player_idx % 8
+	var cls_color  : Color  = CLASS_COLORS[class_idx]
+	var cls_name   : String = CLASS_NAMES[class_idx]
+	var is_field   : bool   = slot_idx < 7
+	var slot_label : String = ("FIELD " + str(slot_idx + 1)) if is_field else ("RES " + str(slot_idx - 6))
+
+	_drag_ghost = PanelContainer.new()
+	_drag_ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_drag_ghost.z_index = 100
+	var ghost_sb := StyleBoxFlat.new()
+	ghost_sb.bg_color     = Color(cls_color.r, cls_color.g, cls_color.b, 0.25)
+	ghost_sb.border_color = C_GOLD
+	ghost_sb.border_width_left   = 2
+	ghost_sb.border_width_right  = 2
+	ghost_sb.border_width_top    = 2
+	ghost_sb.border_width_bottom = 2
+	ghost_sb.corner_radius_top_left     = 4
+	ghost_sb.corner_radius_top_right    = 4
+	ghost_sb.corner_radius_bottom_left  = 4
+	ghost_sb.corner_radius_bottom_right = 4
+	ghost_sb.content_margin_left   = 10
+	ghost_sb.content_margin_right  = 10
+	ghost_sb.content_margin_top    = 6
+	ghost_sb.content_margin_bottom = 6
+	_drag_ghost.add_theme_stylebox_override("panel", ghost_sb)
+
+	var ghost_row := HBoxContainer.new()
+	ghost_row.add_theme_constant_override("separation", 8)
+	ghost_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_drag_ghost.add_child(ghost_row)
+
+	var ghost_slot := Label.new()
+	ghost_slot.text = slot_label
+	ghost_slot.add_theme_font_size_override("font_size", 9)
+	ghost_slot.add_theme_color_override("font_color", C_GOLD)
+	ghost_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ghost_row.add_child(ghost_slot)
+
+	var ghost_name := Label.new()
+	ghost_name.text = cls_name
+	ghost_name.add_theme_font_size_override("font_size", 13)
+	ghost_name.add_theme_color_override("font_color", cls_color)
+	ghost_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ghost_row.add_child(ghost_name)
+
+	add_child(_drag_ghost)
+	# Position will be corrected in _process; set an initial pos near cursor
+	var mouse_pos := get_viewport().get_mouse_position()
+	_drag_ghost.position = mouse_pos - Vector2(60, 15)
+
+
+func _process(_delta: float) -> void:
+	if not _dragging or not is_instance_valid(_drag_ghost):
+		return
+	var mouse_pos := get_viewport().get_mouse_position()
+	_drag_ghost.position = mouse_pos - _drag_ghost.size * 0.5
+
+
+func _input(event: InputEvent) -> void:
+	if not _dragging:
+		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		_end_drag()
+		get_viewport().set_input_as_handled()
+
+
+func _end_drag() -> void:
+	_dragging = false
+	var mouse_pos := get_viewport().get_mouse_position()
+	var target_slot := -1
+	for i in range(_drag_slot_panels.size()):
+		if is_instance_valid(_drag_slot_panels[i]):
+			if _drag_slot_panels[i].get_global_rect().has_point(mouse_pos):
+				target_slot = i
+				break
+	if target_slot != -1 and target_slot != _drag_from_slot:
+		var temp: int = _home_roster[_drag_from_slot]
+		_home_roster[_drag_from_slot] = _home_roster[target_slot]
+		_home_roster[target_slot] = temp
+	if is_instance_valid(_drag_ghost):
+		_drag_ghost.queue_free()
+		_drag_ghost = null
+	_drag_from_slot = -1
+	_rebuild_home_roster()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Classes section
+# ─────────────────────────────────────────────────────────────────────────────
+func _build_classes_section() -> Control:
+	var card := _make_card()
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", 0)
+	card.add_child(outer)
+
+	# Clickable header
+	var hrow := HBoxContainer.new()
+	hrow.add_theme_constant_override("separation", 10)
+	hrow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hrow.mouse_filter = Control.MOUSE_FILTER_STOP
+	outer.add_child(hrow)
+
+	var icon_lbl := Label.new()
+	icon_lbl.text = "🧬"
+	icon_lbl.add_theme_font_size_override("font_size", 18)
+	icon_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hrow.add_child(icon_lbl)
+
+	var title_lbl := Label.new()
+	title_lbl.text = "CLASSES"
+	title_lbl.add_theme_font_size_override("font_size", 14)
+	title_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
+	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hrow.add_child(title_lbl)
+
+	var arrow := Label.new()
+	arrow.text = "▶"
+	arrow.add_theme_font_size_override("font_size", 10)
+	arrow.add_theme_color_override("font_color", Color(1, 1, 1, 0.35))
+	arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hrow.add_child(arrow)
+
+	# Collapsible content
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 6)
+	content.visible = false
+	outer.add_child(content)
+
+	content.add_child(_make_spacer(8))
+
+	_class_btns.clear()
+	_class_btns.resize(CLASS_NAMES.size())
+	for i in range(CLASS_NAMES.size()):
+		content.add_child(_make_class_card(i))
+
+	hrow.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			content.visible = !content.visible
+			arrow.text = "▼" if content.visible else "▶"
+	)
+
+	return card
+
+
+func _make_class_card(class_idx: int) -> Control:
+	var inactive  : bool   = _inactive_classes.has(class_idx)
+	var cls_color : Color  = CLASS_COLORS[class_idx]
+	var cls_name  : String = CLASS_NAMES[class_idx]
+	var cls_desc  : String = CLASS_DESCS[class_idx]
+
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var sb := StyleBoxFlat.new()
+	sb.bg_color     = Color(0.12, 0.0, 0.0, 0.6) if inactive else Color(0, 0, 0, 0.4)
+	sb.border_color = Color(0.6, 0.267, 0.267, 0.5) if inactive else Color(cls_color.r, cls_color.g, cls_color.b, 0.4)
+	sb.border_width_left   = 1
+	sb.border_width_right  = 1
+	sb.border_width_top    = 1
+	sb.border_width_bottom = 1
+	sb.corner_radius_top_left     = 6
+	sb.corner_radius_top_right    = 6
+	sb.corner_radius_bottom_left  = 6
+	sb.corner_radius_bottom_right = 6
+	sb.content_margin_left   = 10
+	sb.content_margin_right  = 10
+	sb.content_margin_top    = 8
+	sb.content_margin_bottom = 8
+	panel.add_theme_stylebox_override("panel", sb)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	panel.add_child(row)
+
+	# Left accent bar in class color
+	var bar := ColorRect.new()
+	bar.color = Color(cls_color.r, cls_color.g, cls_color.b, 0.8 if not inactive else 0.2)
+	bar.custom_minimum_size = Vector2(4, 20)
+	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(bar)
+
+	var text_col := VBoxContainer.new()
+	text_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text_col.add_theme_constant_override("separation", 2)
+	row.add_child(text_col)
+
+	var name_lbl := Label.new()
+	name_lbl.text = cls_name
+	name_lbl.add_theme_font_size_override("font_size", 13)
+	name_lbl.add_theme_color_override("font_color",
+		Color(cls_color.r, cls_color.g, cls_color.b, 0.35) if inactive else cls_color)
+	text_col.add_child(name_lbl)
+
+	var desc_lbl := Label.new()
+	desc_lbl.text = cls_desc
+	desc_lbl.add_theme_font_size_override("font_size", 9)
+	desc_lbl.add_theme_color_override("font_color",
+		Color(1, 1, 1, 0.2) if inactive else Color(1, 1, 1, 0.45))
+	text_col.add_child(desc_lbl)
+
+	# Active/Inactive toggle button
+	var toggle := Button.new()
+	toggle.text = "INACTIVE" if inactive else "ACTIVE"
+	toggle.focus_mode = Control.FOCUS_NONE
+	toggle.add_theme_font_size_override("font_size", 8)
+	toggle.add_theme_color_override("font_color",
+		Color(1.0, 0.4, 0.4) if inactive else Color(1, 1, 1, 0.4))
+	var t_sb := StyleBoxFlat.new()
+	t_sb.bg_color     = Color(0.6, 0.267, 0.267, 0.25) if inactive else Color.TRANSPARENT
+	t_sb.border_color = Color(0.6, 0.267, 0.267, 0.7)  if inactive else Color(1, 1, 1, 0.2)
+	t_sb.border_width_left   = 1
+	t_sb.border_width_right  = 1
+	t_sb.border_width_top    = 1
+	t_sb.border_width_bottom = 1
+	t_sb.corner_radius_top_left     = 4
+	t_sb.corner_radius_top_right    = 4
+	t_sb.corner_radius_bottom_left  = 4
+	t_sb.corner_radius_bottom_right = 4
+	t_sb.content_margin_left   = 8
+	t_sb.content_margin_right  = 8
+	t_sb.content_margin_top    = 4
+	t_sb.content_margin_bottom = 4
+	toggle.add_theme_stylebox_override("normal",  t_sb)
+	toggle.add_theme_stylebox_override("hover",   t_sb)
+	toggle.add_theme_stylebox_override("pressed", t_sb)
+	toggle.pressed.connect(_toggle_class.bind(class_idx))
+	_class_btns[class_idx] = toggle
+	row.add_child(toggle)
+
+	return panel
+
+
+func _toggle_class(class_idx: int) -> void:
+	if _inactive_classes.has(class_idx):
+		_inactive_classes.erase(class_idx)
+	else:
+		_inactive_classes.append(class_idx)
+	# Replace only the affected card in-place
+	var btn   : Button  = _class_btns[class_idx]
+	var card  : Control = btn.get_parent().get_parent()
+	var vbox  : Control = card.get_parent()
+	var idx   : int     = card.get_index()
+	vbox.remove_child(card)
+	card.queue_free()
+	_class_btns[class_idx] = null   # will be re-set in _make_class_card
+	var new_card := _make_class_card(class_idx)
+	vbox.add_child(new_card)
+	vbox.move_child(new_card, idx)

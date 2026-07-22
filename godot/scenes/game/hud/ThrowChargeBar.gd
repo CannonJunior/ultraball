@@ -11,8 +11,8 @@ func _ready() -> void:
 	# Centered horizontally, just above the hotbar
 	anchor_left = 0.5;  anchor_top = 1.0
 	anchor_right = 0.5; anchor_bottom = 1.0
-	offset_left = -120.0; offset_top = -100.0
-	offset_right =  120.0; offset_bottom = -78.0
+	offset_left = -120.0; offset_top = -156.0
+	offset_right =  120.0; offset_bottom = -134.0
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	visible = false
 	_build()

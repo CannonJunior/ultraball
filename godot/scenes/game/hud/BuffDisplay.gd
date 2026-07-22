@@ -25,8 +25,8 @@ func _ready() -> void:
 	# Thin bar above ManaBars, bottom-left
 	anchor_left = 0.0;  anchor_top = 1.0
 	anchor_right = 0.0; anchor_bottom = 1.0
-	offset_left = 8.0;  offset_top = -182.0
-	offset_right = 350.0; offset_bottom = -152.0
+	offset_left = 8.0;  offset_top = -168.0
+	offset_right = 350.0; offset_bottom = -134.0
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build()
 

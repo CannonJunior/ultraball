@@ -27,6 +27,7 @@ func _ready() -> void:
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
 	multiplayer.connection_failed.connect(_on_connection_failed)
+	go_offline()   # establishes OfflineMultiplayerPeer so authority checks work
 
 # ── Host / Join (ENet) ─────────────────────────────────────────────────────────
 
