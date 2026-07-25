@@ -31,12 +31,23 @@ func _ready() -> void:
 		return
 	MatchState.config = match_config
 	MatchState.is_three_team = match_config.match_mode == MatchConfig.MatchMode.THREE_TEAM
+	MatchState.is_paused = false
 	_populate_roster()
 	_spawn_initial_players()
 	_start_match()
 	# HUD
 	var hud_control: Control = _HUD.new()
 	hud.add_child(hud_control)
+
+	# 3D/3Q visual layer — hides 2D world and renders a live 3D mirror
+	if match_config.view_mode != MatchConfig.ViewMode.FLAT_2D:
+		var view_layer := preload("res://systems/ViewLayer3D.gd").new()
+		view_layer.name = "ViewLayer3D"
+		view_layer.view_mode = match_config.view_mode
+		add_child(view_layer)
+		$Field.visible    = false
+		$Entities.visible = false
+		$Camera2D.enabled = false
 	# Network: add ClientPredictor for this instance if it is a client
 	if NetworkManager.mode != NetworkManager.NetMode.OFFLINE and not NetworkManager.is_server():
 		var predictor := ClientPredictor.new()

@@ -16,8 +16,8 @@ ability_id = "fissure"
 display_name = "Fissure"
 description = "Projectile: pit opens (r=4m, 5s)"
 slot = 9
-cooldown = 15.0
-mana_cost = 35.0
+cooldown = 20.0
+mana_cost = 70.0
 mana_type = 2
 range = 0.0
 effects = [SubResource("E1")]

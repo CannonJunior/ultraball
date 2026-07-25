@@ -9,11 +9,13 @@ func _ready() -> void:
 	EventBus.player_died.connect(_on_player_died)
 	EventBus.act_ended.connect(_on_act_ended)
 
-func _on_player_died(player_id: String, _cause: String, _killer_id: String) -> void:
+func _on_player_died(player_id: String, cause: String, killer_id: String) -> void:
 	var rec: MatchState.PlayerRecord = MatchState.players.get(player_id)
 	if rec == null: return
 	rec.is_alive = false
 	rec.is_on_field = false
+
+	print("[DEATH] player=%s cause=%s killer=%s" % [player_id, cause, killer_id])
 
 	# Drop ball if this player was holding it
 	if MatchState.ball.holder_id == player_id:
@@ -24,6 +26,7 @@ func _on_player_died(player_id: String, _cause: String, _killer_id: String) -> v
 	# Find next reserve for this team
 	var next := _next_reserve(rec.team_id)
 	if next == null:
+		print("[DEATH] team %d roster depleted — no sub available" % rec.team_id)
 		return  # roster depleted — no sub available
 
 	# Sub in immediately unless act has ended (act-end subs handled separately)
@@ -33,6 +36,7 @@ func _on_player_died(player_id: String, _cause: String, _killer_id: String) -> v
 func _sub_in(reserve: MatchState.PlayerRecord, replaced_id: String) -> void:
 	reserve.is_alive = true
 	reserve.is_on_field = true
+	print("[SUB] %s subbed in for %s (team %d)" % [reserve.player_id, replaced_id, reserve.team_id])
 	EventBus.player_subbed_in.emit(reserve.player_id, replaced_id, reserve.team_id)
 	EventBus.healing_applied.emit("", reserve.player_id, 9999.0)
 

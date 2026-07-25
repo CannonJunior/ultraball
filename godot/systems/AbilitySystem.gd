@@ -43,21 +43,46 @@ func _tick_cooldowns(delta: float) -> void:
 
 func _drain_queues() -> void:
 	for pid in _queues:
-		var queue: Array = _queues[pid]
-		if queue.is_empty(): continue
-		if _gcd.get(pid, 0.0) > 0.0: continue
+		_drain_queue_for(pid)
+
+func _drain_queue_for(pid: String) -> void:
+	if _gcd.get(pid, 0.0) > 0.0:
+		return
+	var queue: Array = _queues.get(pid, [])
+	while not queue.is_empty():
 		var slot: int = queue[0]
-		if _can_use_now(pid, slot):
+		var reason := _failure_reason(pid, slot)
+		if reason == "":
 			queue.pop_front()
+			EventBus.ability_queue_changed.emit(pid, queue.duplicate())
 			_fire_ability(pid, slot)
+			return  # GCD now active; stop draining
+		elif reason == "no_mana":
+			# Insufficient mana at execution time — cancel and try the next entry
+			queue.pop_front()
+			EventBus.ability_queue_changed.emit(pid, queue.duplicate())
+			EventBus.ability_failed.emit(pid, slot, reason)
+		else:
+			return  # out_of_range / on_cd / etc. — wait
 
 func _on_ability_queued(player_id: String, slot: int) -> void:
 	if not _queues.has(player_id):
 		_queues[player_id] = []
 	var queue: Array = _queues[player_id]
 	if queue.size() >= MAX_QUEUE:
+		EventBus.event_message_shown.emit("QUEUE FULL", 0.8)
 		return
+	# Block first-position slot if the player cannot afford it right now
+	if queue.is_empty():
+		var player_node := _get_player_node(player_id)
+		var rec: MatchState.PlayerRecord = MatchState.players.get(player_id)
+		if player_node != null and rec != null:
+			var def: AbilityDefinition = GameRegistry.get_ability(rec.class_id, slot)
+			if def != null and not player_node.mana.can_afford(def.mana_type, def.mana_cost):
+				EventBus.ability_failed.emit(player_id, slot, "no_mana")
+				return
 	queue.append(slot)
+	EventBus.ability_queue_changed.emit(player_id, queue.duplicate())
 
 # ── Direct use (skips queue) ───────────────────────────────────────────────────
 
@@ -139,6 +164,8 @@ func _failure_reason(pid: String, slot: int) -> String:
 	if definition == null: return "no_definition"
 	if not player_node.mana.can_afford(definition.mana_type, definition.mana_cost):
 		return "no_mana"
+	if not _in_range(player_node, definition):
+		return "out_of_range"
 	return ""
 
 # ── Cooldown helpers ──────────────────────────────────────────────────────────
@@ -160,6 +187,9 @@ func get_cooldown_for_ui(pid: String, slot: int) -> float:
 func get_gcd_for_ui(pid: String) -> float:
 	return _gcd.get(pid, 0.0)
 
+func get_queue(pid: String) -> Array:
+	return _queues.get(pid, []).duplicate()
+
 # ── Event listeners ───────────────────────────────────────────────────────────
 
 func _on_buff_applied(player_id: String, buff_name: String, _duration: float) -> void:
@@ -167,12 +197,12 @@ func _on_buff_applied(player_id: String, buff_name: String, _duration: float) ->
 		_duration_double[player_id] = true
 
 func _on_player_subbed_in(player_id: String, _replaced: String, _team: int) -> void:
-	# Reset cooldowns for newly subbed-in player
 	if _cooldowns.has(player_id):
 		_cooldowns[player_id].fill(0.0)
 	_gcd[player_id] = 0.0
 	if _queues.has(player_id):
 		_queues[player_id].clear()
+		EventBus.ability_queue_changed.emit(player_id, [])
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -181,3 +211,17 @@ func _get_player_node(pid: String) -> Node:
 		if node.player_id == pid:
 			return node
 	return null
+
+func _in_range(caster: Node, definition: AbilityDefinition) -> bool:
+	if definition.range <= 0.0:
+		return true
+	# Self(2), Global(3), AoEAroundSelf(5), AimedPoint(7), Cone(8) don't need a target in range
+	if definition.target_mode in [2, 3, 5, 7, 8]:
+		return true
+	var target_id: String = caster.current_target_id
+	if target_id.is_empty():
+		return false
+	var target := _get_player_node(target_id)
+	if target == null or not target.is_alive or not target.is_on_field:
+		return false
+	return caster.global_position.distance_to(target.global_position) <= definition.range

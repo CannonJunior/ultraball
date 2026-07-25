@@ -13,10 +13,10 @@ auto_ally_range = 0.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "fortress"
-display_name = "Bulwark"
+display_name = "Fortress"
 description = "50% dmg reduction · 3s self"
 slot = 4
-cooldown = 10.0
+cooldown = 5.0
 mana_cost = 25.0
 mana_type = 2
 range = 0.0

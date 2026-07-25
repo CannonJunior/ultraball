@@ -30,6 +30,7 @@ var act_timer: float = 180.0
 var match_active: bool = false
 var act_ended: bool = false
 var game_over: bool = false
+var is_paused: bool = false
 
 # Scores
 var scores: Array[int] = [0, 0, 0]     # indexed by Team enum
@@ -48,6 +49,9 @@ var ball: BallStateRecord = BallStateRecord.new()
 
 # Terrain state
 var terrain: TerrainStateRecord = TerrainStateRecord.new()
+
+# Per-player cumulative match stats
+var player_stats: Dictionary = {}
 
 # Creature positions (set by CreatureSystem each tick)
 var creature_positions: Array[Vector2] = []
@@ -92,6 +96,11 @@ func reset_for_new_act() -> void:
 	act_ended = false
 	act_timer = act_duration()
 
+func stat(player_id: String) -> PlayerStatRecord:
+	if not player_stats.has(player_id):
+		player_stats[player_id] = PlayerStatRecord.new()
+	return player_stats[player_id]
+
 
 # ── Inner data records (lightweight, not Resources) ───────────────────────────
 
@@ -118,6 +127,19 @@ class BallStateRecord:
 	var max_charge: float = 7.0
 	var z_height: float = 0.0
 	var z_velocity: float = 0.0
+
+class PlayerStatRecord:
+	var dmg: float = 0.0
+	var heal: float = 0.0
+	var kills: int = 0
+	var deaths: int = 0
+	var taken: float = 0.0
+	var ub: int = 0
+	var ca: int = 0
+	var ff: int = 0
+
+	var points: int:
+		get: return kills * 3 + ub * 5 + ca * 2
 
 class TerrainStateRecord:
 	# 28×8 coarse grid (224 cells)

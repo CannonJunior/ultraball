@@ -16,11 +16,11 @@ duration = 2.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "lights_out"
-display_name = "Eye Gouge"
+display_name = "Lights Out"
 description = "15 dmg · 2s stun"
 slot = 6
-cooldown = 20.0
-mana_cost = 30.0
+cooldown = 10.0
+mana_cost = 13.0
 mana_type = 1
 range = 8.0
 effects = [SubResource("E1"), SubResource("E2")]

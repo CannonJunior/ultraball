@@ -13,11 +13,11 @@ auto_ally_range = 8.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "blindside"
-display_name = "Team Rally"
+display_name = "Blindside"
 description = "AoE 8m: restore 20 blue to all allies"
 slot = 8
 cooldown = 20.0
-mana_cost = 40.0
+mana_cost = 60.0
 mana_type = 2
 range = 0.0
 effects = [SubResource("E1")]

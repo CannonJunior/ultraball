@@ -18,11 +18,11 @@ aoe_radius = 0.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "trip_line"
-display_name = "Slide Tackle"
+display_name = "Trip Line"
 description = "18 dmg · 1.5s snare (50% slow)"
 slot = 2
-cooldown = 5.0
-mana_cost = 20.0
+cooldown = 1.5
+mana_cost = 5.0
 mana_type = 1
 range = 8.0
 effects = [SubResource("E1"), SubResource("E2")]

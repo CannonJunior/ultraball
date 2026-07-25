@@ -5,6 +5,7 @@ signal ability_used(caster_id: String, slot: int)
 signal ability_resolved(caster_id: String, slot: int, hit_ids: Array)
 signal ability_failed(caster_id: String, slot: int, reason: String)
 signal ability_queued(player_id: String, slot: int)
+signal ability_queue_changed(player_id: String, queue: Array)
 signal gcd_started(player_id: String, duration: float)
 
 # ── Damage and Death ───────────────────────────────────────────────────────────
@@ -67,6 +68,10 @@ signal peer_disconnected(peer_id: int)
 signal lobby_created(lobby_id: int)
 signal lobby_joined(lobby_id: int)
 signal match_starting(config: Resource)
+
+# ── Game Flow ──────────────────────────────────────────────────────────────────
+signal game_paused(is_paused: bool)
+signal exit_to_lobby_requested()
 
 # ── UI Feedback (logic → HUD only; HUD never emits back to logic) ──────────────
 signal event_message_shown(message: String, duration: float)

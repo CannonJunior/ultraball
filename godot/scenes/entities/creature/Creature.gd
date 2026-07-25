@@ -4,19 +4,18 @@ extends CharacterBody2D
 ## Creature patrol entity. Movement lives here; kill detection is in CreatureSystem.
 
 const PATROL_SPEED    := 6.0   # m/s
-const WAYPOINT_REACH  := 1.0   # metres — snap to next waypoint
-const BODY_RADIUS     := 0.55  # metres — visual + collision
+const WAYPOINT_REACH  := 2.0   # metres — snap to next waypoint
+const BODY_RADIUS     := 4.0   # metres — visual + collision
 
-## Oval patrol path around the 2-team field interior.
+## Rectangular patrol path along the centre of the 10m-wide creature channel.
+## End sections: x∈[20,30] and x∈[110,120], y∈[0,40] (inside field).
+## Side sections: y∈[−10,0] and y∈[40,50] (outside field).
+## Waypoints sit at channel midpoints: x=25/115 (end), y=−5/45 (side).
 const WAYPOINTS_2T: Array = [
-	Vector2( 70.0,  4.0),
-	Vector2(110.0,  8.0),
-	Vector2(132.0, 20.0),
-	Vector2(110.0, 32.0),
-	Vector2( 70.0, 36.0),
-	Vector2( 30.0, 32.0),
-	Vector2(  8.0, 20.0),
-	Vector2( 30.0,  8.0),
+	Vector2( 25.0, -5.0),   # top-left
+	Vector2(115.0, -5.0),   # top-right
+	Vector2(115.0, 45.0),   # bottom-right
+	Vector2( 25.0, 45.0),   # bottom-left
 ]
 
 ## 9-waypoint star-perimeter patrol for 3-team mode (CW: arm0, arm2, arm1).

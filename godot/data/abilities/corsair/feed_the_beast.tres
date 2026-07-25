@@ -18,12 +18,12 @@ damage_taken_multiplier = 1.25
 [resource]
 script = ExtResource("1_def")
 ability_id = "feed_the_beast"
-display_name = "Creature Bait"
+display_name = "Feed the Beast"
 description = "Push enemy 4m toward creature · mark 5s"
 slot = 9
 cooldown = 20.0
-mana_cost = 25.0
-mana_type = 1
+mana_cost = 20.0
+mana_type = 3
 range = 8.0
 effects = [SubResource("E1"), SubResource("E2")]
 metadata/_custom_type_script = "uid://b38bten5wru66"

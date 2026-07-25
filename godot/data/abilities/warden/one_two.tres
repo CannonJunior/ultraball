@@ -11,7 +11,7 @@ knockback_distance = 0.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "one_two"
-display_name = "Quick Jab"
+display_name = "One-Two"
 description = "10 dmg"
 slot = 1
 cooldown = 1.5

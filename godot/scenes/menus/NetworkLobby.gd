@@ -19,6 +19,7 @@ const C_DESC   := Color(1, 1, 1, 0.60)
 # ── State ─────────────────────────────────────────────────────────────────────
 var _match_mode  : int  = 0   # 0=TwoTeam 1=ThreeTeam
 var _fast_mode   : bool = false
+var _view_mode   : int  = 0   # 0=FLAT 1=THREE_QUARTER 2=FULL_3D
 var _creature    : int  = 0   # 0=Kraken 1=Dragon 2=Hydra 3=Wraith 4=Chaos
 var _home_strat  : int  = 0
 var _home_tact   : int  = 0
@@ -28,6 +29,7 @@ var _opp_tact    : int  = 0
 # Button group arrays — filled during build
 var _mode_btns   : Array = []   # [btn2team, btn3team]
 var _dur_btns    : Array = []   # [btnNormal, btnFast]
+var _view_btns   : Array = []   # [btn2d, btn3q, btn3d]
 var _crea_btns   : Array = []   # one per creature
 var _hs_radios   : Array = []   # home strategy radio rows
 var _ht_radios   : Array = []   # home tactics radio rows
@@ -90,6 +92,8 @@ const CONTROLS := [
 	["M",          "Toggle damage / healing meter"],
 	["C",          "Cycle player class (Test Mode only)"],
 	["ESC",        "Clear target / Pause"],
+	["V",          "Cycle camera: Broadcast ↔ Third-person (3D mode only)"],
+	["SHIFT+V",    "Toggle ball-cam in Broadcast mode (3D mode only)"],
 ]
 
 const RULES := [
@@ -263,11 +267,14 @@ func _build_header() -> Control:
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	container.add_child(vbox)
 
-	var title := Label.new()
-	title.text = "ULTRABALL"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 72)
-	title.add_theme_color_override("font_color", C_GOLD)
+	var title := RichTextLabel.new()
+	title.bbcode_enabled = true
+	title.fit_content = true
+	title.scroll_active = false
+	title.autowrap_mode = TextServer.AUTOWRAP_OFF
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title.add_theme_font_size_override("normal_font_size", 72)
+	title.text = _ultra_gradient_bbcode("ULTRABALL", true)
 	vbox.add_child(title)
 
 	var subtitle := Label.new()
@@ -335,6 +342,35 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 	_dur_btns = [btn_norm, btn_fast]
 	btn_norm.pressed.connect(_set_fast_mode.bind(false))
 	btn_fast.pressed.connect(_set_fast_mode.bind(true))
+
+	# ── View Mode ────────────────────────────────────────────────────────────
+	var view_card := _make_card()
+	inner.add_child(view_card)
+	var view_vbox := VBoxContainer.new()
+	view_vbox.add_theme_constant_override("separation", 10)
+	view_card.add_child(view_vbox)
+	view_vbox.add_child(_make_field_label("VIEW MODE"))
+	view_vbox.add_child(_make_hint("3/4 and 3D are available for 2-team matches only"))
+	var view_row := HBoxContainer.new()
+	view_row.add_theme_constant_override("separation", 8)
+	view_vbox.add_child(view_row)
+	var btn2d := _make_speed_btn("2D",  "Top-down",    _view_mode == 0)
+	var btn3q := _make_speed_btn("3/4", "Perspective", _view_mode == 1)
+	var btn3d := _make_speed_btn("3D",  "Broadcast",   _view_mode == 2)
+	for b: Button in [btn2d, btn3q, btn3d]:
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn3q.disabled = (_match_mode == 1)
+	btn3d.disabled = (_match_mode == 1)
+	if _match_mode == 1:
+		btn3q.modulate = Color(1, 1, 1, 0.4)
+		btn3d.modulate = Color(1, 1, 1, 0.4)
+	view_row.add_child(btn2d)
+	view_row.add_child(btn3q)
+	view_row.add_child(btn3d)
+	_view_btns = [btn2d, btn3q, btn3d]
+	btn2d.pressed.connect(_set_view_mode.bind(0))
+	btn3q.pressed.connect(_set_view_mode.bind(1))
+	btn3d.pressed.connect(_set_view_mode.bind(2))
 
 	# ── Creature ──────────────────────────────────────────────────────────────
 	var crea_card := _make_card()
@@ -440,7 +476,7 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 	start_btn.add_theme_font_size_override("font_size", 28)
 	start_btn.add_theme_color_override("font_color", Color.WHITE)
 	var start_sb := StyleBoxFlat.new()
-	start_sb.bg_color = Color(0.8, 0.27, 0.0)
+	start_sb.bg_color = Color.TRANSPARENT
 	start_sb.corner_radius_top_left     = 8
 	start_sb.corner_radius_top_right    = 8
 	start_sb.corner_radius_bottom_left  = 8
@@ -448,6 +484,24 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 	start_btn.add_theme_stylebox_override("normal", start_sb)
 	start_btn.add_theme_stylebox_override("hover",  start_sb)
 	start_btn.add_theme_stylebox_override("pressed", start_sb)
+
+	var btn_grad := Gradient.new()
+	btn_grad.colors  = PackedColorArray([Color.html("FFCC00"), Color.html("FF6600"), Color.html("FF0044")])
+	btn_grad.offsets = PackedFloat32Array([0.0, 0.5, 1.0])
+	var btn_grad_tex := GradientTexture2D.new()
+	btn_grad_tex.gradient = btn_grad
+	btn_grad_tex.width = 256
+	btn_grad_tex.height = 1
+	btn_grad_tex.fill_from = Vector2(0.0, 0.5)
+	btn_grad_tex.fill_to   = Vector2(1.0, 0.5)
+	var btn_bg := TextureRect.new()
+	btn_bg.texture = btn_grad_tex
+	btn_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	btn_bg.stretch_mode = TextureRect.STRETCH_SCALE
+	btn_bg.show_behind_parent = true
+	btn_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	btn_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	start_btn.add_child(btn_bg)
 	start_btn.pressed.connect(_on_start_pressed)
 	inner.add_child(start_btn)
 	inner.add_child(_make_spacer(24))
@@ -486,6 +540,18 @@ func _set_match_mode(mode: int) -> void:
 	_match_mode = mode
 	for i in _mode_btns.size():
 		_update_speed_btn(_mode_btns[i], _match_mode == i)
+	var is_three := (_match_mode == 1)
+	for i in _view_btns.size():
+		var disabled := is_three and i > 0
+		_view_btns[i].disabled = disabled
+		_view_btns[i].modulate = Color(1, 1, 1, 0.4 if disabled else 1.0)
+	if is_three and _view_mode != 0:
+		_set_view_mode(0)
+
+func _set_view_mode(idx: int) -> void:
+	_view_mode = idx
+	for i in _view_btns.size():
+		_update_speed_btn(_view_btns[i], _view_mode == i)
 
 func _set_fast_mode(fast: bool) -> void:
 	_fast_mode = fast
@@ -524,6 +590,7 @@ func _on_start_pressed() -> void:
 	var cfg := _MatchConfig.new()
 	cfg.match_mode   = _match_mode
 	cfg.fast_mode    = _fast_mode
+	cfg.view_mode    = _view_mode
 	cfg.creature_type = _creature
 	cfg.home_team_name = "HOME"
 	cfg.away_team_name = "AWAY"
@@ -841,6 +908,23 @@ func _make_spacer(h: int) -> Control:
 	var s := Control.new()
 	s.custom_minimum_size = Vector2(0, h)
 	return s
+
+func _ultra_gradient_bbcode(txt: String, centered: bool = false) -> String:
+	var g_colors := [Color.html("FFCC00"), Color.html("FF6600"), Color.html("FF0044")]
+	var g_stops  := [0.0, 0.5, 1.0]
+	var n := txt.length()
+	var result := "[center]" if centered else ""
+	for i in n:
+		var t := float(i) / float(max(1, n - 1))
+		var c: Color
+		if t <= g_stops[1]:
+			c = (g_colors[0] as Color).lerp(g_colors[1], t / g_stops[1])
+		else:
+			c = (g_colors[1] as Color).lerp(g_colors[2], (t - g_stops[1]) / (g_stops[2] - g_stops[1]))
+		result += "[color=#%s]%s[/color]" % [c.to_html(false), txt[i]]
+	if centered:
+		result += "[/center]"
+	return result
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Roster section
@@ -1268,9 +1352,13 @@ func _make_class_card(class_idx: int) -> Control:
 	sb.content_margin_bottom = 8
 	panel.add_theme_stylebox_override("panel", sb)
 
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", 0)
+	panel.add_child(outer)
+
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
-	panel.add_child(row)
+	outer.add_child(row)
 
 	# Left accent bar in class color
 	var bar := ColorRect.new()
@@ -1327,6 +1415,9 @@ func _make_class_card(class_idx: int) -> Control:
 	_class_btns[class_idx] = toggle
 	row.add_child(toggle)
 
+	# Collapsible abilities list
+	outer.add_child(_build_class_ability_section(class_idx, cls_color, inactive))
+
 	return panel
 
 
@@ -1336,8 +1427,9 @@ func _toggle_class(class_idx: int) -> void:
 	else:
 		_inactive_classes.append(class_idx)
 	# Replace only the affected card in-place
+	# Path: toggle → row (HBox) → outer (VBox) → panel (PanelContainer)
 	var btn   : Button  = _class_btns[class_idx]
-	var card  : Control = btn.get_parent().get_parent()
+	var card  : Control = btn.get_parent().get_parent().get_parent()
 	var vbox  : Control = card.get_parent()
 	var idx   : int     = card.get_index()
 	vbox.remove_child(card)
@@ -1346,3 +1438,138 @@ func _toggle_class(class_idx: int) -> void:
 	var new_card := _make_class_card(class_idx)
 	vbox.add_child(new_card)
 	vbox.move_child(new_card, idx)
+
+
+func _build_class_ability_section(class_idx: int, cls_color: Color, inactive: bool) -> Control:
+	const MANA_COLORS := [
+		Color(0.55, 0.55, 0.55),   # 0 = None / FREE
+		Color(0.95, 0.30, 0.30),   # 1 = Red
+		Color(0.35, 0.55, 1.00),   # 2 = Blue
+		Color(0.90, 0.80, 0.10),   # 3 = Yellow
+		Color(0.75, 0.25, 0.90),   # 4 = Ultra
+	]
+	const MANA_LABELS := ["FREE", "RED", "BLU", "YEL", "ULT"]
+
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", 0)
+
+	# Clickable "ABILITIES ▶" toggle header
+	var hdr := HBoxContainer.new()
+	hdr.mouse_filter = Control.MOUSE_FILTER_STOP
+	hdr.add_theme_constant_override("separation", 6)
+	outer.add_child(hdr)
+
+	var spacer := ColorRect.new()
+	spacer.color = Color.TRANSPARENT
+	spacer.custom_minimum_size = Vector2(4, 0)
+	hdr.add_child(spacer)
+
+	var hdr_arrow := Label.new()
+	hdr_arrow.text = "▶"
+	hdr_arrow.add_theme_font_size_override("font_size", 8)
+	hdr_arrow.add_theme_color_override("font_color", Color(1, 1, 1, 0.28))
+	hdr_arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hdr.add_child(hdr_arrow)
+
+	var hdr_lbl := Label.new()
+	hdr_lbl.text = "ABILITIES"
+	hdr_lbl.add_theme_font_size_override("font_size", 8)
+	hdr_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.28))
+	hdr_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hdr.add_child(hdr_lbl)
+
+	# The ability list (hidden by default)
+	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", 1)
+	list.visible = false
+	outer.add_child(list)
+
+	# Separator line above list
+	var sep_margin := MarginContainer.new()
+	for side in ["left", "top", "bottom"]:
+		sep_margin.add_theme_constant_override("margin_" + side, 4)
+	sep_margin.visible = false
+	outer.add_child(sep_margin)
+
+	var sep_line := ColorRect.new()
+	sep_line.color = Color(1, 1, 1, 0.08)
+	sep_line.custom_minimum_size.y = 1
+	sep_margin.add_child(sep_line)
+
+	# Populate ability rows
+	var class_id: String = GameRegistry.CLASS_IDS[class_idx]
+	for slot in range(1, 11):
+		var ability: AbilityDefinition = GameRegistry.get_ability(class_id, slot)
+		if ability == null:
+			continue
+
+		var key_text := "U" if slot == 10 else str(slot)
+		var mtype := clampi(ability.mana_type, 0, 4)
+		var mana_str: String
+		if ability.mana_cost <= 0.0 or mtype == 0:
+			mana_str = "FREE"
+		else:
+			mana_str = "%d %s" % [int(ability.mana_cost), MANA_LABELS[mtype]]
+		var cd_str := "%.0fs" % ability.cooldown if ability.cooldown > 0.0 else "—"
+
+		var row := VBoxContainer.new()
+		row.add_theme_constant_override("separation", 0)
+		list.add_child(row)
+
+		var top_row := HBoxContainer.new()
+		top_row.add_theme_constant_override("separation", 5)
+		row.add_child(top_row)
+
+		var key_lbl := Label.new()
+		key_lbl.text = "[%s]" % key_text
+		key_lbl.custom_minimum_size.x = 24
+		key_lbl.add_theme_font_size_override("font_size", 9)
+		key_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.28))
+		top_row.add_child(key_lbl)
+
+		var name_lbl := Label.new()
+		name_lbl.text = ability.display_name
+		name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_lbl.add_theme_font_size_override("font_size", 9)
+		name_lbl.add_theme_color_override("font_color",
+			Color(cls_color.r, cls_color.g, cls_color.b, 0.35) if inactive else Color(0.92, 0.92, 0.92))
+		top_row.add_child(name_lbl)
+
+		var mana_lbl := Label.new()
+		mana_lbl.text = mana_str
+		mana_lbl.custom_minimum_size.x = 52
+		mana_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		mana_lbl.add_theme_font_size_override("font_size", 9)
+		mana_lbl.add_theme_color_override("font_color",
+			MANA_COLORS[mtype].darkened(0.35) if inactive else MANA_COLORS[mtype])
+		top_row.add_child(mana_lbl)
+
+		var cd_lbl := Label.new()
+		cd_lbl.text = cd_str
+		cd_lbl.custom_minimum_size.x = 28
+		cd_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		cd_lbl.add_theme_font_size_override("font_size", 9)
+		cd_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.28))
+		top_row.add_child(cd_lbl)
+
+		if not ability.description.is_empty():
+			var desc_lbl := Label.new()
+			desc_lbl.text = ability.description
+			desc_lbl.add_theme_font_size_override("font_size", 8)
+			desc_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.38))
+			desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			# Indent to align with name column
+			var dm := MarginContainer.new()
+			dm.add_theme_constant_override("margin_left", 29)
+			dm.add_child(desc_lbl)
+			row.add_child(dm)
+
+	hdr.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			var open := not list.visible
+			list.visible = open
+			sep_margin.visible = open
+			hdr_arrow.text = "▼" if open else "▶"
+	)
+
+	return outer

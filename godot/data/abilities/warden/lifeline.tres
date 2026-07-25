@@ -19,11 +19,11 @@ auto_ally_range = 5.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "lifeline"
-display_name = "Trauma Pack"
+display_name = "Lifeline"
 description = "Heal nearest ally 60 HP + cleanse (5m)"
 slot = 7
-cooldown = 20.0
-mana_cost = 45.0
+cooldown = 10.0
+mana_cost = 50.0
 mana_type = 2
 range = 5.0
 effects = [SubResource("E1"), SubResource("E2")]

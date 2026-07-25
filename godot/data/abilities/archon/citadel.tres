@@ -27,7 +27,7 @@ auto_ally_range = 0.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "citadel"
-display_name = "SANCTUARY"
+display_name = "CITADEL"
 description = "6s: 50% dmg reduction + stun immune + HoT 8/s"
 slot = 10
 cooldown = 0.0

@@ -13,10 +13,10 @@ auto_ally_range = 5.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "jump_start"
-display_name = "Energize"
+display_name = "Jump Start"
 description = "Restore 35 blue to nearest ally (5m)"
 slot = 4
-cooldown = 12.0
+cooldown = 5.0
 mana_cost = 25.0
 mana_type = 2
 range = 5.0

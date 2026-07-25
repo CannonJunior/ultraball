@@ -21,12 +21,12 @@ fumble_velocity_scale = 1.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "bloodscent"
-display_name = "Strip Tackle"
+display_name = "Bloodscent"
 description = "25 dmg · 1.5s stun · fumble"
 slot = 2
-cooldown = 20.0
-mana_cost = 25.0
-mana_type = 1
+cooldown = 1.5
+mana_cost = 5.0
+mana_type = 3
 range = 8.0
 effects = [SubResource("E1"), SubResource("E2"), SubResource("E3")]
 metadata/_custom_type_script = "uid://b38bten5wru66"

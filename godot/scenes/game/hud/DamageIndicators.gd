@@ -2,9 +2,11 @@ extends Node
 
 ## 40 pooled floating labels for damage / heal / killa text.
 
-const POOL_SIZE     := 40
-const FLOAT_SPEED   := 22.0   # px/s upward
-const FADE_DURATION := 1.3    # seconds
+const POOL_SIZE      := 40
+const FLOAT_SPEED    := 26.0   # px/s upward
+const FADE_DURATION  := 1.4    # seconds
+const BASE_FONT_SIZE := 14
+const MAX_FONT_SIZE  := 26     # for large hits/heals
 
 const TYPE_COLORS := {
 	"dmg":   Color(1.00, 0.30, 0.30),
@@ -13,16 +15,20 @@ const TYPE_COLORS := {
 	"miss":  Color(0.60, 0.60, 0.60),
 	"crit":  Color(1.00, 1.00, 0.25),
 	"ultra": Color(0.90, 0.35, 1.00),
+	"fail":  Color(1.00, 0.40, 0.10),
 }
 
 # Each entry: {label: Label, active: bool, vel: Vector2, age: float}
 var _pool: Array = []
 
 func _ready() -> void:
+	var font := FontCache.combat()
 	for _i in POOL_SIZE:
 		var lbl := Label.new()
 		lbl.visible = false
-		lbl.add_theme_font_size_override("font_size", 14)
+		lbl.add_theme_font_size_override("font_size", BASE_FONT_SIZE)
+		if font != null:
+			lbl.add_theme_font_override("font", font)
 		lbl.z_index = 10
 		add_child(lbl)
 		_pool.append({"label": lbl, "active": false,
@@ -47,10 +53,24 @@ func _on_spawned(world_pos: Vector2, text: String, indicator_type: String) -> vo
 	lbl.text = text
 	lbl.add_theme_color_override("font_color",
 		TYPE_COLORS.get(indicator_type, Color.WHITE))
-	# World → screen conversion via canvas transform
-	var screen_pos := get_viewport().get_canvas_transform() * world_pos
-	lbl.position = screen_pos + Vector2(randf_range(-12.0, 12.0), -8.0)
-	entry["vel"] = Vector2(randf_range(-4.0, 4.0), -FLOAT_SPEED)
+	# Scale font size based on numeric magnitude when parseable
+	var mag := absf(text.to_float())
+	var fs: int
+	if mag > 0.0:
+		fs = clampi(BASE_FONT_SIZE + int(mag / 20.0), BASE_FONT_SIZE, MAX_FONT_SIZE)
+	else:
+		fs = BASE_FONT_SIZE + 4 if indicator_type in ["killa", "ultra"] else BASE_FONT_SIZE
+	lbl.add_theme_font_size_override("font_size", fs)
+	# World → screen conversion: use 3D camera projection when available,
+	# fall back to canvas transform in flat-2D mode.
+	var screen_pos: Vector2
+	var vl3d := get_tree().get_first_node_in_group("view_layer_3d")
+	if vl3d != null:
+		screen_pos = vl3d.world_to_screen(world_pos)
+	else:
+		screen_pos = get_viewport().get_canvas_transform() * world_pos
+	lbl.position = screen_pos + Vector2(randf_range(-16.0, 16.0), -8.0)
+	entry["vel"] = Vector2(randf_range(-5.0, 5.0), -FLOAT_SPEED)
 	entry["age"] = 0.0
 	entry["active"] = true
 	lbl.modulate.a = 1.0

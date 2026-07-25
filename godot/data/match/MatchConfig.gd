@@ -2,6 +2,7 @@ class_name MatchConfig
 extends Resource
 
 enum MatchMode { TWO_TEAM, THREE_TEAM }
+enum ViewMode  { FLAT_2D = 0, THREE_QUARTER = 1, FULL_3D = 2 }
 
 @export_enum("TwoTeam", "ThreeTeam") var match_mode: int = 0
 @export var fast_mode: bool = false
@@ -27,3 +28,6 @@ enum MatchMode { TWO_TEAM, THREE_TEAM }
 
 ## Creature type: 0=Kraken 1=Dragon 2=Hydra 3=Wraith 4=Chaos
 @export_enum("Kraken","Dragon","Hydra","Wraith","Chaos") var creature_type: int = 0
+
+## Visualization: 0=2D top-down  1=3/4 perspective  2=3D broadcast
+@export_enum("2D", "3/4", "3D") var view_mode: int = 0

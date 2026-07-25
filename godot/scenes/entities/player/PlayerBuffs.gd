@@ -50,6 +50,9 @@ func _ready() -> void:
 	if player and player.class_definition:
 		max_health = player.class_definition.max_health
 		health = max_health
+		print("[SPAWN] %s class=%s hp=%d" % [player.player_id, player.class_definition.class_id, int(max_health)])
+	elif player:
+		print("[SPAWN] %s no class_definition — hp defaults to %d" % [player.player_id, int(max_health)])
 	EventBus.buff_applied.connect(_on_buff_applied)
 	EventBus.debuff_applied.connect(_on_debuff_applied)
 	EventBus.damage_applied.connect(_on_damage_applied)

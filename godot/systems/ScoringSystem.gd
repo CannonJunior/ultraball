@@ -9,6 +9,9 @@ const META_POINTS := 3
 const KILLA_POINTS := 1
 const ULTRA_MANA_PER_KILLA := 1.0
 
+var _last_holder_id          : String = ""
+var _holder_was_in_endzone   : bool   = false
+
 func _ready() -> void:
 	EventBus.ball_phase_line_crossed.connect(_on_phase_line_crossed)
 	EventBus.ball_caught.connect(_on_ball_caught)
@@ -20,6 +23,8 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	if not MatchState.match_active or MatchState.act_ended or MatchState.game_over:
+		_last_holder_id = ""
+		_holder_was_in_endzone = false
 		return
 	MatchState.act_timer -= delta
 	EventBus.act_timer_changed.emit(MatchState.act_timer)
@@ -29,26 +34,35 @@ func _physics_process(delta: float) -> void:
 	elif MatchState.current_act == 5 and _act5_overtime_trigger():
 		_end_current_act()
 
-# ── Phase line crossing → Ultra scoring ───────────────────────────────────────
-
-func _on_phase_line_crossed(team_id: int, line_index: int) -> void:
-	var ball := MatchState.ball
-	if ball.holder_id.is_empty(): return
-	if MatchState.team_for_player(ball.holder_id) != team_id: return
-
-	if _is_ultra_scoring_line(line_index, team_id):
-		EventBus.ultra_scored.emit(team_id, ball.holder_id)
-		MatchState.add_score(team_id, ULTRA_POINTS)
-		EventBus.event_message_shown.emit("ULTRA!", 2.0)
-
-## Phase lines at x=30,50,70,90,110 (5 lines). Team HOME scores crossing line 4 (x=110).
-## Team AWAY scores crossing line 0 (x=30, travelling left).
-func _is_ultra_scoring_line(line_index: int, team_id: int) -> bool:
 	if not MatchState.is_three_team:
-		match team_id:
-			0: return line_index == 4   # HOME: cross rightmost line
-			1: return line_index == 0   # AWAY: cross leftmost line
-	return false  # 3-team scoring handled separately
+		_check_endzone_entry_2t()
+
+# ── Phase line crossing (no longer triggers Ultra; retained for other listeners) ─
+
+func _on_phase_line_crossed(_team_id: int, _line_index: int) -> void:
+	pass
+
+# ── 2-team endzone entry → Ultra scoring ──────────────────────────────────────
+
+func _check_endzone_entry_2t() -> void:
+	var ball      := MatchState.ball
+	var holder_id := ball.holder_id
+
+	if holder_id != _last_holder_id:
+		_last_holder_id        = holder_id
+		_holder_was_in_endzone = false
+
+	if holder_id.is_empty():
+		return
+
+	var in_endzone := _is_in_endzone(holder_id)
+	if in_endzone and not _holder_was_in_endzone:
+		var team := MatchState.team_for_player(holder_id)
+		if team >= 0:
+			EventBus.ultra_scored.emit(team, holder_id)
+			MatchState.add_score(team, ULTRA_POINTS)
+			EventBus.event_message_shown.emit("ULTRA!", 2.0)
+	_holder_was_in_endzone = in_endzone
 
 # ── 3-team endzone entry → Ultra scoring ──────────────────────────────────────
 
@@ -75,8 +89,8 @@ func _is_in_endzone(player_id: String) -> bool:
 	var team := MatchState.team_for_player(player_id)
 	if MatchState.is_three_team:
 		return _is_in_endzone_3t(pos, team)
-	if team == 0: return pos.x >= 130.0   # HOME endzone: right side
-	if team == 1: return pos.x <= 10.0    # AWAY endzone: left side
+	if team == 0: return pos.x >= 120.0   # HOME scores by crossing yellow line into AWAY endzone
+	if team == 1: return pos.x <= 20.0    # AWAY scores by crossing yellow line into HOME endzone
 	return false
 
 func _is_in_endzone_3t(pos: Vector2, team: int) -> bool:

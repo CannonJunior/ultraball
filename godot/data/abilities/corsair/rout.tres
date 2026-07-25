@@ -13,12 +13,12 @@ aoe_radius = 4.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "rout"
-display_name = "Intimidate"
+display_name = "Rout"
 description = "AoE 4m: push all enemies 3m"
 slot = 8
-cooldown = 10.0
-mana_cost = 25.0
-mana_type = 2
+cooldown = 20.0
+mana_cost = 60.0
+mana_type = 3
 range = 0.0
 effects = [SubResource("E1")]
 metadata/_custom_type_script = "uid://b38bten5wru66"

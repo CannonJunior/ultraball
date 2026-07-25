@@ -12,7 +12,7 @@ auto_ally_range = 5.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "field_stitch"
-display_name = "Mend"
+display_name = "Field Stitch"
 description = "Heal nearest ally 35 HP (5m)"
 slot = 5
 cooldown = 5.0

@@ -18,12 +18,12 @@ targets_self = true
 [resource]
 script = ExtResource("1_def")
 ability_id = "slipstream"
-display_name = "Feint"
+display_name = "Slipstream"
 description = "3s stun immune · 1.5× speed"
 slot = 9
-cooldown = 10.0
-mana_cost = 20.0
-mana_type = 2
+cooldown = 20.0
+mana_cost = 25.0
+mana_type = 1
 range = 0.0
 effects = [SubResource("E1"), SubResource("E2")]
 metadata/_custom_type_script = "uid://b38bten5wru66"

@@ -13,12 +13,12 @@ auto_ally_range = 0.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "strip"
-display_name = "Pack Hunter"
+display_name = "Strip"
 description = "+20% dmg boost 4s self"
 slot = 5
-cooldown = 8.0
-mana_cost = 20.0
-mana_type = 2
+cooldown = 5.0
+mana_cost = 12.0
+mana_type = 3
 range = 0.0
 effects = [SubResource("E1")]
 metadata/_custom_type_script = "uid://b38bten5wru66"

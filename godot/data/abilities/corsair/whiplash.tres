@@ -25,12 +25,12 @@ aoe_radius = 0.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "whiplash"
-display_name = "Clothesline"
+display_name = "Whiplash"
 description = "20 dmg · 4m knockback · 1.5s snare (50% slow)"
 slot = 6
 cooldown = 10.0
-mana_cost = 30.0
-mana_type = 1
+mana_cost = 15.0
+mana_type = 3
 range = 8.0
 effects = [SubResource("E1"), SubResource("E2"), SubResource("E3")]
 metadata/_custom_type_script = "uid://b38bten5wru66"

@@ -27,7 +27,7 @@ auto_ally_range = 100.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "symphony"
-display_name = "GAME PLAN"
+display_name = "SYMPHONY"
 description = "All teammates +35 HP + 40B + cleanse"
 slot = 10
 cooldown = 0.0

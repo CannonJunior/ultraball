@@ -18,6 +18,9 @@ extends CharacterBody2D
 var current_target_id: String = ""
 var aim_world_position: Vector2 = Vector2.ZERO
 
+## Explicit target locked in by the player via target_next; overrides proximity auto-target.
+var _explicit_target_id: String = ""
+
 var is_alive: bool = true
 var is_on_field: bool = false
 
@@ -27,12 +30,15 @@ var _current_input: InputState = InputState.new()
 ## Jump / Z-axis state
 var z_height: float = 0.0
 var z_velocity: float = 0.0
-const JUMP_VELOCITY := 6.0
-const Z_GRAVITY := 12.0
+var _can_double_jump: bool = false
+const JUMP_VELOCITY    := 6.0
+const Z_GRAVITY        := 12.0
+const DOUBLE_JUMP_COST := 15.0
 
 ## Field bounds (2-team mode defaults; overridden for 3-team)
-var field_min: Vector2 = Vector2(0.0, 0.0)
-var field_max: Vector2 = Vector2(140.0, 40.0)
+## y∈[−10,50] includes the side creature channels outside the main field.
+var field_min: Vector2 = Vector2(0.0, -10.0)
+var field_max: Vector2 = Vector2(140.0, 50.0)
 
 func _ready() -> void:
 	add_to_group("players")
@@ -41,6 +47,7 @@ func _ready() -> void:
 		field_max = Vector2(MatchState.FIELD3_SIZE, MatchState.FIELD3_SIZE)
 	EventBus.player_died.connect(_on_player_died)
 	EventBus.player_subbed_in.connect(_on_player_subbed_in)
+	add_child(load("res://scenes/entities/player/TargetRing.gd").new())
 
 func _physics_process(delta: float) -> void:
 	if not is_alive or not is_on_field: return
@@ -63,7 +70,7 @@ func _physics_process(delta: float) -> void:
 		if _current_input.is_aiming and _current_input.aim_world_position != Vector2.ZERO:
 			throw_dir = (_current_input.aim_world_position - global_position).normalized()
 		else:
-			throw_dir = Vector2.from_angle(rotation)
+			throw_dir = Vector2(0.0, -1.0).rotated(rotation)
 		EventBus.throw_requested.emit(player_id, throw_dir, is_charged)
 
 	# Ability queue input
@@ -72,7 +79,7 @@ func _physics_process(delta: float) -> void:
 
 	_update_auto_target()
 	aim_world_position = _current_input.aim_world_position if _current_input.is_aiming \
-		else global_position + Vector2.from_angle(rotation) * 15.0
+		else global_position + Vector2(0.0, -1.0).rotated(rotation) * 15.0
 
 	_current_input = InputState.new()   # consume input
 
@@ -101,8 +108,14 @@ func _apply_movement(delta: float) -> void:
 	else:
 		velocity = velocity.move_toward(Vector2.ZERO, speed * 4.0 * delta)
 
-	if _current_input.jump_pressed and z_height <= 0.0:
-		z_velocity = JUMP_VELOCITY
+	if _current_input.jump_pressed:
+		if z_height <= 0.0:
+			z_velocity = JUMP_VELOCITY
+			_can_double_jump = true
+		elif _can_double_jump and mana.can_afford(2, DOUBLE_JUMP_COST):
+			z_velocity = JUMP_VELOCITY
+			mana.deduct(2, DOUBLE_JUMP_COST)
+			_can_double_jump = false
 
 func _effective_speed() -> float:
 	if class_definition == null: return 8.0
@@ -145,7 +158,12 @@ func _update_z(delta: float) -> void:
 
 func _clamp_to_field() -> void:
 	global_position.x = clampf(global_position.x, field_min.x, field_max.x)
-	global_position.y = clampf(global_position.y, field_min.y, field_max.y)
+	var has_ball := MatchState.ball != null and MatchState.ball.holder_id == player_id
+	if has_ball and not MatchState.is_three_team:
+		# Ball carrier cannot enter side channels (y<0 or y>40); end channels are passable.
+		global_position.y = clampf(global_position.y, 0.0, 40.0)
+	else:
+		global_position.y = clampf(global_position.y, field_min.y, field_max.y)
 
 # ── State capture for network ─────────────────────────────────────────────────
 
@@ -174,6 +192,7 @@ func _on_player_subbed_in(pid: String, _replaced: String, _team: int) -> void:
 	global_position = _spawn_position()
 	z_height = 0.0
 	z_velocity = 0.0
+	_can_double_jump = false
 	show()
 
 func _spawn_position() -> Vector2:
@@ -185,9 +204,43 @@ func _spawn_position() -> Vector2:
 		return Vector2(10.0, 20.0)
 	return Vector2(130.0, 20.0)
 
-# ── Auto-targeting ────────────────────────────────────────────────────────────
+# ── Targeting ─────────────────────────────────────────────────────────────────
+
+## Cycle explicit target through living enemies, sorted by current distance.
+func cycle_target() -> void:
+	var enemies: Array = []
+	for node in get_tree().get_nodes_in_group("players"):
+		if not node.is_alive or not node.is_on_field: continue
+		if node.team_id == team_id: continue
+		enemies.append(node)
+	if enemies.is_empty():
+		_explicit_target_id = ""
+		return
+	enemies.sort_custom(func(a, b):
+		return global_position.distance_to(a.global_position) < global_position.distance_to(b.global_position))
+	var cur_idx := -1
+	for i in enemies.size():
+		if enemies[i].player_id == _explicit_target_id:
+			cur_idx = i
+			break
+	_explicit_target_id = enemies[(cur_idx + 1) % enemies.size()].player_id
 
 func _update_auto_target() -> void:
+	# Validate explicit target — clear if they left the field or died.
+	if not _explicit_target_id.is_empty():
+		var still_valid := false
+		for node in get_tree().get_nodes_in_group("players"):
+			if node.player_id == _explicit_target_id and node.is_alive and node.is_on_field:
+				still_valid = true
+				break
+		if not still_valid:
+			_explicit_target_id = ""
+
+	if not _explicit_target_id.is_empty():
+		current_target_id = _explicit_target_id
+		return
+
+	# Fallback: nearest enemy within 15 units.
 	var best_dist := 15.0
 	var best_id := ""
 	for node in get_tree().get_nodes_in_group("players"):

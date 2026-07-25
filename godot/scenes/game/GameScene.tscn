@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3]
+[gd_scene load_steps=18 format=3]
 
 [ext_resource type="Script" path="res://scenes/game/GameScene.gd" id="1"]
 [ext_resource type="Script" path="res://scenes/game/InputManager.gd" id="13"]
@@ -9,6 +9,8 @@
 [ext_resource type="Script" path="res://systems/TerrainMutationSystem.gd" id="6"]
 [ext_resource type="Script" path="res://systems/CollisionSystem.gd" id="7"]
 [ext_resource type="Script" path="res://systems/CreatureSystem.gd" id="8"]
+[ext_resource type="Script" path="res://systems/CombatSystem.gd" id="14"]
+[ext_resource type="Script" path="res://systems/StatTracker.gd" id="15"]
 [ext_resource type="PackedScene" path="res://scenes/game/field/Field.tscn" id="9"]
 [ext_resource type="PackedScene" path="res://scenes/entities/ball/Ball.tscn" id="10"]
 [ext_resource type="PackedScene" path="res://scenes/entities/creature/Creature.tscn" id="11"]
@@ -41,6 +43,12 @@ script = ExtResource("7")
 
 [node name="CreatureSystem" type="Node" parent="Systems"]
 script = ExtResource("8")
+
+[node name="CombatSystem" type="Node" parent="Systems"]
+script = ExtResource("14")
+
+[node name="StatTracker" type="Node" parent="Systems"]
+script = ExtResource("15")
 
 [node name="Entities" type="Node2D" parent="."]
 

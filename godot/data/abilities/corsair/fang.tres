@@ -11,7 +11,7 @@ knockback_distance = 0.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "fang"
-display_name = "Blitz Strike"
+display_name = "Fang"
 description = "18 dmg"
 slot = 1
 cooldown = 1.5

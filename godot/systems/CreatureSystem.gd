@@ -4,7 +4,7 @@ extends Node
 ## Creature kill detection and goading.
 ## Creature movement logic lives in Creature.gd / ChaosCreature.gd (entity layer).
 
-const KILL_RADIUS := 2.5   # metres — creature contact radius
+const KILL_RADIUS := 4.0   # metres — creature contact radius (matches visual capsule radius)
 
 ## Goading: temporarily override patrol target toward a player.
 var _goad_target_id: String = ""

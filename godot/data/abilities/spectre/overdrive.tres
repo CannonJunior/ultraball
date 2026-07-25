@@ -12,12 +12,12 @@ targets_self = true
 [resource]
 script = ExtResource("1_def")
 ability_id = "overdrive"
-display_name = "Sprint"
+display_name = "Overdrive"
 description = "1.5× speed for 3s"
 slot = 3
 cooldown = 5.0
-mana_cost = 15.0
-mana_type = 2
+mana_cost = 7.0
+mana_type = 1
 range = 0.0
 effects = [SubResource("E1")]
 metadata/_custom_type_script = "uid://b38bten5wru66"

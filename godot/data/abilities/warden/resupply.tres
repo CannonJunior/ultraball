@@ -25,12 +25,12 @@ knockback_distance = 0.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "resupply"
-display_name = "Intercept"
+display_name = "Resupply"
 description = "Dash 5m · stun 1.5s + 10 dmg at destination"
 slot = 9
-cooldown = 10.0
-mana_cost = 25.0
-mana_type = 1
+cooldown = 20.0
+mana_cost = 70.0
+mana_type = 2
 range = 0.0
 effects = [SubResource("E1"), SubResource("E2"), SubResource("E3")]
 metadata/_custom_type_script = "uid://b38bten5wru66"

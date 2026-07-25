@@ -20,11 +20,11 @@ auto_ally_range = 0.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "tenacity"
-display_name = "Second Wind"
+display_name = "Tenacity"
 description = "+35 HP self · +20 blue mana"
 slot = 7
 cooldown = 10.0
-mana_cost = 35.0
+mana_cost = 50.0
 mana_type = 2
 range = 0.0
 effects = [SubResource("E1"), SubResource("E2")]

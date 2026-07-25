@@ -26,7 +26,7 @@ targets_self = true
 [resource]
 script = ExtResource("1_def")
 ability_id = "apex"
-display_name = "BLOOD RUSH"
+display_name = "APEX"
 description = "7s: 2× speed + 35% dmg boost + stun immune"
 slot = 10
 cooldown = 0.0

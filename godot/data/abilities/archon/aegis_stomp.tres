@@ -13,11 +13,11 @@ auto_ally_range = 5.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "aegis_stomp"
-display_name = "Fortify"
+display_name = "Aegis Stomp"
 description = "30% dmg reduction to ally (5m) · 4s"
 slot = 8
 cooldown = 20.0
-mana_cost = 30.0
+mana_cost = 60.0
 mana_type = 2
 range = 5.0
 effects = [SubResource("E1")]

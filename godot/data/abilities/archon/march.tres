@@ -12,7 +12,7 @@ targets_self = true
 [resource]
 script = ExtResource("1_def")
 ability_id = "march"
-display_name = "Sprint"
+display_name = "March"
 description = "1.5× speed for 3s"
 slot = 3
 cooldown = 5.0

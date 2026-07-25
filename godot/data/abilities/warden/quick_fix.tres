@@ -12,11 +12,11 @@ auto_ally_range = 5.0
 [resource]
 script = ExtResource("1_def")
 ability_id = "quick_fix"
-display_name = "Field Medic"
+display_name = "Quick Fix"
 description = "Heal nearest ally 30 HP (5m)"
 slot = 3
 cooldown = 5.0
-mana_cost = 15.0
+mana_cost = 20.0
 mana_type = 2
 range = 5.0
 effects = [SubResource("E1")]
