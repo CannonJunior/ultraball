@@ -82,16 +82,19 @@ func _populate_roster() -> void:
 		_add_team_roster(2, cfg.third_player_names, cfg.third_team_name)
 
 func _add_team_roster(team_id: int, names: PackedStringArray, _team_name: String) -> void:
-	for i in 8:
+	var on_field: int = match_config.players_per_side
+	var class_indices: PackedInt32Array = match_config.home_class_indices if team_id == 0 else match_config.away_class_indices
+	for i in 15:
 		var rec := MatchState.PlayerRecord.new()
 		rec.player_id = "%d_%02d" % [team_id, i]
 		rec.team_id = team_id
-		rec.class_id = GameRegistry.class_id_for_roster_index(i)
+		var player_idx := class_indices[i] if i < class_indices.size() else i
+		rec.class_id = GameRegistry.class_id_for_roster_index(player_idx)
 		rec.roster_slot = i
 		rec.deploy_slot = i
 		rec.display_name = names[i] if i < names.size() else ("P%d" % i)
 		rec.is_alive = true
-		rec.is_on_field = i < 4
+		rec.is_on_field = i < on_field
 		MatchState.players[rec.player_id] = rec
 
 # ── Player spawning ────────────────────────────────────────────────────────────
@@ -125,7 +128,8 @@ func _team_spawn_position(team_id: int, slot: int) -> Vector2:
 			MatchState.FIELD3_CX + norm.x * base_dist + perp.x * spread,
 			MatchState.FIELD3_CY + norm.y * base_dist + perp.y * spread
 		)
-	var row := float(slot % 4) * 10.0 + 5.0
+	var n := match_config.players_per_side if match_config else 7
+	var row := 5.0 + (float(slot) / float(max(1, n - 1))) * 30.0
 	match team_id:
 		0: return Vector2(10.0, row)
 		1: return Vector2(130.0, row)
@@ -143,7 +147,7 @@ func _start_match() -> void:
 func _spawn_ai_directors() -> void:
 	var cfg := MatchState.config
 	var team_count := 3 if MatchState.is_three_team else 2
-	for t in range(1, team_count):
+	for t in range(0, team_count):
 		var director := AiDirector.new()
 		director.name = "AiDirector_Team%d" % t
 		director.team_id = t

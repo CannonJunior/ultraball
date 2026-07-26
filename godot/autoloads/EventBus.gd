@@ -5,6 +5,7 @@ signal ability_used(caster_id: String, slot: int)
 signal ability_resolved(caster_id: String, slot: int, hit_ids: Array)
 signal ability_failed(caster_id: String, slot: int, reason: String)
 signal ability_queued(player_id: String, slot: int)
+signal ability_queue_pop(player_id: String)
 signal ability_queue_changed(player_id: String, queue: Array)
 signal gcd_started(player_id: String, duration: float)
 

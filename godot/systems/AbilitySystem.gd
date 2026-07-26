@@ -22,6 +22,7 @@ var _duration_double: Dictionary = {}   # player_id -> bool
 func _ready() -> void:
 	EventBus.ability_used.connect(_on_ability_used)
 	EventBus.ability_queued.connect(_on_ability_queued)
+	EventBus.ability_queue_pop.connect(_on_ability_queue_pop)
 	EventBus.buff_applied.connect(_on_buff_applied)
 	EventBus.player_subbed_in.connect(_on_player_subbed_in)
 
@@ -82,6 +83,13 @@ func _on_ability_queued(player_id: String, slot: int) -> void:
 				EventBus.ability_failed.emit(player_id, slot, "no_mana")
 				return
 	queue.append(slot)
+	EventBus.ability_queue_changed.emit(player_id, queue.duplicate())
+
+func _on_ability_queue_pop(player_id: String) -> void:
+	var queue: Array = _queues.get(player_id, [])
+	if queue.is_empty():
+		return
+	queue.pop_back()
 	EventBus.ability_queue_changed.emit(player_id, queue.duplicate())
 
 # ── Direct use (skips queue) ───────────────────────────────────────────────────
@@ -221,7 +229,15 @@ func _in_range(caster: Node, definition: AbilityDefinition) -> bool:
 	var target_id: String = caster.current_target_id
 	if target_id.is_empty():
 		return false
+	if target_id == "creature":
+		var creature := _get_creature_node()
+		if creature == null or not creature.get("is_alive"): return false
+		return caster.global_position.distance_to(creature.global_position) <= definition.range
 	var target := _get_player_node(target_id)
 	if target == null or not target.is_alive or not target.is_on_field:
 		return false
 	return caster.global_position.distance_to(target.global_position) <= definition.range
+
+func _get_creature_node() -> Node:
+	var creatures := get_tree().get_nodes_in_group("creatures")
+	return creatures[0] if not creatures.is_empty() else null

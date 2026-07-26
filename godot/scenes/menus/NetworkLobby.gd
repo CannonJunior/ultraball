@@ -3,6 +3,7 @@ extends Control
 signal match_ready(config: MatchConfig)
 
 const _MatchConfig := preload("res://data/match/MatchConfig.gd")
+const _LOBBY_SAVE_PATH := "user://lobby_settings.cfg"
 
 # ── Palette ──────────────────────────────────────────────────────────────────
 const C_BG     := Color(0.016, 0.020, 0.039)   # #04050A
@@ -17,10 +18,14 @@ const C_KEY_TX := Color(0.800, 0.867, 1.000)
 const C_DESC   := Color(1, 1, 1, 0.60)
 
 # ── State ─────────────────────────────────────────────────────────────────────
-var _match_mode  : int  = 0   # 0=TwoTeam 1=ThreeTeam
-var _fast_mode   : bool = false
-var _view_mode   : int  = 0   # 0=FLAT 1=THREE_QUARTER 2=FULL_3D
-var _creature    : int  = 0   # 0=Kraken 1=Dragon 2=Hydra 3=Wraith 4=Chaos
+var _match_mode        : int  = 0   # 0=TwoTeam 1=ThreeTeam
+var _fast_mode         : bool = false
+var _view_mode         : int  = 0   # 0=FLAT 1=THREE_QUARTER 2=FULL_3D
+var _creature          : int  = 4   # neutral creature (defaults to Chaos)
+var _home_team         : int  = 0   # index into TEAMS
+var _away_team         : int  = 1   # index into TEAMS
+var _site              : int  = 0   # 0=Home 1=Away 2=Neutral
+var _players_per_side  : int  = 7
 var _home_strat  : int  = 0
 var _home_tact   : int  = 0
 var _opp_strat   : int  = 0
@@ -30,15 +35,25 @@ var _opp_tact    : int  = 0
 var _mode_btns   : Array = []   # [btn2team, btn3team]
 var _dur_btns    : Array = []   # [btnNormal, btnFast]
 var _view_btns   : Array = []   # [btn2d, btn3q, btn3d]
-var _crea_btns   : Array = []   # one per creature
+var _crea_btns           : Array   = []   # one per creature (neutral mode only)
+var _site_btns           : Array   = []   # [home, away, neutral] buttons
+var _creature_auto_lbl   : Label   = null # shown when site=Home/Away
+var _neutral_crea_vbox   : VBoxContainer = null # shown when site=Neutral
+var _home_team_ob        : OptionButton  = null
+var _away_team_ob        : OptionButton  = null
 var _hs_radios   : Array = []   # home strategy radio rows
 var _ht_radios   : Array = []   # home tactics radio rows
 var _os_radios   : Array = []   # opp strategy radio rows
 var _ot_radios   : Array = []   # opp tactics radio rows
 
+# Settings overlay
+var _settings_overlay  : Control       = null
+
 # Roster
 var _home_roster       : Array  = []
 var _home_roster_vbox  : VBoxContainer = null
+var _away_roster_vbox  : VBoxContainer = null
+var _units_count_lbl   : Label         = null
 var _roster_content    : Control       = null
 var _roster_expanded   : bool   = false
 var _roster_toggle_btn : Button = null
@@ -70,11 +85,31 @@ const TACTICS := [
 ]
 
 const CREATURES := [
-	["🐙", "KRAKEN",        "Slow & deadly"],
-	["🐉", "DRAGON",        "Fast & fierce"],
-	["🐍", "HYDRA",         "Large & relentless"],
-	["👻", "WRAITH",        "Blindingly fast & ethereal"],
-	["⚡", "CHAOS MONSTER", "Unpredictable & terrifying"],
+	["👻", "WRAITH",       "Fast & lethal — blink and you're dead"],
+	["🐍", "SERPENT",      "Medium speed, wide striking coil"],
+	["🪨", "GOLEM",        "Slow colossus — its shadow alone kills"],
+	["💀", "SPECTER",      "Blindingly fast, near-impossible to avoid"],
+	["🔥", "HELLHOUND",    "Hunts the nearest player relentlessly"],
+	["⚡", "THUNDERBIRD",  "Erratic speed — impossible to predict"],
+	["🐲", "WYVERN",       "Swift aerial predator — fast patrol"],
+	["🦎", "BASILISK",     "Slow but its kill radius fills the channel"],
+	["😈", "DEMON",        "Teleports unpredictably across the field"],
+	["🌫", "BANSHEE",      "Screaming blur — extreme speed, tiny profile"],
+	["🌀", "CHAOS MONSTER","Completely unpredictable — avoid at all costs"],
+]
+
+# [emoji, name, creature_idx (0–9 unique per team), [15 player names]]
+const TEAMS := [
+	["💀", "REAPERS",  0, ["Scythe", "Grim", "Shade", "Mort", "Dusk", "Reap", "Doom", "Skull", "Gore", "Bone", "Crypt", "Void", "Hex", "Ash", "Blood"]],
+	["🐍", "VIPERS",   1, ["Fang", "Venom", "Cobra", "Asp", "Adder", "Mamba", "Python", "Anaconda", "Boa", "Taipan", "Scales", "Coil", "Rattle", "Hiss", "Pit"]],
+	["⚒", "TITANS",   2, ["Steel", "Forge", "Anvil", "Iron", "Alloy", "Boulder", "Granite", "Basalt", "Stone", "Flint", "Golem", "Colossus", "Rampart", "Bulwark", "Aegis"]],
+	["👻", "GHOSTS",   3, ["Wraith", "Specter", "Phantom", "Spirit", "Wisp", "Haunt", "Drift", "Echo", "Mirage", "Gloom", "Veil", "Shroud", "Mist", "Vapor", "Ether"]],
+	["🔥", "INFERNO",  4, ["Blaze", "Cinder", "Ember", "Flare", "Kindler", "Char", "Scorch", "Brand", "Pyre", "Smelt", "Torch", "Flame", "Fuse", "Burn", "Forge"]],
+	["⛈", "STORM",    5, ["Gale", "Bolt", "Thunder", "Flash", "Surge", "Squall", "Gust", "Cyclone", "Torrent", "Nimbus", "Tempest", "Zephyr", "Hail", "Sleet", "Frost"]],
+	["✈", "RAPTORS",  6, ["Talon", "Wing", "Vector", "Apex", "Sonic", "Mach", "Afterburn", "Strafe", "Climb", "Descent", "Bogey", "Bandit", "Tally", "Check", "Buster"]],
+	["🚁", "COBRAS",   7, ["Gunner", "Striker", "Hunter", "Eagle", "Falcon", "Hawk", "Harrier", "Maverick", "Iceman", "Goose", "Viper", "Rooster", "Hollywood", "Wolfman", "Merlin"]],
+	["🧙", "WARLOCKS", 8, ["Hex", "Curse", "Sigil", "Rune", "Rift", "Bane", "Wither", "Shroud", "Omen", "Pact", "Vex", "Bind", "Drain", "Cast", "Glyph"]],
+	["🌫", "PHANTOMS", 9, ["Ghost", "Stealth", "Vapor", "Haunt", "Shadow", "Dim", "Fade", "Flicker", "Pale", "Null", "Blank", "Dark", "Drift", "Eerie", "Wisp"]],
 ]
 
 const CONTROLS := [
@@ -174,6 +209,7 @@ const CLASS_COLORS := [
 # ─────────────────────────────────────────────────────────────────────────────
 func _ready() -> void:
 	_apply_bg()
+	_load_lobby_state()
 	_build_ui()
 
 func _apply_bg() -> void:
@@ -198,6 +234,22 @@ func _build_ui() -> void:
 	bg_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg_panel.z_index = -1
 	add_child(bg_panel)
+
+	# Gear icon — floated to top-right corner of the lobby
+	var gear_btn := Button.new()
+	gear_btn.text = "⚙"
+	gear_btn.flat = true
+	gear_btn.focus_mode = Control.FOCUS_NONE
+	gear_btn.add_theme_font_size_override("font_size", 22)
+	gear_btn.add_theme_color_override("font_color", C_DIM)
+	gear_btn.custom_minimum_size = Vector2(48, 48)
+	gear_btn.anchor_left  = 1.0; gear_btn.anchor_right  = 1.0
+	gear_btn.anchor_top   = 0.0; gear_btn.anchor_bottom = 0.0
+	gear_btn.offset_left  = -56; gear_btn.offset_right  = -8
+	gear_btn.offset_top   =   8; gear_btn.offset_bottom = 56
+	gear_btn.z_index = 10
+	gear_btn.pressed.connect(_open_settings)
+	add_child(gear_btn)
 
 	# ── Header ────────────────────────────────────────────────────────────────
 	var header := _build_header()
@@ -343,6 +395,38 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 	btn_norm.pressed.connect(_set_fast_mode.bind(false))
 	btn_fast.pressed.connect(_set_fast_mode.bind(true))
 
+	# ── Units Per Side ────────────────────────────────────────────────────────
+	var units_card := _make_card()
+	inner.add_child(units_card)
+	var units_vbox := VBoxContainer.new()
+	units_vbox.add_theme_constant_override("separation", 10)
+	units_card.add_child(units_vbox)
+	units_vbox.add_child(_make_field_label("UNITS PER SIDE"))
+	units_vbox.add_child(_make_hint("How many players start on the field per team (1–15)"))
+	var units_row := HBoxContainer.new()
+	units_row.add_theme_constant_override("separation", 0)
+	units_vbox.add_child(units_row)
+	var btn_minus := _make_speed_btn("−", "", false)
+	btn_minus.custom_minimum_size = Vector2(48, 40)
+	btn_minus.add_theme_font_size_override("font_size", 22)
+	btn_minus.focus_mode = Control.FOCUS_NONE
+	units_row.add_child(btn_minus)
+	_units_count_lbl = Label.new()
+	_units_count_lbl.text = str(_players_per_side)
+	_units_count_lbl.add_theme_font_size_override("font_size", 26)
+	_units_count_lbl.add_theme_color_override("font_color", Color.WHITE)
+	_units_count_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_units_count_lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
+	_units_count_lbl.custom_minimum_size  = Vector2(72, 40)
+	units_row.add_child(_units_count_lbl)
+	var btn_plus := _make_speed_btn("+", "", false)
+	btn_plus.custom_minimum_size = Vector2(48, 40)
+	btn_plus.add_theme_font_size_override("font_size", 22)
+	btn_plus.focus_mode = Control.FOCUS_NONE
+	units_row.add_child(btn_plus)
+	btn_minus.pressed.connect(func() -> void: _set_players_per_side(_players_per_side - 1))
+	btn_plus.pressed.connect(func() -> void:  _set_players_per_side(_players_per_side + 1))
+
 	# ── View Mode ────────────────────────────────────────────────────────────
 	var view_card := _make_card()
 	inner.add_child(view_card)
@@ -372,21 +456,90 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 	btn3q.pressed.connect(_set_view_mode.bind(1))
 	btn3d.pressed.connect(_set_view_mode.bind(2))
 
-	# ── Creature ──────────────────────────────────────────────────────────────
-	var crea_card := _make_card()
-	inner.add_child(crea_card)
-	var crea_vbox := VBoxContainer.new()
-	crea_vbox.add_theme_constant_override("separation", 10)
-	crea_card.add_child(crea_vbox)
-	crea_vbox.add_child(_make_field_label("CREATURE"))
+	# ── Teams ─────────────────────────────────────────────────────────────────────
+	var teams_card := _make_card()
+	inner.add_child(teams_card)
+	var teams_vbox := VBoxContainer.new()
+	teams_vbox.add_theme_constant_override("separation", 10)
+	teams_card.add_child(teams_vbox)
+	teams_vbox.add_child(_make_field_label("TEAMS"))
+
+	var home_row := HBoxContainer.new()
+	home_row.add_theme_constant_override("separation", 8)
+	teams_vbox.add_child(home_row)
+	var home_lbl := Label.new()
+	home_lbl.text = "HOME"
+	home_lbl.add_theme_font_size_override("font_size", 11)
+	home_lbl.add_theme_color_override("font_color", C_DIM)
+	home_lbl.custom_minimum_size = Vector2(48, 0)
+	home_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	home_row.add_child(home_lbl)
+	_home_team_ob = _make_team_option_button(_home_team)
+	_home_team_ob.item_selected.connect(_set_home_team)
+	home_row.add_child(_home_team_ob)
+
+	var away_row := HBoxContainer.new()
+	away_row.add_theme_constant_override("separation", 8)
+	teams_vbox.add_child(away_row)
+	var away_lbl := Label.new()
+	away_lbl.text = "AWAY"
+	away_lbl.add_theme_font_size_override("font_size", 11)
+	away_lbl.add_theme_color_override("font_color", C_DIM)
+	away_lbl.custom_minimum_size = Vector2(48, 0)
+	away_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	away_row.add_child(away_lbl)
+	_away_team_ob = _make_team_option_button(_away_team)
+	_away_team_ob.item_selected.connect(_set_away_team)
+	away_row.add_child(_away_team_ob)
+
+	# ── Game Site + Creature ──────────────────────────────────────────────────────
+	var site_card := _make_card()
+	inner.add_child(site_card)
+	var site_vbox := VBoxContainer.new()
+	site_vbox.add_theme_constant_override("separation", 10)
+	site_card.add_child(site_vbox)
+	site_vbox.add_child(_make_field_label("GAME SITE"))
+	site_vbox.add_child(_make_hint("Home/Away uses that team's creature. Neutral enables a custom pick."))
+	var site_row := HBoxContainer.new()
+	site_row.add_theme_constant_override("separation", 8)
+	site_vbox.add_child(site_row)
+	var sbtn_home := _make_speed_btn("HOME",    "Home team's field", _site == 0)
+	var sbtn_away := _make_speed_btn("AWAY",    "Away team's field", _site == 1)
+	var sbtn_neut := _make_speed_btn("NEUTRAL", "Neutral site",      _site == 2)
+	for b: Button in [sbtn_home, sbtn_away, sbtn_neut]:
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	site_row.add_child(sbtn_home)
+	site_row.add_child(sbtn_away)
+	site_row.add_child(sbtn_neut)
+	_site_btns = [sbtn_home, sbtn_away, sbtn_neut]
+	sbtn_home.pressed.connect(_set_site.bind(0))
+	sbtn_away.pressed.connect(_set_site.bind(1))
+	sbtn_neut.pressed.connect(_set_site.bind(2))
+
+	site_vbox.add_child(_make_divider())
+	site_vbox.add_child(_make_spacer(4))
+	site_vbox.add_child(_make_field_label("CREATURE"))
+
+	_creature_auto_lbl = Label.new()
+	_creature_auto_lbl.add_theme_font_size_override("font_size", 14)
+	_creature_auto_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
+	_creature_auto_lbl.visible = true
+	site_vbox.add_child(_creature_auto_lbl)
+
+	_neutral_crea_vbox = VBoxContainer.new()
+	_neutral_crea_vbox.add_theme_constant_override("separation", 4)
+	_neutral_crea_vbox.visible = false
+	site_vbox.add_child(_neutral_crea_vbox)
 	_crea_btns.clear()
 	for i in range(CREATURES.size()):
 		var c: Array = CREATURES[i]
 		var rb := _make_choice_radio(c[0], c[1], c[2], _creature == i)
 		rb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		crea_vbox.add_child(rb)
+		_neutral_crea_vbox.add_child(rb)
 		_crea_btns.append(rb)
 		rb.pressed.connect(_set_creature.bind(i))
+
+	_refresh_creature_display()
 
 	# ── Home Strategy + Tactics ───────────────────────────────────────────────
 	var strat_row := HBoxContainer.new()
@@ -521,9 +674,10 @@ func _build_rules_panel(vbox: VBoxContainer) -> void:
 
 	inner.add_child(_make_section_header("GAME RULES"))
 	inner.add_child(_make_spacer(4))
-	_home_roster.clear()
-	for i in range(15):
-		_home_roster.append(i)
+	if _home_roster.size() != 15:
+		_home_roster.clear()
+		for i in range(15):
+			_home_roster.append(i)
 	inner.add_child(_build_roster_section())
 	inner.add_child(_make_spacer(8))
 
@@ -547,21 +701,26 @@ func _set_match_mode(mode: int) -> void:
 		_view_btns[i].modulate = Color(1, 1, 1, 0.4 if disabled else 1.0)
 	if is_three and _view_mode != 0:
 		_set_view_mode(0)
+	_save_lobby_state()
 
 func _set_view_mode(idx: int) -> void:
 	_view_mode = idx
 	for i in _view_btns.size():
 		_update_speed_btn(_view_btns[i], _view_mode == i)
+	_save_lobby_state()
 
 func _set_fast_mode(fast: bool) -> void:
 	_fast_mode = fast
 	_update_speed_btn(_dur_btns[0], !_fast_mode)
 	_update_speed_btn(_dur_btns[1],  _fast_mode)
+	_save_lobby_state()
 
 func _set_creature(idx: int) -> void:
 	_creature = idx
 	for i in _crea_btns.size():
 		_update_choice_radio(_crea_btns[i], _creature == i)
+	_refresh_creature_display()
+	_save_lobby_state()
 
 func _set_home_strat(idx: int) -> void:
 	_home_strat = idx
@@ -583,6 +742,95 @@ func _set_opp_tact(idx: int) -> void:
 	for i in _ot_radios.size():
 		_update_choice_radio(_ot_radios[i], _opp_tact == i)
 
+func _set_players_per_side(n: int) -> void:
+	_players_per_side = clampi(n, 1, 15)
+	if is_instance_valid(_units_count_lbl):
+		_units_count_lbl.text = str(_players_per_side)
+	_rebuild_home_roster()
+	_rebuild_away_roster()
+	_save_lobby_state()
+
+func _set_home_team(idx: int) -> void:
+	_home_team = idx
+	_home_roster.clear()
+	for i in range(15):
+		_home_roster.append(i)
+	_rebuild_home_roster()
+	_refresh_creature_display()
+	_save_lobby_state()
+
+func _set_away_team(idx: int) -> void:
+	_away_team = idx
+	_refresh_creature_display()
+	_save_lobby_state()
+
+func _set_site(idx: int) -> void:
+	_site = idx
+	for i in _site_btns.size():
+		_update_speed_btn(_site_btns[i], _site == i)
+	_refresh_creature_display()
+	_save_lobby_state()
+
+func _effective_creature_type() -> int:
+	if _site == 0: return TEAMS[_home_team][2]
+	if _site == 1: return TEAMS[_away_team][2]
+	return _creature
+
+func _refresh_creature_display() -> void:
+	if not is_instance_valid(_creature_auto_lbl): return
+	var is_neutral := (_site == 2)
+	_creature_auto_lbl.visible = not is_neutral
+	_neutral_crea_vbox.visible = is_neutral
+	if not is_neutral:
+		var ctype: int = _effective_creature_type()
+		var team_name: String = TEAMS[_home_team if _site == 0 else _away_team][1]
+		_creature_auto_lbl.text = "%s %s  (%s)" % [CREATURES[ctype][0], CREATURES[ctype][1], team_name]
+
+func _make_team_option_button(current: int) -> OptionButton:
+	var ob := OptionButton.new()
+	ob.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ob.focus_mode = Control.FOCUS_NONE
+	ob.add_theme_font_size_override("font_size", 14)
+	for i in TEAMS.size():
+		var t: Array = TEAMS[i]
+		ob.add_item("%s  %s  ·  %s" % [t[0], t[1], CREATURES[t[2]][1]])
+	ob.select(current)
+	return ob
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Lobby state persistence
+# ─────────────────────────────────────────────────────────────────────────────
+func _save_lobby_state() -> void:
+	var f := ConfigFile.new()
+	f.set_value("lobby", "home_team",       _home_team)
+	f.set_value("lobby", "away_team",       _away_team)
+	f.set_value("lobby", "site",            _site)
+	f.set_value("lobby", "creature",        _creature)
+	f.set_value("lobby", "match_mode",      _match_mode)
+	f.set_value("lobby", "fast_mode",       _fast_mode)
+	f.set_value("lobby", "view_mode",       _view_mode)
+	f.set_value("lobby", "players_per_side",_players_per_side)
+	f.set_value("lobby", "home_roster",     _home_roster)
+	f.set_value("lobby", "inactive_classes",_inactive_classes)
+	f.save(_LOBBY_SAVE_PATH)
+
+func _load_lobby_state() -> void:
+	var f := ConfigFile.new()
+	if f.load(_LOBBY_SAVE_PATH) != OK:
+		return
+	_home_team       = f.get_value("lobby", "home_team",        _home_team)
+	_away_team       = f.get_value("lobby", "away_team",        _away_team)
+	_site            = f.get_value("lobby", "site",             _site)
+	_creature        = f.get_value("lobby", "creature",         _creature)
+	_match_mode      = f.get_value("lobby", "match_mode",       _match_mode)
+	_fast_mode       = f.get_value("lobby", "fast_mode",        _fast_mode)
+	_view_mode       = f.get_value("lobby", "view_mode",        _view_mode)
+	_players_per_side= f.get_value("lobby", "players_per_side", _players_per_side)
+	var roster: Array = f.get_value("lobby", "home_roster", [])
+	if roster.size() == 15:
+		_home_roster = roster
+	_inactive_classes= f.get_value("lobby", "inactive_classes", _inactive_classes)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Start match
 # ─────────────────────────────────────────────────────────────────────────────
@@ -591,12 +839,22 @@ func _on_start_pressed() -> void:
 	cfg.match_mode   = _match_mode
 	cfg.fast_mode    = _fast_mode
 	cfg.view_mode    = _view_mode
-	cfg.creature_type = _creature
-	cfg.home_team_name = "HOME"
-	cfg.away_team_name = "AWAY"
+	cfg.creature_type = _effective_creature_type()
+	cfg.home_team_name = TEAMS[_home_team][1]
+	cfg.away_team_name = TEAMS[_away_team][1]
 	cfg.third_team_name = "THIRD"
+	var home_names: Array[String] = []
+	for idx in _home_roster:
+		home_names.append(TEAMS[_home_team][3][idx])
+	cfg.home_player_names = PackedStringArray(home_names)
+	cfg.away_player_names = PackedStringArray(TEAMS[_away_team][3])
+	cfg.home_class_indices = PackedInt32Array(_home_roster)
+	var away_default: Array[int] = []
+	for i in 15: away_default.append(i)
+	cfg.away_class_indices = PackedInt32Array(away_default)
 	cfg.is_human_controlled = [true, false, false]
 	cfg.inactive_class_indices = PackedInt32Array(_inactive_classes)
+	cfg.players_per_side = _players_per_side
 	emit_signal("match_ready", cfg)
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -909,6 +1167,32 @@ func _make_spacer(h: int) -> Control:
 	s.custom_minimum_size = Vector2(0, h)
 	return s
 
+func _make_stat_chip(label: String, value: String, color: Color, inactive: bool) -> Control:
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 1)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var val_lbl := Label.new()
+	val_lbl.text = value
+	val_lbl.add_theme_font_size_override("font_size", 11)
+	val_lbl.add_theme_color_override("font_color", color.darkened(0.4) if inactive else color)
+	val_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(val_lbl)
+	var key_lbl := Label.new()
+	key_lbl.text = label
+	key_lbl.add_theme_font_size_override("font_size", 7)
+	key_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.20 if inactive else 0.38))
+	key_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(key_lbl)
+	return col
+
+func _stat_vdivider() -> Control:
+	var r := ColorRect.new()
+	r.color = Color(1, 1, 1, 0.10)
+	r.custom_minimum_size = Vector2(1, 18)
+	r.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return r
+
 func _ultra_gradient_bbcode(txt: String, centered: bool = false) -> String:
 	var g_colors := [Color.html("FFCC00"), Color.html("FF6600"), Color.html("FF0044")]
 	var g_stops  := [0.0, 0.5, 1.0]
@@ -1018,13 +1302,10 @@ func _build_roster_section() -> Control:
 	away_hdr.add_theme_color_override("font_color", Color(1, 1, 1, 0.3))
 	away_col.add_child(away_hdr)
 
-	var away_rows := VBoxContainer.new()
-	away_rows.add_theme_constant_override("separation", 2)
-	away_col.add_child(away_rows)
-	for slot in range(15):
-		if slot == 7:
-			away_rows.add_child(_make_roster_divider())
-		away_rows.add_child(_make_roster_row(slot, slot, false))
+	_away_roster_vbox = VBoxContainer.new()
+	_away_roster_vbox.add_theme_constant_override("separation", 2)
+	away_col.add_child(_away_roster_vbox)
+	_rebuild_away_roster()
 
 	hrow.gui_input.connect(func(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
@@ -1040,16 +1321,27 @@ func _toggle_roster() -> void:
 
 
 func _rebuild_home_roster() -> void:
+	if not is_instance_valid(_home_roster_vbox): return
 	for child in _home_roster_vbox.get_children():
 		_home_roster_vbox.remove_child(child)
 		child.queue_free()
 	_drag_slot_panels.clear()
 	for slot in range(15):
-		if slot == 7:
+		if slot == _players_per_side:
 			_home_roster_vbox.add_child(_make_roster_divider())
 		var panel := _make_roster_row(slot, _home_roster[slot], true)
 		_home_roster_vbox.add_child(panel)
 		_drag_slot_panels.append(panel)
+
+func _rebuild_away_roster() -> void:
+	if not is_instance_valid(_away_roster_vbox): return
+	for child in _away_roster_vbox.get_children():
+		_away_roster_vbox.remove_child(child)
+		child.queue_free()
+	for slot in range(15):
+		if slot == _players_per_side:
+			_away_roster_vbox.add_child(_make_roster_divider())
+		_away_roster_vbox.add_child(_make_roster_row(slot, slot, false))
 
 
 func _make_roster_divider() -> Control:
@@ -1083,8 +1375,8 @@ func _make_roster_row(slot_idx: int, player_idx: int, clickable: bool) -> Contro
 	var class_idx  : int    = player_idx % 8
 	var cls_color  : Color  = CLASS_COLORS[class_idx]
 	var cls_name   : String = CLASS_NAMES[class_idx]
-	var is_field   : bool   = slot_idx < 7
-	var slot_label : String = ("FIELD " + str(slot_idx + 1)) if is_field else ("RES " + str(slot_idx - 6))
+	var is_field   : bool   = slot_idx < _players_per_side
+	var slot_label : String = ("FIELD " + str(slot_idx + 1)) if is_field else ("RES " + str(slot_idx - _players_per_side + 1))
 	var slot_color : Color  = Color(0.267, 1.0, 0.533) if is_field else Color(1, 1, 1, 0.3)
 
 	var panel := PanelContainer.new()
@@ -1186,8 +1478,8 @@ func _begin_drag(slot_idx: int) -> void:
 	var class_idx  : int    = player_idx % 8
 	var cls_color  : Color  = CLASS_COLORS[class_idx]
 	var cls_name   : String = CLASS_NAMES[class_idx]
-	var is_field   : bool   = slot_idx < 7
-	var slot_label : String = ("FIELD " + str(slot_idx + 1)) if is_field else ("RES " + str(slot_idx - 6))
+	var is_field   : bool   = slot_idx < _players_per_side
+	var slot_label : String = ("FIELD " + str(slot_idx + 1)) if is_field else ("RES " + str(slot_idx - _players_per_side + 1))
 
 	_drag_ghost = PanelContainer.new()
 	_drag_ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1234,6 +1526,100 @@ func _begin_drag(slot_idx: int) -> void:
 	_drag_ghost.position = mouse_pos - Vector2(60, 15)
 
 
+# ── Settings overlay ─────────────────────────────────────────────────────────
+
+func _open_settings() -> void:
+	if is_instance_valid(_settings_overlay):
+		return
+	_settings_overlay = _build_settings_overlay()
+	add_child(_settings_overlay)
+
+func _close_settings() -> void:
+	if is_instance_valid(_settings_overlay):
+		_settings_overlay.queue_free()
+	_settings_overlay = null
+
+func _build_settings_overlay() -> Control:
+	var overlay := Control.new()
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.z_index = 20
+
+	# Dim backdrop — click outside card to close
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.72)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	dim.gui_input.connect(func(e: InputEvent) -> void:
+		if e is InputEventMouseButton and e.button_index == MOUSE_BUTTON_LEFT and e.pressed:
+			_close_settings()
+	)
+	overlay.add_child(dim)
+
+	# Centered card
+	var card := _make_card()
+	card.custom_minimum_size = Vector2(500, 0)
+	card.anchor_left  = 0.5; card.anchor_right  = 0.5
+	card.anchor_top   = 0.5; card.anchor_bottom = 0.5
+	card.offset_left  = -250; card.offset_right  = 250
+	card.offset_top   = -150; card.offset_bottom = 150
+	card.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.add_child(card)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 14)
+	card.add_child(vbox)
+
+	# Header row with close button
+	var title_row := HBoxContainer.new()
+	title_row.add_theme_constant_override("separation", 10)
+	vbox.add_child(title_row)
+
+	var title_lbl := Label.new()
+	title_lbl.text = "⚙  SETTINGS"
+	title_lbl.add_theme_font_size_override("font_size", 18)
+	title_lbl.add_theme_color_override("font_color", C_GOLD)
+	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_row.add_child(title_lbl)
+
+	var close_btn := Button.new()
+	close_btn.text = "✕"
+	close_btn.flat = true
+	close_btn.focus_mode = Control.FOCUS_NONE
+	close_btn.add_theme_font_size_override("font_size", 16)
+	close_btn.add_theme_color_override("font_color", C_DIM)
+	close_btn.pressed.connect(_close_settings)
+	title_row.add_child(close_btn)
+
+	vbox.add_child(_make_divider())
+
+	# ── Ability hotkey display ─────────────────────────────────────────────────
+	vbox.add_child(_make_field_label("ABILITY HOTKEY DISPLAY"))
+	vbox.add_child(_make_hint("Controls how ability slots appear in the HUD during gameplay"))
+	vbox.add_child(_make_spacer(4))
+
+	var style_row := HBoxContainer.new()
+	style_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(style_row)
+
+	var style_names := ["DETAILED", "COMPACT", "MINIMAL"]
+	var style_descs := ["Key + name + timer", "Key + timer", "Key only"]
+	var style_btns: Array = []
+	for i in style_names.size():
+		var btn := _make_speed_btn(style_names[i], style_descs[i], GameSettings.hotkey_style == i)
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		style_row.add_child(btn)
+		style_btns.append(btn)
+		var idx := i
+		btn.pressed.connect(func() -> void:
+			GameSettings.hotkey_style = idx
+			GameSettings.save_settings()
+			for j in style_btns.size():
+				_update_speed_btn(style_btns[j], GameSettings.hotkey_style == j)
+		)
+
+	return overlay
+
 func _process(_delta: float) -> void:
 	if not _dragging or not is_instance_valid(_drag_ghost):
 		return
@@ -1262,6 +1648,7 @@ func _end_drag() -> void:
 		var temp: int = _home_roster[_drag_from_slot]
 		_home_roster[_drag_from_slot] = _home_roster[target_slot]
 		_home_roster[target_slot] = temp
+		_save_lobby_state()
 	if is_instance_valid(_drag_ghost):
 		_drag_ghost.queue_free()
 		_drag_ghost = null
@@ -1332,6 +1719,8 @@ func _make_class_card(class_idx: int) -> Control:
 	var cls_color : Color  = CLASS_COLORS[class_idx]
 	var cls_name  : String = CLASS_NAMES[class_idx]
 	var cls_desc  : String = CLASS_DESCS[class_idx]
+	var cls_id    : String = GameRegistry.CLASS_IDS[class_idx]
+	var cls_def   : ClassDefinition = GameRegistry.get_class_definition(cls_id)
 
 	var panel := PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1415,6 +1804,27 @@ func _make_class_card(class_idx: int) -> Control:
 	_class_btns[class_idx] = toggle
 	row.add_child(toggle)
 
+	# Stats row
+	outer.add_child(_make_spacer(6))
+	var stats_row := HBoxContainer.new()
+	stats_row.add_theme_constant_override("separation", 12)
+	stats_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	outer.add_child(stats_row)
+	if cls_def != null:
+		const PM_NAMES  := ["RED", "BLUE", "YELLOW"]
+		const PM_COLORS := [Color(0.92, 0.22, 0.22), Color(0.35, 0.55, 1.00), Color(0.90, 0.80, 0.10)]
+		var pm := clampi(cls_def.primary_mana, 0, 2)
+		stats_row.add_child(_make_stat_chip("HP",      "%d" % int(cls_def.max_health),   Color(0.20, 0.85, 0.20), inactive))
+		stats_row.add_child(_stat_vdivider())
+		stats_row.add_child(_make_stat_chip("SPD",     "%.1f" % cls_def.base_speed,      Color(0.90, 0.80, 0.10), inactive))
+		stats_row.add_child(_stat_vdivider())
+		stats_row.add_child(_make_stat_chip("PRIMARY", PM_NAMES[pm],                     PM_COLORS[pm],           inactive))
+		stats_row.add_child(_stat_vdivider())
+		stats_row.add_child(_make_stat_chip("R",       "%.1f/s" % cls_def.red_regen,     Color(0.92, 0.22, 0.22), inactive))
+		stats_row.add_child(_make_stat_chip("B",       "%.1f/s" % cls_def.blue_regen,    Color(0.35, 0.55, 1.00), inactive))
+		stats_row.add_child(_make_stat_chip("Y",       "%.1f/s" % cls_def.yellow_regen,  Color(0.90, 0.80, 0.10), inactive))
+	outer.add_child(_make_spacer(4))
+
 	# Collapsible abilities list
 	outer.add_child(_build_class_ability_section(class_idx, cls_color, inactive))
 
@@ -1426,6 +1836,7 @@ func _toggle_class(class_idx: int) -> void:
 		_inactive_classes.erase(class_idx)
 	else:
 		_inactive_classes.append(class_idx)
+	_save_lobby_state()
 	# Replace only the affected card in-place
 	# Path: toggle → row (HBox) → outer (VBox) → panel (PanelContainer)
 	var btn   : Button  = _class_btns[class_idx]

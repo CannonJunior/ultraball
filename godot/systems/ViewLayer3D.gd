@@ -68,7 +68,7 @@ func _ready() -> void:
 	_ball_node     = game.get_node_or_null("Entities/Ball")
 	_creature_node = game.get_node_or_null("Entities/Creature")
 	_ball_mesh     = _make_sphere(0.35, C_BALL)
-	_creature_mesh = _make_capsule(4.0, 9.0, C_CREATURE)
+	_creature_mesh = _make_creature_mesh()
 	_target_bracket = _make_target_bracket()
 	_arc_dots = _make_arc_preview()
 	_charge_ring_segs = _make_charge_ring()
@@ -81,6 +81,44 @@ func _process(delta: float) -> void:
 	_sync_throw_arc()
 	_sync_charge_ring()
 	_update_camera(delta)
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		if _try_pick_target(event.position):
+			get_viewport().set_input_as_handled()
+
+func _try_pick_target(screen_pos: Vector2) -> bool:
+	if MatchState.is_paused:
+		return false
+	var local_node := _local_player_node()
+	if local_node == null:
+		return false
+	var local_pid: String = local_node.player_id
+	const PICK_RADIUS := 50.0
+	var best_pid := ""
+	var best_dist := PICK_RADIUS
+	for pid in _player_meshes:
+		var root: Node3D = _player_meshes[pid]
+		if not root.visible:
+			continue
+		var screen2d: Vector2 = _camera.unproject_position(root.global_position)
+		var d := screen_pos.distance_to(screen2d)
+		if d < best_dist:
+			best_dist = d
+			best_pid = pid
+	if _creature_mesh != null and _creature_mesh.visible:
+		var screen2d: Vector2 = _camera.unproject_position(_creature_mesh.global_position)
+		var d := screen_pos.distance_to(screen2d)
+		if d < best_dist:
+			best_dist = d
+			best_pid = "creature"
+	if best_pid.is_empty():
+		return false
+	if best_pid == local_pid:
+		local_node.set_explicit_target("")
+	else:
+		local_node.set_explicit_target(best_pid)
+	return true
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if view_mode != MatchConfig.ViewMode.FULL_3D:
@@ -156,17 +194,29 @@ func _build_world() -> void:
 	for xm: float in [50.0, 70.0, 90.0]:
 		_add_box(Vector3(xm, 0.06, -20.0), Vector3(0.18, 0.12, 40.0), C_LINE)
 
-	# Endzone / channel goalline boundary at x=20 and x=120: extended Z=60 to border side channels
-	_add_box(Vector3( 20.0, 0.06, -20.0), Vector3(0.25, 0.12, 60.0), C_ENDLINE)
-	_add_box(Vector3(120.0, 0.06, -20.0), Vector3(0.25, 0.12, 60.0), C_ENDLINE)
+	# Goalline at x=20 and x=120: spans endzone height only (Z=40 = y∈[0,40])
+	_add_box(Vector3( 20.0, 0.06, -20.0), Vector3(0.25, 0.12, 40.0), C_ENDLINE)
+	_add_box(Vector3(120.0, 0.06, -20.0), Vector3(0.25, 0.12, 40.0), C_ENDLINE)
+
+	# Endzone top/bottom borders (y=0 and y=40) for home x∈[0,20] and away x∈[120,140]
+	_add_box(Vector3( 10.0, 0.06,   0.0), Vector3(20.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
+	_add_box(Vector3( 10.0, 0.06, -40.0), Vector3(20.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
+	_add_box(Vector3(130.0, 0.06,   0.0), Vector3(20.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
+	_add_box(Vector3(130.0, 0.06, -40.0), Vector3(20.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
 
 	# End-channel inner walls (inner field / channel boundary) at x=30 and x=110
 	_add_box(Vector3( 30.0, 0.06, -20.0), Vector3(0.20, 0.12, 40.0), C_LINE)
 	_add_box(Vector3(110.0, 0.06, -20.0), Vector3(0.20, 0.12, 40.0), C_LINE)
 
-	# Side-channel inner edge at y=0 and y=40: span only x∈[30,110] to avoid crossing end channels
+	# Side-channel inner edge at y=0 and y=40: inner field only x∈[30,110]
 	_add_box(Vector3(70.0, 0.06,   0.0), Vector3(80.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
 	_add_box(Vector3(70.0, 0.06, -40.0), Vector3(80.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
+
+	# Side-channel end caps at x=20 and x=120, side portions only y∈[-10,0] and y∈[40,50]
+	_add_box(Vector3( 20.0, 0.06,   5.0), Vector3(0.20, 0.12, 10.0), Color(1, 1, 1, 0.5))
+	_add_box(Vector3( 20.0, 0.06, -45.0), Vector3(0.20, 0.12, 10.0), Color(1, 1, 1, 0.5))
+	_add_box(Vector3(120.0, 0.06,   5.0), Vector3(0.20, 0.12, 10.0), Color(1, 1, 1, 0.5))
+	_add_box(Vector3(120.0, 0.06, -45.0), Vector3(0.20, 0.12, 10.0), Color(1, 1, 1, 0.5))
 
 	# Side-channel outer edge at y=−10 (Z=10) and y=50 (Z=−50), spanning x∈[20,120]
 	_add_box(Vector3(70.0, 0.06,  10.0), Vector3(100.0, 0.12, 0.20), Color(1, 1, 1, 0.3))
@@ -298,25 +348,27 @@ func _sync_ball() -> void:
 func _sync_creature() -> void:
 	if _creature_mesh == null or not is_instance_valid(_creature_node):
 		return
-	var p: Vector2 = _creature_node.global_position
-	_creature_mesh.global_position = Vector3(p.x, 4.5, -p.y)
+	var alive: bool = _creature_node.get("is_alive") == true
+	_creature_mesh.visible = alive
+	if alive:
+		var p: Vector2 = _creature_node.global_position
+		_creature_mesh.global_position = Vector3(p.x, 4.5, -p.y)
 
 # ── Target bracket ────────────────────────────────────────────────────────────
 
 func _make_target_bracket() -> Node3D:
 	_target_bracket_mat = StandardMaterial3D.new()
 	_target_bracket_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_target_bracket_mat.albedo_color  = Color(1.00, 0.42, 0.42)
+	_target_bracket_mat.albedo_color  = Color(1.00, 0.10, 0.10)
 
 	var root := Node3D.new()
 	_viewport.add_child(root)
 
-	# Four L-shaped corner brackets framing the unit's 0.75×0.75 footprint.
-	# Each corner = two thin boxes: one arm along X, one along Z.
-	const H: float = 0.48    # half-span of the bracket square
-	const A: float = 0.22    # arm length
-	const T: float = 0.05    # arm cross-section (width)
-	const Y: float = 0.05    # arm height (flat slab)
+	# Four L-shaped corner brackets — tall vertical slabs visible from any camera angle.
+	const H: float = 1.20   # half-span (outside the 1.62m cube, half-face = 0.81)
+	const A: float = 0.55   # arm length along each edge
+	const T: float = 0.14   # arm depth (thin in the radial direction)
+	const Y: float = 2.20   # arm HEIGHT — tall so visible from 3/4 and broadcast angles
 
 	for sx: int in [-1, 1]:
 		for sz: int in [-1, 1]:
@@ -352,16 +404,30 @@ func _sync_target_bracket() -> void:
 	if target_id.is_empty():
 		_target_bracket.visible = false
 		return
+
+	if target_id == "creature":
+		for c in get_tree().get_nodes_in_group("creatures"):
+			if c.get("is_alive") == true:
+				var p: Vector2 = c.global_position
+				_target_bracket.global_position = Vector3(p.x, 4.5, -p.y)
+				_target_bracket.scale = Vector3(5.0, 1.0, 5.0)
+				_target_bracket_mat.albedo_color = Color(1.00, 0.50, 0.05)
+				_target_bracket.visible = true
+				return
+		_target_bracket.visible = false
+		return
+
+	_target_bracket.scale = Vector3(1.0, 1.0, 1.0)
 	for n in get_tree().get_nodes_in_group("players"):
 		if str(n.get("player_id")) == target_id \
 				and n.get("is_alive") == true and n.get("is_on_field") == true:
 			var p: Vector2 = n.global_position
 			var zh: float = float(n.get("z_height")) * 0.6
-			# Raise bracket above field geometry (line boxes top out at y=0.12)
-			_target_bracket.global_position = Vector3(p.x, zh + 0.20, -p.y)
+			# Centre the tall bracket slabs at mid-cube height
+			_target_bracket.global_position = Vector3(p.x, zh + 0.81, -p.y)
 			var is_enemy := int(n.get("team_id")) != int(local_node.get("team_id"))
 			_target_bracket_mat.albedo_color = \
-				Color(1.00, 0.42, 0.42) if is_enemy else Color(0.20, 0.93, 0.40)
+				Color(1.00, 0.05, 0.05) if is_enemy else Color(0.05, 1.00, 0.20)
 			_target_bracket.visible = true
 			return
 	_target_bracket.visible = false
@@ -548,6 +614,22 @@ func _add_box(center: Vector3, sz: Vector3, color: Color) -> MeshInstance3D:
 	mi.position = center
 	_viewport.add_child(mi)
 	return mi
+
+func _make_creature_mesh() -> MeshInstance3D:
+	var ctype: int = MatchState.config.creature_type if MatchState.config != null else 0
+	match ctype:
+		0:  return _make_capsule(2.0, 7.0,  Color(0.80, 0.88, 1.00))  # Wraith      — pale blue-white
+		1:  return _make_capsule(4.0, 6.0,  Color(0.10, 0.75, 0.20))  # Serpent     — vivid green
+		2:  return _make_capsule(6.0, 10.0, Color(0.50, 0.45, 0.40))  # Golem       — stone gray
+		3:  return _make_capsule(1.8, 6.0,  Color(0.92, 1.00, 1.00))  # Specter     — near-white cyan
+		4:  return _make_capsule(3.0, 5.0,  Color(0.95, 0.30, 0.05))  # Hellhound   — fire orange
+		5:  return _make_capsule(3.0, 5.0,  Color(0.95, 0.85, 0.10))  # Thunderbird — electric yellow
+		6:  return _make_capsule(3.5, 9.0,  Color(0.10, 0.40, 0.65))  # Wyvern      — steel blue
+		7:  return _make_capsule(5.5, 7.0,  Color(0.30, 0.52, 0.10))  # Basilisk    — olive green
+		8:  return _make_capsule(3.5, 10.0, Color(0.60, 0.05, 0.55))  # Demon       — deep purple
+		9:  return _make_capsule(2.2, 8.0,  Color(0.70, 1.00, 0.78))  # Banshee     — ghostly green-white
+		10: return _make_capsule(3.5, 8.0,  Color(0.90, 0.10, 0.90))  # Chaos       — magenta
+	return _make_capsule(4.0, 9.0, C_CREATURE)
 
 func _make_capsule(radius: float, height: float, color: Color) -> MeshInstance3D:
 	var mat := StandardMaterial3D.new()

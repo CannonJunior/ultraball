@@ -138,6 +138,18 @@ class PlayerStatRecord:
 	var ca: int = 0
 	var ff: int = 0
 
+	# Ball-handling
+	var ball_carries: int = 0
+	var ball_time: float = 0.0
+	var passes_thrown: int = 0
+	var charged_throws: int = 0
+	var max_charge_reached: float = 0.0
+
+	# Per-category breakdowns (slot/cause/act → count)
+	var ability_uses: Dictionary = {}   # slot (int) → count
+	var death_causes: Dictionary = {}   # "combat"|"creature"|"explosion"|"pit" → count
+	var kills_per_act: Dictionary = {}  # act (int) → count
+
 	var points: int:
 		get: return kills * 3 + ub * 5 + ca * 2
 

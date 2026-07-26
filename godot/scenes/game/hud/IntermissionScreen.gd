@@ -13,8 +13,7 @@ const C_HSEP  := Color(1.0, 1.0, 1.0, 0.08)
 const CARD_W  := 892.0
 
 func _ready() -> void:
-	position = Vector2.ZERO
-	size = get_viewport_rect().size
+	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	visible = false
 	EventBus.act_ended.connect(_on_act_ended)

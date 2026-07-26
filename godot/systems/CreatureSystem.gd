@@ -30,9 +30,12 @@ func _tick_goad(delta: float) -> void:
 func _check_kills() -> void:
 	var creatures := get_tree().get_nodes_in_group("creatures")
 	for creature in creatures:
+		if not creature.get("is_alive"): continue
+		var kill_r: float = creature.get("body_radius")
+		if kill_r <= 0.0: kill_r = KILL_RADIUS
 		for player in get_tree().get_nodes_in_group("players"):
 			if not player.is_alive or not player.is_on_field: continue
-			if creature.global_position.distance_to(player.global_position) <= KILL_RADIUS:
+			if creature.global_position.distance_to(player.global_position) <= kill_r:
 				EventBus.creature_killed_player.emit(player.player_id, player.team_id)
 				EventBus.player_died.emit(player.player_id, "creature", "")
 

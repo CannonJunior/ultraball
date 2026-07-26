@@ -158,11 +158,16 @@ func _update_z(delta: float) -> void:
 
 func _clamp_to_field() -> void:
 	global_position.x = clampf(global_position.x, field_min.x, field_max.x)
-	var has_ball := MatchState.ball != null and MatchState.ball.holder_id == player_id
-	if has_ball and not MatchState.is_three_team:
-		# Ball carrier cannot enter side channels (y<0 or y>40); end channels are passable.
+	if MatchState.is_three_team:
+		global_position.y = clampf(global_position.y, field_min.y, field_max.y)
+		return
+	var has_ball    := MatchState.ball != null and MatchState.ball.holder_id == player_id
+	var in_endzone  := global_position.x < 20.0 or global_position.x > 120.0
+	if has_ball or in_endzone:
+		# Ball carriers and endzone units cannot enter the side creature channels.
 		global_position.y = clampf(global_position.y, 0.0, 40.0)
 	else:
+		# Non-carriers in the inner field/end-channels can access side creature channels.
 		global_position.y = clampf(global_position.y, field_min.y, field_max.y)
 
 # ── State capture for network ─────────────────────────────────────────────────
@@ -206,6 +211,9 @@ func _spawn_position() -> Vector2:
 
 # ── Targeting ─────────────────────────────────────────────────────────────────
 
+func set_explicit_target(pid: String) -> void:
+	_explicit_target_id = pid
+
 ## Cycle explicit target through living enemies, sorted by current distance.
 func cycle_target() -> void:
 	var enemies: Array = []
@@ -229,10 +237,16 @@ func _update_auto_target() -> void:
 	# Validate explicit target — clear if they left the field or died.
 	if not _explicit_target_id.is_empty():
 		var still_valid := false
-		for node in get_tree().get_nodes_in_group("players"):
-			if node.player_id == _explicit_target_id and node.is_alive and node.is_on_field:
-				still_valid = true
-				break
+		if _explicit_target_id == "creature":
+			for c in get_tree().get_nodes_in_group("creatures"):
+				if c.get("is_alive") == true:
+					still_valid = true
+					break
+		else:
+			for node in get_tree().get_nodes_in_group("players"):
+				if node.player_id == _explicit_target_id and node.is_alive and node.is_on_field:
+					still_valid = true
+					break
 		if not still_valid:
 			_explicit_target_id = ""
 

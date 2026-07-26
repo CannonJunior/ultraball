@@ -66,6 +66,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		var p := _local_player()
 		if p:
 			p.cycle_target()
+	if event.is_action_pressed("ability_cancel"):
+		var p := _local_player()
+		if p:
+			EventBus.ability_queue_pop.emit(p.player_id)
 
 func _cycle_player() -> void:
 	var alive: Array = []

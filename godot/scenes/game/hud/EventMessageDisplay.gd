@@ -26,12 +26,8 @@ func _ready() -> void:
 	_label.add_theme_font_size_override("font_size", FONT_SIZE)
 	if FontCache.combat() != null:
 		_label.add_theme_font_override("font", FontCache.combat())
-	_label.anchor_left   = 0.5;  _label.anchor_right  = 0.5
-	_label.anchor_top    = 0.35; _label.anchor_bottom = 0.35
-	_label.offset_left   = -400; _label.offset_right  = 400
-	_label.offset_top    = -60;  _label.offset_bottom = 60
-	_label.modulate.a    = 0.0
-	_label.z_index       = 20
+	_label.modulate.a = 0.0
+	_label.z_index    = 20
 	add_child(_label)
 
 	EventBus.event_message_shown.connect(_on_event_message)
@@ -46,6 +42,10 @@ func _show(message: String, duration: float) -> void:
 	_label.text = message
 	_label.add_theme_color_override("font_color",
 		MSG_COLORS.get(message, DEFAULT_COLOR))
+	const LW := 800.0
+	const LH := 120.0
+	_label.size     = Vector2(LW, LH)
+	_label.position = Vector2((size.x - LW) * 0.5, size.y * 0.35 - LH * 0.5)
 	if _tween:
 		_tween.kill()
 	_tween = create_tween()

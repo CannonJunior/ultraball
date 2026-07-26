@@ -4,7 +4,7 @@ extends Control
 
 const PANEL_W   := 340.0
 const STRIP_W   := 7.0
-const BAR_H     := 83.0   # Scoreboard BAR_H(80) + charge bar(3)
+const BAR_H     := 138.0  # Scoreboard BAR_H(80) + charge bar(3) + CARDS_H(55)
 const ANIM_SECS := 0.55
 
 const C_GOLD := Color(1.0, 0.796, 0.239)

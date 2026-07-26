@@ -469,6 +469,13 @@ func _update_slots(player: Node) -> void:
 		if _queue_positions.has(i + 1):
 			sbox.border_color = C_QUEUE_GOLD
 
+	# Apply hotkey display style every frame so live changes are reflected
+	var _hk := GameSettings.hotkey_style
+	for _e: Dictionary in _slots:
+		_e["name_lbl"].visible = (_hk == GameSettings.HOTKEY_DETAILED)
+		if _hk == GameSettings.HOTKEY_MINIMAL:
+			_e["cd_lbl"].text = ""
+
 func _try_load_names(player: Node) -> void:
 	var rec = MatchState.players.get(player.player_id)
 	if rec == null:

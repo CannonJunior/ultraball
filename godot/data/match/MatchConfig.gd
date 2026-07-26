@@ -6,6 +6,7 @@ enum ViewMode  { FLAT_2D = 0, THREE_QUARTER = 1, FULL_3D = 2 }
 
 @export_enum("TwoTeam", "ThreeTeam") var match_mode: int = 0
 @export var fast_mode: bool = false
+@export var players_per_side: int = 7
 
 @export var home_team_name: String = "HOME"
 @export var away_team_name: String = "AWAY"
@@ -15,6 +16,11 @@ enum ViewMode  { FLAT_2D = 0, THREE_QUARTER = 1, FULL_3D = 2 }
 @export var home_player_names: PackedStringArray
 @export var away_player_names: PackedStringArray
 @export var third_player_names: PackedStringArray
+
+## Roster-ordered player indices per team (determines class per slot).
+## home_class_indices[slot] = player_idx whose class fills that slot.
+@export var home_class_indices: PackedInt32Array
+@export var away_class_indices: PackedInt32Array
 
 ## Class indices excluded from roster generation (empty = all classes available)
 @export var inactive_class_indices: PackedInt32Array

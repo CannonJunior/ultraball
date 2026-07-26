@@ -5,8 +5,7 @@ const C_GOLD := Color(1.000, 0.796, 0.239)
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	position = Vector2.ZERO
-	size = get_viewport_rect().size
+	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	visible = false
 	_build_ui()
