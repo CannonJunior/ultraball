@@ -34,9 +34,7 @@ func _update_ai() -> void:
 	for agent_pv in view.allies():
 		var player_node := _find_player(agent_pv.player_id)
 		if player_node == null: continue
-		# Skip the player that InputManager controls (local_player_id is always set).
-		if player_node.player_id == NetworkManager.local_player_id:
-			continue
+		if player_node.player_id == NetworkManager.local_player_id: continue
 		var input := _decide(agent_pv, view)
 		player_node.apply_input(input)
 		if input.queued_ability_slot > 0:

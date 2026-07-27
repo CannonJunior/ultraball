@@ -131,3 +131,13 @@ func _on_connection_failed() -> void:
 
 func is_server() -> bool:
 	return multiplayer.is_server()
+
+# ── Match config sync (host → all clients before game start) ──────────────────
+
+signal config_received(config: MatchConfig)
+
+@rpc("authority", "reliable")
+func sync_match_config(cfg_dict: Dictionary) -> void:
+	if multiplayer.is_server():
+		return
+	config_received.emit(MatchConfig.from_dict(cfg_dict))

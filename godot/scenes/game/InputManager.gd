@@ -41,6 +41,14 @@ func _physics_process(_delta: float) -> void:
 	if state.queued_ability_slot == 0 and Input.is_action_just_pressed("ability_ultra"):
 		state.queued_ability_slot = 10
 
+	# Only override AI input when the user is actively pressing something.
+	var has_input := state.move_direction.length_squared() > 0.01 \
+		or absf(state.turn_delta) > 0.01 \
+		or state.jump_pressed or state.hold_throw or state.release_throw \
+		or state.queued_ability_slot > 0
+	if not has_input:
+		return
+
 	player.apply_input(state)
 
 	if NetworkManager.mode != NetworkManager.NetMode.OFFLINE and not multiplayer.is_server():
@@ -76,7 +84,7 @@ func _cycle_player() -> void:
 	for n in get_tree().get_nodes_in_group("players"):
 		if n.team_id == 0 and n.is_alive and n.is_on_field:
 			alive.append(n)
-	if alive.size() < 2:
+	if alive.is_empty():
 		return
 	var cur := NetworkManager.local_player_id
 	var idx := -1

@@ -8,6 +8,7 @@ const MAX_RED := 100.0
 const MAX_BLUE := 100.0
 const MAX_YELLOW := 100.0
 const MAX_ULTRA := 10.0
+const ULTRA_HOLD_RATE := 0.1   # ultra/s while carrying the ball
 
 var red: float = 100.0
 var blue: float = 100.0
@@ -35,7 +36,8 @@ func _process(delta: float) -> void:
 	blue = minf(MAX_BLUE, blue + _blue_regen * delta)
 	var yellow_rate := _yellow_regen * (2.0 if is_holding_ball else 1.0)
 	yellow = minf(MAX_YELLOW, yellow + yellow_rate * delta)
-	# Ultra does not regen passively
+	if is_holding_ball:
+		ultra = minf(MAX_ULTRA, ultra + ULTRA_HOLD_RATE * delta)
 
 func can_afford(mana_type: int, cost: float) -> bool:
 	match mana_type:

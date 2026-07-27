@@ -8,6 +8,7 @@ const ULTRA_POINTS := 7
 const META_POINTS := 3
 const KILLA_POINTS := 1
 const ULTRA_MANA_PER_KILLA := 1.0
+const ULTRA_MANA_PER_ULTRA_SCORE := 2.0
 
 var _last_holder_id          : String = ""
 var _holder_was_in_endzone   : bool   = false
@@ -62,6 +63,7 @@ func _check_endzone_entry_2t() -> void:
 			EventBus.ultra_scored.emit(team, holder_id)
 			MatchState.add_score(team, ULTRA_POINTS)
 			EventBus.event_message_shown.emit("ULTRA!", 2.0)
+			EventBus.buff_applied.emit(holder_id, "ultra_mana_gain", ULTRA_MANA_PER_ULTRA_SCORE)
 	_holder_was_in_endzone = in_endzone
 
 # ── 3-team endzone entry → Ultra scoring ──────────────────────────────────────
@@ -72,6 +74,7 @@ func _on_ball_entered_endzone_3t(holder_id: String) -> void:
 	EventBus.ultra_scored.emit(team, holder_id)
 	MatchState.add_score(team, ULTRA_POINTS)
 	EventBus.event_message_shown.emit("ULTRA!", 2.0)
+	EventBus.buff_applied.emit(holder_id, "ultra_mana_gain", ULTRA_MANA_PER_ULTRA_SCORE)
 
 # ── Catch in endzone → Meta scoring ───────────────────────────────────────────
 
@@ -140,11 +143,7 @@ func _end_current_act() -> void:
 	)
 	if MatchState.current_act >= 5:
 		_end_game()
-	else:
-		var next := MatchState.current_act + 1
-		await get_tree().create_timer(2.0).timeout
-		EventBus.act_transition_complete.emit(next)
-		EventBus.act_started.emit(next)
+	# Act advancement is owned by IntermissionScreen's Continue button.
 
 func _end_game() -> void:
 	MatchState.game_over = true

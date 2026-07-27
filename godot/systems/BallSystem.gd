@@ -314,29 +314,29 @@ func _bounce_ball_at_boundary(ball: MatchState.BallStateRecord) -> void:
 		var sz := MatchState.FIELD3_SIZE
 		if ball.position.y < 0.0:
 			ball.position.y = 0.0
-			ball.velocity.y = -ball.velocity.y
+			ball.velocity.y = 0.0
 		elif ball.position.y > sz:
 			ball.position.y = sz
-			ball.velocity.y = -ball.velocity.y
+			ball.velocity.y = 0.0
 		if ball.position.x < 0.0:
 			ball.position.x = 0.0
-			ball.velocity.x = absf(ball.velocity.x) * 0.5
+			ball.velocity.x = 0.0
 		elif ball.position.x > sz:
 			ball.position.x = sz
-			ball.velocity.x = -absf(ball.velocity.x) * 0.5
+			ball.velocity.x = 0.0
 		return
 	if ball.position.y < 0.0:
 		ball.position.y = 0.0
-		ball.velocity.y = -ball.velocity.y
+		ball.velocity.y = 0.0
 	elif ball.position.y > 40.0:
 		ball.position.y = 40.0
-		ball.velocity.y = -ball.velocity.y
+		ball.velocity.y = 0.0
 	if ball.position.x < 0.0:
 		ball.position.x = 0.0
-		ball.velocity.x = absf(ball.velocity.x) * 0.5
+		ball.velocity.x = 0.0
 	elif ball.position.x > 140.0:
 		ball.position.x = 140.0
-		ball.velocity.x = -absf(ball.velocity.x) * 0.5
+		ball.velocity.x = 0.0
 
 func _get_player_node(pid: String) -> Node:
 	for n in get_tree().get_nodes_in_group("players"):

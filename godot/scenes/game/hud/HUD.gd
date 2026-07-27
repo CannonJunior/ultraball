@@ -22,9 +22,16 @@ func _ready() -> void:
 		"res://scenes/game/hud/ThrowChargeBar.gd",
 	]:
 		add_child(load(path).new())
-	add_child(load("res://scenes/game/hud/AbilityQueueOverlay.gd").new())
-	add_child(load("res://scenes/game/hud/IntermissionScreen.gd").new())
-	add_child(load("res://scenes/game/hud/FinalReport.gd").new())
-	add_child(load("res://scenes/game/hud/EventMessageDisplay.gd").new())
-	add_child(load("res://scenes/game/hud/HighlightClipList.gd").new())
-	add_child(load("res://scenes/game/hud/PauseMenu.gd").new())
+	for late_path in [
+		"res://scenes/game/hud/AbilityQueueOverlay.gd",
+		"res://scenes/game/hud/IntermissionScreen.gd",
+		"res://scenes/game/hud/FinalReport.gd",
+		"res://scenes/game/hud/EventMessageDisplay.gd",
+		"res://scenes/game/hud/HighlightClipList.gd",
+		"res://scenes/game/hud/PauseMenu.gd",
+	]:
+		var s := load(late_path)
+		if s == null or not s.can_instantiate():
+			push_error("[HUD] failed to load: " + late_path)
+			continue
+		add_child(s.new())

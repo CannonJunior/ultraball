@@ -114,10 +114,7 @@ func _try_pick_target(screen_pos: Vector2) -> bool:
 			best_pid = "creature"
 	if best_pid.is_empty():
 		return false
-	if best_pid == local_pid:
-		local_node.set_explicit_target("")
-	else:
-		local_node.set_explicit_target(best_pid)
+	local_node.set_explicit_target(best_pid)
 	return true
 
 func _unhandled_key_input(event: InputEvent) -> void:

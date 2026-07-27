@@ -1,5 +1,7 @@
 extends Control
 
+const _TeamPortrait := preload("res://scenes/game/hud/TeamPortrait.gd")
+
 const C_HOME  := Color(1.000, 0.231, 0.325)
 const C_AWAY  := Color(0.184, 0.514, 1.000)
 const C_GOLD  := Color(1.000, 0.796, 0.239)
@@ -11,37 +13,50 @@ const C_DIM   := Color(1.0, 1.0, 1.0, 0.40)
 
 const CARD_W := 892.0
 
+var _winner_id:   int = -1
+var _home_score:  int = 0
+var _away_score:  int = 0
+var _current_tab: int = 0   # 0 = MATCH STATS, 1 = TEAM PORTRAITS
+
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	z_index = 50
 	visible = false
 	EventBus.game_over.connect(_on_game_over)
 
 func _on_game_over(winner_id: int, home: int, away: int, _third: int) -> void:
-	_rebuild(winner_id, home, away)
+	_winner_id  = winner_id
+	_home_score = home
+	_away_score = away
+	_current_tab = 0
+	_rebuild()
 	show()
+	get_tree().paused = true
 
-func _rebuild(winner_id: int, home: int, away: int) -> void:
+func _rebuild() -> void:
+	if _current_tab == 1:
+		_rebuild_portraits()
+	else:
+		_rebuild_stats()
+
+# ── MATCH STATS page ───────────────────────────────────────────────────────────
+
+func _rebuild_stats() -> void:
 	for c in get_children():
 		c.queue_free()
 
-	# Dim overlay
 	var overlay := ColorRect.new()
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	overlay.color = Color(0, 0, 0, 0.78)
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(overlay)
 
-	# Centered card
-	var card := _make_panel(C_BG)
-	card.custom_minimum_size = Vector2(CARD_W, 0)
-	card.anchor_left = 0.5; card.anchor_right = 0.5
-	card.anchor_top = 0.5; card.anchor_bottom = 0.5
-	card.offset_left = -CARD_W * 0.5
-	card.offset_right = CARD_W * 0.5
-	card.offset_top = -440
-	card.offset_bottom = 440
-	add_child(card)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(center)
 
 	var cfg := MatchState.config
 	var team_names := [
@@ -49,17 +64,28 @@ func _rebuild(winner_id: int, home: int, away: int) -> void:
 		cfg.away_team_name if cfg else "AWAY",
 		cfg.third_team_name if cfg else "THIRD",
 	]
-	var winner_name: String = team_names[clampi(winner_id, 0, 2)]
-	var winner_col := C_HOME if winner_id == 0 else (C_AWAY if winner_id == 1 else Color(0.2, 0.9, 0.3))
+	var winner_name: String = team_names[clampi(_winner_id, 0, 2)]
+	var winner_col := C_HOME if _winner_id == 0 else (C_AWAY if _winner_id == 1 else Color(0.2, 0.9, 0.3))
+
+	# Fixed-height sections: tab(36) + hdr(80) + strip(56) + colhdr(34) + legend(36) + exit(68)
+	var fixed_h := 36 + 80 + 56 + 34 + 36 + 68
+	var vp_h := get_viewport_rect().size.y
+	var scroll_h := maxf(200.0, vp_h - 80.0 - float(fixed_h))
+
+	var card := _make_panel(C_BG)
+	card.custom_minimum_size = Vector2(CARD_W, 0)
+	center.add_child(card)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 0)
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	card.add_child(vbox)
 
+	vbox.add_child(_make_tab_strip())
+
 	# Victory header
 	var hdr := ColorRect.new()
-	hdr.color = Color(C_HOME.r, C_HOME.g, C_HOME.b, 0.10) if winner_id == 0 else Color(C_AWAY.r, C_AWAY.g, C_AWAY.b, 0.10)
+	hdr.color = Color(C_HOME.r, C_HOME.g, C_HOME.b, 0.10) if _winner_id == 0 else Color(C_AWAY.r, C_AWAY.g, C_AWAY.b, 0.10)
 	hdr.custom_minimum_size.y = 80
 	vbox.add_child(hdr)
 
@@ -81,7 +107,7 @@ func _rebuild(winner_id: int, home: int, away: int) -> void:
 	victory_hbox.add_child(_lbl(winner_name, Color.WHITE, 32))
 	victory_hbox.add_child(_lbl("VICTORY", winner_col, 32))
 
-	var scores_lbl := _lbl("%d  –  %d" % [home, away], Color(1, 1, 1, 0.7), 22)
+	var scores_lbl := _lbl("%d  –  %d" % [_home_score, _away_score], Color(1, 1, 1, 0.7), 22)
 	scores_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hdr_vbox.add_child(scores_lbl)
 
@@ -100,21 +126,175 @@ func _rebuild(winner_id: int, home: int, away: int) -> void:
 			MatchState.kills[0], MatchState.kills[1])
 	vbox.add_child(strip)
 
-	# Column headers
 	vbox.add_child(_make_col_header())
 
-	# Stat rows
 	var max_dmg := 1.0
 	var max_heal := 1.0
 	for r in rows:
 		if r.dmg > max_dmg: max_dmg = r.dmg
 		if r.heal > max_heal: max_heal = r.heal
 
-	for i in rows.size():
-		vbox.add_child(_make_stat_row(i + 1, rows[i], max_dmg, max_heal, i == 0))
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(0, scroll_h)
+	vbox.add_child(scroll)
 
-	# Legend
+	var rows_vbox := VBoxContainer.new()
+	rows_vbox.add_theme_constant_override("separation", 0)
+	rows_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(rows_vbox)
+
+	for i in rows.size():
+		rows_vbox.add_child(_make_stat_row(i + 1, rows[i], max_dmg, max_heal, i == 0))
+
 	vbox.add_child(_make_legend())
+	vbox.add_child(_make_exit_btn())
+
+# ── TEAM PORTRAITS page ────────────────────────────────────────────────────────
+
+func _rebuild_portraits() -> void:
+	for c in get_children():
+		c.queue_free()
+
+	var overlay := ColorRect.new()
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.color = Color(0, 0, 0, 0.78)
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(overlay)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(center)
+
+	const PH := 646.0
+	var card := _make_panel(C_BG)
+	card.custom_minimum_size = Vector2(CARD_W, PH)
+	center.add_child(card)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 0)
+	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	card.add_child(vbox)
+
+	vbox.add_child(_make_tab_strip())
+
+	# Winner banner
+	var cfg := MatchState.config
+	var team_names := [
+		cfg.home_team_name if cfg else "HOME",
+		cfg.away_team_name if cfg else "AWAY",
+	]
+	var winner_col := C_HOME if _winner_id == 0 else (C_AWAY if _winner_id == 1 else Color(0.2, 0.9, 0.3))
+	var winner_name: String = team_names[clampi(_winner_id, 0, 1)]
+
+	var banner := ColorRect.new()
+	banner.color = Color(winner_col.r, winner_col.g, winner_col.b, 0.08)
+	banner.custom_minimum_size.y = 30
+	vbox.add_child(banner)
+	var banner_lbl := _lbl(
+		"%s WINS  %d – %d" % [winner_name.to_upper(), _home_score, _away_score],
+		C_GOLD, 12)
+	banner_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	banner_lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
+	banner_lbl.set_anchors_preset(Control.PRESET_FULL_RECT)
+	banner.add_child(banner_lbl)
+
+	# Portrait area
+	var margin := MarginContainer.new()
+	for side in ["left", "right", "top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 12)
+	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(margin)
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 12)
+	hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	margin.add_child(hbox)
+
+	# Compute and normalise hex data for both teams
+	var raw: Array = _collect_team_hex_raw()
+	var axes := ["kills", "dmg", "heal", "ball_time", "carries", "goals"]
+	for key in axes:
+		var mx: float = max(raw[0].get(key, 0.0), raw[1].get(key, 0.0))
+		if mx > 0.0:
+			raw[0][key] = float(raw[0].get(key, 0.0)) / mx
+			raw[1][key] = float(raw[1].get(key, 0.0)) / mx
+
+	for tid in 2:
+		var h_vals := PackedFloat32Array()
+		for key in axes:
+			h_vals.append(float(raw[tid].get(key, 0.0)))
+
+		var score := _home_score if tid == 0 else _away_score
+		var opp   := _away_score if tid == 0 else _home_score
+
+		var portrait := _TeamPortrait.new()
+		portrait.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		portrait.size_flags_vertical   = Control.SIZE_EXPAND_FILL
+		hbox.add_child(portrait)
+		portrait.setup(tid, team_names[tid], score, opp, h_vals)
+
+	vbox.add_child(_make_exit_btn())
+
+func _collect_team_hex_raw() -> Array:
+	var result: Array = [{}, {}]
+	for tid in 2:
+		result[tid] = {"kills": 0.0, "dmg": 0.0, "heal": 0.0,
+					   "ball_time": 0.0, "carries": 0.0, "goals": 0.0}
+	for pid in MatchState.players:
+		var rec: MatchState.PlayerRecord = MatchState.players[pid]
+		if rec.team_id > 1:
+			continue
+		var st: MatchState.PlayerStatRecord = MatchState.stat(pid)
+		var t: Dictionary = result[rec.team_id]
+		t["kills"]     += st.kills
+		t["dmg"]       += st.dmg
+		t["heal"]      += st.heal
+		t["ball_time"] += st.ball_time
+		t["carries"]   += st.ball_carries
+		t["goals"]     += st.ub + st.ca
+	return result
+
+# ── Tab strip ──────────────────────────────────────────────────────────────────
+
+func _make_tab_strip() -> Control:
+	var strip := ColorRect.new()
+	strip.color = Color(0, 0, 0, 0.28)
+	strip.custom_minimum_size.y = 36
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 0)
+	hbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	strip.add_child(hbox)
+
+	var tab_names := ["MATCH STATS", "TEAM PORTRAITS"]
+	for i in tab_names.size():
+		var btn := Button.new()
+		btn.text = tab_names[i]
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.size_flags_vertical   = Control.SIZE_EXPAND_FILL
+		btn.focus_mode            = Control.FOCUS_NONE
+		var is_active := i == _current_tab
+		var sbox := StyleBoxFlat.new()
+		sbox.bg_color      = Color(0, 0, 0, 0)
+		sbox.border_color  = C_GOLD if is_active else Color(1, 1, 1, 0.0)
+		sbox.border_width_bottom = 2
+		for sb_name in ["normal", "hover", "pressed", "focus"]:
+			btn.add_theme_stylebox_override(sb_name, sbox)
+		btn.add_theme_color_override("font_color", C_GOLD if is_active else C_DIM)
+		btn.add_theme_color_override("font_hover_color", Color.WHITE)
+		btn.add_theme_font_size_override("font_size", 11)
+		btn.process_mode = Node.PROCESS_MODE_ALWAYS
+		var idx := i
+		btn.pressed.connect(func():
+			_current_tab = idx
+			_rebuild()
+		)
+		hbox.add_child(btn)
+
+	return strip
+
+# ── Stats page helpers (unchanged from original) ───────────────────────────────
 
 func _make_stats_strip(mvp: Dictionary, top_dmg: Array, top_heal: Array, home: int, away: int) -> Control:
 	var strip := ColorRect.new()
@@ -219,7 +399,6 @@ func _make_stat_row(rank: int, r: Dictionary, max_dmg: float, max_heal: float, i
 	var rank_col := C_GOLD if is_leader else Color(1, 1, 1, 0.38)
 	hbox.add_child(_col_cell("%02d" % rank, 30, rank_col, HORIZONTAL_ALIGNMENT_LEFT, 12))
 
-	# Badge + Name
 	var name_cell := Control.new()
 	name_cell.custom_minimum_size = Vector2(200, 0)
 	name_cell.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -396,3 +575,20 @@ func _lbl(text: String, col: Color, sz: int) -> Label:
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
+
+func _make_exit_btn() -> Control:
+	var wrapper := MarginContainer.new()
+	for s in ["left", "right", "top", "bottom"]:
+		wrapper.add_theme_constant_override("margin_" + s, 12)
+	var btn := Button.new()
+	btn.text = "EXIT TO MAIN MENU"
+	btn.custom_minimum_size = Vector2(260, 44)
+	btn.process_mode = Node.PROCESS_MODE_ALWAYS
+	btn.pressed.connect(_on_exit_pressed)
+	wrapper.add_child(btn)
+	return wrapper
+
+func _on_exit_pressed() -> void:
+	get_tree().paused = false
+	MatchState.is_paused = false
+	EventBus.exit_to_lobby_requested.emit()

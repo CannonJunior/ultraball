@@ -44,6 +44,7 @@ var events: Array = []           # Array[MatchEvent]
 var act_snapshots: Array = []    # Array[ActRosterSnapshot]
 var act_summaries: Array = []    # Array[ActSummary]
 var score_points: Array = []     # Array[ScorePoint]
+var phase_crossings: Array = []  # Array[{tick, team_id, line_index, position}]
 
 # ── Internal state ─────────────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ func _ready() -> void:
 	EventBus.act_started.connect(_on_act_started)
 	EventBus.act_ended.connect(_on_act_ended)
 	EventBus.game_over.connect(_on_game_over)
+	EventBus.ball_phase_line_crossed.connect(_on_phase_line_crossed)
 	EventBus.ultra_scored.connect(_on_ultra_scored)
 	EventBus.meta_scored.connect(_on_meta_scored)
 	EventBus.killa_scored.connect(_on_killa_scored)
@@ -111,6 +113,7 @@ func _on_act_started(act_number: int) -> void:
 		act_snapshots.clear()
 		act_summaries.clear()
 		score_points.clear()
+		phase_crossings.clear()
 	_current_act = act_number
 	_act_start_usec = Time.get_ticks_usec()
 	_act_kills = {}
@@ -185,6 +188,15 @@ func _on_player_died(player_id: String, cause: String, _killer_id: String) -> vo
 	e.player_id = player_id
 	e.position = MatchState.ball.position  # proxy; player nodes not accessible here
 	events.append(e)
+
+func _on_phase_line_crossed(team_id: int, line_index: int) -> void:
+	if not _active: return
+	phase_crossings.append({
+		"tick": _now(),
+		"team_id": team_id,
+		"line_index": line_index,
+		"position": MatchState.ball.position,
+	})
 
 func _on_terrain_modified(event_type: String, world_pos: Vector2, _radius: float, _duration: float, _intensity: float) -> void:
 	if not _active: return

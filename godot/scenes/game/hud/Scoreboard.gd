@@ -31,6 +31,18 @@ class _HpBar extends Control:
 		if pct > 0.0:
 			draw_rect(Rect2(0, 0, size.x * pct, size.y), fill_color)
 
+class _SelectedOutline extends Control:
+	var outline_color: Color = Color.TRANSPARENT
+	func set_selected(col: Color) -> void:
+		outline_color = col
+		queue_redraw()
+	func clear_selected() -> void:
+		outline_color = Color.TRANSPARENT
+		queue_redraw()
+	func _draw() -> void:
+		if outline_color.a > 0.0:
+			draw_rect(Rect2(0, 0, size.x, size.y), outline_color, false, 2.0)
+
 var _home_name_lbl : Label
 var _home_score_lbl: Label
 var _away_name_lbl : Label
@@ -41,14 +53,16 @@ var _winner_lbl    : Label
 var _dots          : Array[ColorRect] = []
 var _charge_fill   : ColorRect
 
-var _blink_timer := 0.0
-var _colon_on    := true
-var _glow_phase  := 0.0
-var _raw_secs    := 180
+var _blink_timer  := 0.0
+var _colon_on     := true
+var _glow_phase   := 0.0
+var _raw_secs     := 180
+var _charge_pct   := 0.0
 
-# player_id → {av_bg, init_lbl, hp_bar, kill_lbl, team_color}
-var _card_entries     : Dictionary = {}
-var _player_node_cache: Dictionary = {}
+# player_id → {av_bg, init_lbl, hp_bar, kill_lbl, team_color, outline}
+var _card_entries         : Dictionary = {}
+var _player_node_cache    : Dictionary = {}
+var _last_local_player_id : String     = ""
 var _home_box         : HBoxContainer = null
 var _away_box         : HBoxContainer = null
 
@@ -69,38 +83,32 @@ func _ready() -> void:
 	EventBus.killa_scored.connect(_on_card_killa_scored)
 
 func _draw() -> void:
-	var w := size.x
-	draw_rect(Rect2(0, 0, w, BAR_H), C_BG)
-
+	var w      := size.x
 	var side_w := (w - CENTER_W) * 0.5
-	var clx := side_w
-	var crx := side_w + CENTER_W
+	var clx    := side_w
+	var crx    := side_w + CENTER_W
 
-	# Left team parallelogram
-	draw_colored_polygon(PackedVector2Array([
-		Vector2(0, 0), Vector2(clx, 0),
-		Vector2(clx - SKEW, BAR_H), Vector2(0, BAR_H)
-	]), Color(C_HOME.r, C_HOME.g, C_HOME.b, 0.22))
+	# Home panel (always full width of home section)
+	draw_rect(Rect2(0.0, 0.0, clx, BAR_H), C_BG)
+	draw_rect(Rect2(0.0, 0.0, clx, BAR_H), Color(C_HOME.r, C_HOME.g, C_HOME.b, 0.70))
 
-	# Center trapezoid (wider at bottom)
-	draw_colored_polygon(PackedVector2Array([
-		Vector2(clx + SKEW, 0), Vector2(crx - SKEW, 0),
-		Vector2(crx, BAR_H), Vector2(clx, BAR_H)
-	]), Color(0.0, 0.0, 0.0, 0.55))
+	# Center section
+	draw_rect(Rect2(clx, 0.0, CENTER_W, BAR_H), C_BG)
+	draw_rect(Rect2(clx, 0.0, CENTER_W, BAR_H), Color(0.0, 0.0, 0.0, 0.55))
 
-	# Right team parallelogram
-	draw_colored_polygon(PackedVector2Array([
-		Vector2(crx + SKEW, 0), Vector2(w, 0),
-		Vector2(w, BAR_H), Vector2(crx, BAR_H)
-	]), Color(C_AWAY.r, C_AWAY.g, C_AWAY.b, 0.22))
+	# Away panel (always full width of away section)
+	draw_rect(Rect2(crx, 0.0, w - crx, BAR_H), C_BG)
+	draw_rect(Rect2(crx, 0.0, w - crx, BAR_H), Color(C_AWAY.r, C_AWAY.g, C_AWAY.b, 0.70))
 
-	# Border lines
-	draw_line(Vector2(0, 0), Vector2(w, 0), Color(1, 1, 1, 0.05), 1.0)
-	draw_line(Vector2(0, BAR_H), Vector2(w, BAR_H), Color(1, 1, 1, 0.05), 1.0)
+	# Inner border lines at center section edges
+	draw_line(Vector2(clx, 0.0), Vector2(clx, BAR_H), Color.WHITE, 2.0)
+	draw_line(Vector2(crx, 0.0), Vector2(crx, BAR_H), Color.WHITE, 2.0)
 
 	# Cards section background
-	draw_rect(Rect2(0, BAR_H + 3.0, w, CARDS_H), Color(C_BG.r, C_BG.g, C_BG.b, 0.90))
-	draw_line(Vector2(0, BAR_H + 3.0 + CARDS_H), Vector2(w, BAR_H + 3.0 + CARDS_H), Color(1, 1, 1, 0.05), 1.0)
+	draw_rect(Rect2(0.0, BAR_H + 3.0, w, CARDS_H), Color(C_BG.r, C_BG.g, C_BG.b, 0.90))
+	draw_line(Vector2(0.0, BAR_H), Vector2(w, BAR_H), Color(1, 1, 1, 0.05), 1.0)
+	draw_line(Vector2(0.0, BAR_H + 3.0 + CARDS_H), Vector2(w, BAR_H + 3.0 + CARDS_H),
+			Color(1, 1, 1, 0.05), 1.0)
 
 func _build() -> void:
 	var cfg := MatchState.config
@@ -219,19 +227,29 @@ func _process(delta: float) -> void:
 	if cur >= 0 and cur < _dots.size():
 		_dots[cur].color = Color(C_CYAN.r, C_CYAN.g, C_CYAN.b, glow)
 
-	# Charge bar fill
+	# Charge bar fill — expands from center outward
 	var ball := MatchState.ball
 	var pct := clampf(ball.charge_timer / ball.max_charge, 0.0, 1.0) if ball.max_charge > 0.0 else 0.0
-	_charge_fill.size.x = size.x * pct
+	var fill_w := size.x * pct
+	_charge_fill.size.x = fill_w
+	_charge_fill.position.x = (size.x - fill_w) * 0.5
+	_charge_fill.position.y = BAR_H
 
 	# Health bar updates
 	_update_card_health()
+
+	# Selection outline refresh when controlled player changes
+	var cur_pid := NetworkManager.local_player_id
+	if cur_pid != _last_local_player_id:
+		_last_local_player_id = cur_pid
+		_refresh_selection_outlines()
 
 func _on_act_started(act: int) -> void:
 	_act_lbl.text = "ACT %d" % act
 	_timer_lbl.visible = true
 	_winner_lbl.visible = false
 	_refresh_dots(act)
+	_rebuild_cards()
 
 func _on_scores_updated(home: int, away: int, _third: int) -> void:
 	_home_score_lbl.text = str(home)
@@ -297,7 +315,7 @@ func _build_cards() -> void:
 
 	_home_box = HBoxContainer.new()
 	_home_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_home_box.alignment = BoxContainer.ALIGNMENT_BEGIN
+	_home_box.alignment = BoxContainer.ALIGNMENT_END
 	_home_box.add_theme_constant_override("separation", 0)
 	_home_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hbox.add_child(_home_box)
@@ -309,7 +327,7 @@ func _build_cards() -> void:
 
 	_away_box = HBoxContainer.new()
 	_away_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_away_box.alignment = BoxContainer.ALIGNMENT_END
+	_away_box.alignment = BoxContainer.ALIGNMENT_BEGIN
 	_away_box.add_theme_constant_override("separation", 0)
 	_away_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hbox.add_child(_away_box)
@@ -325,16 +343,16 @@ func _rebuild_cards() -> void:
 
 	var home_pids: Array = []
 	var away_pids: Array = []
-	for pid: String in MatchState.players:
-		var rec: MatchState.PlayerRecord = MatchState.players[pid]
-		if not rec.is_on_field: continue
-		if rec.team_id == 0: home_pids.append(pid)
-		elif rec.team_id == 1: away_pids.append(pid)
+	for n in get_tree().get_nodes_in_group("players"):
+		if not n.is_alive or not n.is_on_field: continue
+		if n.team_id == 0: home_pids.append(n.player_id)
+		elif n.team_id == 1: away_pids.append(n.player_id)
 
 	for pid: String in home_pids:
 		_home_box.add_child(_make_card(pid))
 	for pid: String in away_pids:
 		_away_box.add_child(_make_card(pid))
+	_refresh_selection_outlines()
 
 func _make_card(pid: String) -> Control:
 	var rec: MatchState.PlayerRecord = MatchState.players.get(pid)
@@ -392,6 +410,16 @@ func _make_card(pid: String) -> Control:
 	kill_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	av.add_child(kill_lbl)
 
+	# Selection outline (home team only) drawn on top
+	var outline: _SelectedOutline = null
+	if team == 0:
+		outline = _SelectedOutline.new()
+		outline.set_anchors_preset(Control.PRESET_FULL_RECT)
+		outline.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		av.add_child(outline)
+		av.mouse_filter = Control.MOUSE_FILTER_STOP
+		av.gui_input.connect(_on_avatar_clicked.bind(pid))
+
 	# Health bar
 	var hp_bar: _HpBar = _HpBar.new()
 	hp_bar.custom_minimum_size = Vector2(HP_BAR_W, HP_BAR_H)
@@ -404,8 +432,27 @@ func _make_card(pid: String) -> Control:
 		"hp_bar":   hp_bar,
 		"kill_lbl": kill_lbl,
 		"team_color": tc,
+		"outline":  outline,
 	}
 	return margin
+
+func _on_avatar_clicked(event: InputEvent, pid: String) -> void:
+	if not (event is InputEventMouseButton): return
+	var mb := event as InputEventMouseButton
+	if not (mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT): return
+	var node := _get_player_node(pid)
+	if node == null or not node.is_alive or not node.is_on_field: return
+	NetworkManager.local_player_id = pid
+
+func _refresh_selection_outlines() -> void:
+	var sel := NetworkManager.local_player_id
+	for pid: String in _card_entries:
+		var outline = _card_entries[pid].get("outline")
+		if outline == null: continue
+		if pid == sel:
+			(outline as _SelectedOutline).set_selected(C_GOLD)
+		else:
+			(outline as _SelectedOutline).clear_selected()
 
 func _update_card_health() -> void:
 	for pid: String in _card_entries:

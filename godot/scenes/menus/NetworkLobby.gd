@@ -2,7 +2,8 @@ extends Control
 
 signal match_ready(config: MatchConfig)
 
-const _MatchConfig := preload("res://data/match/MatchConfig.gd")
+const _MatchConfig    := preload("res://data/match/MatchConfig.gd")
+const _TeamPortrait   := preload("res://scenes/game/hud/TeamPortrait.gd")
 const _LOBBY_SAVE_PATH := "user://lobby_settings.cfg"
 
 # ── Palette ──────────────────────────────────────────────────────────────────
@@ -65,6 +66,19 @@ var _drag_slot_panels  : Array  = []
 # Classes
 var _inactive_classes  : Array  = []   # set of inactive class indices
 var _class_btns        : Array  = []   # toggle Button refs per class
+
+# Match history
+var _report_overlay  : Control = null
+
+# LAN multiplayer
+var _lan_mode        : bool   = false
+var _lan_is_host     : bool   = false
+var _connected_peers : int    = 0
+var _lan_opts        : Control       = null
+var _lan_status_lbl  : Label         = null
+var _lan_peer_lbl    : Label         = null
+var _lan_ip_edit     : LineEdit      = null
+var _start_btn       : Button        = null
 
 # ── Data ──────────────────────────────────────────────────────────────────────
 const STRATEGIES := [
@@ -211,6 +225,9 @@ func _ready() -> void:
 	_apply_bg()
 	_load_lobby_state()
 	_build_ui()
+	NetworkManager.config_received.connect(_on_config_received)
+	EventBus.peer_connected.connect(_on_net_peer_connected)
+	EventBus.peer_disconnected.connect(_on_net_peer_disconnected)
 
 func _apply_bg() -> void:
 	var sb := StyleBoxFlat.new()
@@ -326,6 +343,8 @@ func _build_header() -> Control:
 	title.autowrap_mode = TextServer.AUTOWRAP_OFF
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	title.add_theme_font_size_override("normal_font_size", 72)
+	if FontCache.bangers:
+		title.add_theme_font_override("normal_font", FontCache.bangers)
 	title.text = _ultra_gradient_bbcode("ULTRABALL", true)
 	vbox.add_child(title)
 
@@ -350,6 +369,12 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 	var inner := VBoxContainer.new()
 	inner.add_theme_constant_override("separation", 12)
 	margin.add_child(inner)
+
+	# ── Network section ──────────────────────────────────────────────────────
+	inner.add_child(_make_section_header("NETWORK"))
+	inner.add_child(_make_spacer(4))
+	inner.add_child(_build_lan_card())
+	inner.add_child(_make_spacer(8))
 
 	# ── Section Header ────────────────────────────────────────────────────────
 	inner.add_child(_make_section_header("MATCH CONFIGURATION"))
@@ -623,10 +648,13 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 
 	# ── Start Match ───────────────────────────────────────────────────────────
 	inner.add_child(_make_spacer(12))
-	var start_btn := Button.new()
+	_start_btn = Button.new()
+	var start_btn := _start_btn
 	start_btn.text = "START MATCH"
 	start_btn.custom_minimum_size = Vector2(0, 64)
 	start_btn.add_theme_font_size_override("font_size", 28)
+	if FontCache.bangers:
+		start_btn.add_theme_font_override("font", FontCache.bangers)
 	start_btn.add_theme_color_override("font_color", Color.WHITE)
 	var start_sb := StyleBoxFlat.new()
 	start_sb.bg_color = Color.TRANSPARENT
@@ -685,6 +713,10 @@ func _build_rules_panel(vbox: VBoxContainer) -> void:
 		inner.add_child(_make_rule_section(rule_data[0], rule_data[1], rule_data[2]))
 
 	inner.add_child(_build_classes_section())
+	inner.add_child(_make_spacer(24))
+	inner.add_child(_make_section_header("MATCH HISTORY"))
+	inner.add_child(_make_spacer(4))
+	inner.add_child(_build_history_section())
 	inner.add_child(_make_spacer(24))
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -834,28 +866,182 @@ func _load_lobby_state() -> void:
 # ─────────────────────────────────────────────────────────────────────────────
 # Start match
 # ─────────────────────────────────────────────────────────────────────────────
-func _on_start_pressed() -> void:
+func _build_config() -> MatchConfig:
 	var cfg := _MatchConfig.new()
-	cfg.match_mode   = _match_mode
-	cfg.fast_mode    = _fast_mode
-	cfg.view_mode    = _view_mode
-	cfg.creature_type = _effective_creature_type()
-	cfg.home_team_name = TEAMS[_home_team][1]
-	cfg.away_team_name = TEAMS[_away_team][1]
-	cfg.third_team_name = "THIRD"
+	cfg.match_mode        = _match_mode
+	cfg.fast_mode         = _fast_mode
+	cfg.view_mode         = _view_mode
+	cfg.creature_type     = _effective_creature_type()
+	cfg.home_team_name    = TEAMS[_home_team][1]
+	cfg.away_team_name    = TEAMS[_away_team][1]
+	cfg.third_team_name   = "THIRD"
 	var home_names: Array[String] = []
 	for idx in _home_roster:
 		home_names.append(TEAMS[_home_team][3][idx])
-	cfg.home_player_names = PackedStringArray(home_names)
-	cfg.away_player_names = PackedStringArray(TEAMS[_away_team][3])
+	cfg.home_player_names  = PackedStringArray(home_names)
+	cfg.away_player_names  = PackedStringArray(TEAMS[_away_team][3])
 	cfg.home_class_indices = PackedInt32Array(_home_roster)
 	var away_default: Array[int] = []
 	for i in 15: away_default.append(i)
-	cfg.away_class_indices = PackedInt32Array(away_default)
-	cfg.is_human_controlled = [true, false, false]
+	cfg.away_class_indices     = PackedInt32Array(away_default)
+	cfg.is_human_controlled    = [true, false, false]
 	cfg.inactive_class_indices = PackedInt32Array(_inactive_classes)
-	cfg.players_per_side = _players_per_side
+	cfg.players_per_side       = _players_per_side
+	return cfg
+
+func _on_start_pressed() -> void:
+	var cfg := _build_config()
+	if _lan_mode and _lan_is_host:
+		NetworkManager.sync_match_config.rpc(cfg.to_dict())
 	emit_signal("match_ready", cfg)
+
+# ── LAN multiplayer ──────────────────────────────────────────────────────────
+
+func _build_lan_card() -> Control:
+	var card := _make_card()
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	card.add_child(vbox)
+
+	# SOLO / LAN toggle row
+	var mode_row := HBoxContainer.new()
+	mode_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(mode_row)
+	var solo_btn := _make_speed_btn("SOLO", "Offline play", not _lan_mode)
+	var lan_btn  := _make_speed_btn("LAN",  "Local network", _lan_mode)
+	solo_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lan_btn.size_flags_horizontal  = Control.SIZE_EXPAND_FILL
+	mode_row.add_child(solo_btn)
+	mode_row.add_child(lan_btn)
+
+	# LAN options sub-section
+	_lan_opts = VBoxContainer.new()
+	_lan_opts.add_theme_constant_override("separation", 8)
+	_lan_opts.visible = _lan_mode
+	vbox.add_child(_lan_opts)
+
+	# Host / Join row
+	var hj_row := HBoxContainer.new()
+	hj_row.add_theme_constant_override("separation", 8)
+	_lan_opts.add_child(hj_row)
+
+	var host_btn := Button.new()
+	host_btn.text = "HOST GAME"
+	host_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	host_btn.pressed.connect(_on_lan_host_pressed)
+	hj_row.add_child(host_btn)
+
+	var or_lbl := Label.new()
+	or_lbl.text = "— or —"
+	or_lbl.add_theme_color_override("font_color", C_DIM)
+	or_lbl.add_theme_font_size_override("font_size", 9)
+	or_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hj_row.add_child(or_lbl)
+
+	var join_col := VBoxContainer.new()
+	join_col.add_theme_constant_override("separation", 4)
+	join_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hj_row.add_child(join_col)
+
+	_lan_ip_edit = LineEdit.new()
+	_lan_ip_edit.placeholder_text = "Host IP (e.g. 192.168.1.x)"
+	_lan_ip_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	join_col.add_child(_lan_ip_edit)
+
+	var join_btn := Button.new()
+	join_btn.text = "JOIN GAME"
+	join_btn.pressed.connect(_on_lan_join_pressed)
+	join_col.add_child(join_btn)
+
+	# Status labels
+	_lan_status_lbl = Label.new()
+	_lan_status_lbl.text = ""
+	_lan_status_lbl.add_theme_color_override("font_color", C_DIM)
+	_lan_status_lbl.add_theme_font_size_override("font_size", 10)
+	_lan_opts.add_child(_lan_status_lbl)
+
+	_lan_peer_lbl = Label.new()
+	_lan_peer_lbl.text = ""
+	_lan_peer_lbl.add_theme_color_override("font_color", C_FAINT)
+	_lan_peer_lbl.add_theme_font_size_override("font_size", 9)
+	_lan_opts.add_child(_lan_peer_lbl)
+
+	solo_btn.pressed.connect(_set_lan_mode.bind(false))
+	lan_btn.pressed.connect(_set_lan_mode.bind(true))
+
+	return card
+
+func _set_lan_mode(enable: bool) -> void:
+	_lan_mode = enable
+	if _lan_opts:
+		_lan_opts.visible = enable
+	if not enable:
+		NetworkManager.go_offline()
+		_lan_is_host = false
+		_connected_peers = 0
+		if _start_btn:
+			_start_btn.disabled = false
+			_start_btn.text = "START MATCH"
+
+func _on_lan_host_pressed() -> void:
+	var err := NetworkManager.host_enet()
+	if err == OK:
+		_lan_is_host = true
+		_connected_peers = 0
+		_update_lan_status()
+		if _start_btn:
+			_start_btn.disabled = false
+			_start_btn.text = "START MATCH"
+	elif _lan_status_lbl:
+		_lan_status_lbl.text = "Failed to host (error %d)" % err
+
+func _on_lan_join_pressed() -> void:
+	var addr: String = _lan_ip_edit.text.strip_edges() if _lan_ip_edit else ""
+	if addr.is_empty():
+		addr = "127.0.0.1"
+	var err := NetworkManager.join_enet(addr)
+	if err == OK:
+		_lan_is_host = false
+		if _lan_status_lbl:
+			_lan_status_lbl.text = "Connecting to %s:%d…" % [addr, NetworkManager.ENET_PORT]
+		if _start_btn:
+			_start_btn.disabled = true
+			_start_btn.text = "Waiting for host…"
+	elif _lan_status_lbl:
+		_lan_status_lbl.text = "Join failed (error %d)" % err
+
+func _on_net_peer_connected(_id: int) -> void:
+	_connected_peers += 1
+	_update_lan_status()
+
+func _on_net_peer_disconnected(_id: int) -> void:
+	_connected_peers = maxi(0, _connected_peers - 1)
+	_update_lan_status()
+
+func _on_config_received(cfg: MatchConfig) -> void:
+	emit_signal("match_ready", cfg)
+
+func _update_lan_status() -> void:
+	if not _lan_status_lbl:
+		return
+	if _lan_is_host:
+		_lan_status_lbl.text = "Hosting on %s : %d" % [_get_local_ip(), NetworkManager.ENET_PORT]
+		if _lan_peer_lbl:
+			_lan_peer_lbl.text = "%d peer%s connected" % [
+				_connected_peers,
+				"s" if _connected_peers != 1 else "",
+			]
+	elif NetworkManager.mode == NetworkManager.NetMode.ENET_LAN:
+		_lan_status_lbl.text = "Connected to host"
+		if _lan_peer_lbl:
+			_lan_peer_lbl.text = ""
+
+func _get_local_ip() -> String:
+	for addr in IP.get_local_addresses():
+		var parts := addr.split(".")
+		if parts.size() == 4 and addr != "127.0.0.1":
+			return addr
+	return "localhost"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Widget factories
@@ -1984,3 +2170,183 @@ func _build_class_ability_section(class_idx: int, cls_color: Color, inactive: bo
 	)
 
 	return outer
+
+# ── Match history ─────────────────────────────────────────────────────────────
+
+func _build_history_section() -> Control:
+	var reports: Array = MatchReportSaver.load_all()
+
+	if reports.is_empty():
+		var lbl := Label.new()
+		lbl.text = "No saved matches yet."
+		lbl.add_theme_font_size_override("font_size", 10)
+		lbl.add_theme_color_override("font_color", C_FAINT)
+		return lbl
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 6)
+
+	for report in reports:
+		var row := _make_history_row(report)
+		vbox.add_child(row)
+
+	return vbox
+
+func _make_history_row(report: Dictionary) -> Control:
+	var card := _make_card()
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 10)
+	card.add_child(hbox)
+
+	# Score
+	var score_lbl := Label.new()
+	var hs: int = report.get("final_home_score", 0)
+	var as_: int = report.get("final_away_score", 0)
+	score_lbl.text = "%d – %d" % [hs, as_]
+	score_lbl.add_theme_font_size_override("font_size", 13)
+	score_lbl.add_theme_color_override("font_color", C_GOLD)
+	score_lbl.custom_minimum_size.x = 60
+	score_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hbox.add_child(score_lbl)
+
+	# Teams
+	var teams_col := VBoxContainer.new()
+	teams_col.add_theme_constant_override("separation", 1)
+	teams_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox.add_child(teams_col)
+
+	var home_lbl := Label.new()
+	home_lbl.text = report.get("home_team_name", "HOME")
+	home_lbl.add_theme_font_size_override("font_size", 10)
+	home_lbl.add_theme_color_override("font_color", Color(1.0, 0.231, 0.325))
+	teams_col.add_child(home_lbl)
+
+	var vs_lbl := Label.new()
+	vs_lbl.text = "vs  " + report.get("away_team_name", "AWAY")
+	vs_lbl.add_theme_font_size_override("font_size", 10)
+	vs_lbl.add_theme_color_override("font_color", Color(0.184, 0.514, 1.0))
+	teams_col.add_child(vs_lbl)
+
+	# Date
+	var ts: int = int(report.get("timestamp", 0))
+	var date_lbl := Label.new()
+	var dt := Time.get_datetime_dict_from_unix_time(ts)
+	date_lbl.text = "%04d-%02d-%02d" % [dt["year"], dt["month"], dt["day"]]
+	date_lbl.add_theme_font_size_override("font_size", 9)
+	date_lbl.add_theme_color_override("font_color", C_FAINT)
+	date_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hbox.add_child(date_lbl)
+
+	# VIEW button
+	var view_btn := Button.new()
+	view_btn.text = "VIEW"
+	view_btn.custom_minimum_size.x = 56
+	view_btn.pressed.connect(_show_match_report.bind(report))
+	hbox.add_child(view_btn)
+
+	return card
+
+func _show_match_report(report: Dictionary) -> void:
+	if is_instance_valid(_report_overlay):
+		_report_overlay.queue_free()
+
+	_report_overlay = Control.new()
+	_report_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_report_overlay)
+
+	# Dim background
+	var bg := ColorRect.new()
+	bg.color = Color(0, 0, 0, 0.88)
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_report_overlay.add_child(bg)
+
+	# Content panel
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.custom_minimum_size = Vector2(900, 560)
+	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	panel.grow_vertical   = Control.GROW_DIRECTION_BOTH
+	_report_overlay.add_child(panel)
+
+	var outer_margin := MarginContainer.new()
+	for side in ["left", "right", "top", "bottom"]:
+		outer_margin.add_theme_constant_override("margin_" + side, 16)
+	panel.add_child(outer_margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	outer_margin.add_child(vbox)
+
+	# Title bar
+	var title_row := HBoxContainer.new()
+	vbox.add_child(title_row)
+
+	var title_lbl := Label.new()
+	var hs: int  = report.get("final_home_score", 0)
+	var as_: int = report.get("final_away_score", 0)
+	title_lbl.text = "%s  %d – %d  %s" % [
+		report.get("home_team_name", "HOME"), hs, as_,
+		report.get("away_team_name", "AWAY"),
+	]
+	title_lbl.add_theme_font_size_override("font_size", 14)
+	title_lbl.add_theme_color_override("font_color", C_GOLD)
+	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_row.add_child(title_lbl)
+
+	var close_btn := Button.new()
+	close_btn.text = "✕  CLOSE"
+	close_btn.pressed.connect(func() -> void:
+		if is_instance_valid(_report_overlay):
+			_report_overlay.queue_free()
+			_report_overlay = null
+	)
+	title_row.add_child(close_btn)
+
+	# Animated replay player
+	var replay := preload("res://systems/MatchReplayPlayer.gd").new()
+	replay.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	replay.size_flags_vertical   = Control.SIZE_EXPAND_FILL
+	replay.custom_minimum_size   = Vector2(860, 460)
+	vbox.add_child(replay)
+	replay.setup(report)
+
+func _report_hex_vals(report: Dictionary, tid: int) -> PackedFloat32Array:
+	var kills := 0; var dmg := 0.0; var heal := 0.0
+	var ball_time := 0.0; var carries := 0; var points := 0
+	var kills_max := 1; var dmg_max := 1.0; var heal_max := 1.0
+	var bt_max := 1.0; var carries_max := 1; var pts_max := 1
+
+	for p in report.get("players", []):
+		var st: Dictionary = p.get("stats", {})
+		var k: int   = st.get("kills", 0)
+		var d: float = st.get("dmg", 0.0)
+		var h: float = st.get("heal", 0.0)
+		var bt: float = st.get("ball_time", 0.0)
+		var ca: int  = st.get("ball_carries", 0)
+		var pt: int  = st.get("points", 0)
+		kills_max   = maxi(kills_max, k)
+		dmg_max     = maxf(dmg_max, d)
+		heal_max    = maxf(heal_max, h)
+		bt_max      = maxf(bt_max, bt)
+		carries_max = maxi(carries_max, ca)
+		pts_max     = maxi(pts_max, pt)
+
+	for p in report.get("players", []):
+		if p["team_id"] != tid:
+			continue
+		var st: Dictionary = p.get("stats", {})
+		kills     += st.get("kills", 0)
+		dmg       += st.get("dmg", 0.0)
+		heal      += st.get("heal", 0.0)
+		ball_time += st.get("ball_time", 0.0)
+		carries   += st.get("ball_carries", 0)
+		points    += st.get("points", 0)
+
+	return PackedFloat32Array([
+		clampf(float(kills)     / float(kills_max   * 2), 0.0, 1.0),
+		clampf(dmg              / (dmg_max   * 2.0),       0.0, 1.0),
+		clampf(heal             / (heal_max  * 2.0),       0.0, 1.0),
+		clampf(ball_time        / (bt_max    * 2.0),       0.0, 1.0),
+		clampf(float(carries)   / float(carries_max * 2), 0.0, 1.0),
+		clampf(float(points)    / float(pts_max    * 2), 0.0, 1.0),
+	])

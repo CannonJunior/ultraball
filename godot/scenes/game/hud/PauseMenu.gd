@@ -7,11 +7,10 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	z_index = 100
 	visible = false
 	_build_ui()
-
-func _process(_delta: float) -> void:
-	visible = MatchState.is_paused
+	EventBus.game_paused.connect(func(paused: bool): visible = paused)
 
 func _build_ui() -> void:
 	var overlay := ColorRect.new()
@@ -20,12 +19,13 @@ func _build_ui() -> void:
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(overlay)
 
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(center)
+
 	var card := _make_panel(C_BG)
-	card.anchor_left = 0.5; card.anchor_right = 0.5
-	card.anchor_top = 0.5; card.anchor_bottom = 0.5
-	card.offset_left = -175; card.offset_right = 175
-	card.offset_top = -120; card.offset_bottom = 120
-	add_child(card)
+	center.add_child(card)
 
 	var margin := MarginContainer.new()
 	for s in ["left", "right", "top", "bottom"]:
@@ -75,6 +75,7 @@ func _make_button(label: String) -> Button:
 func _on_resume_pressed() -> void:
 	MatchState.is_paused = false
 	get_tree().paused = false
+	EventBus.game_paused.emit(false)
 
 func _on_exit_pressed() -> void:
 	get_tree().paused = false

@@ -39,6 +39,11 @@ func _ready() -> void:
 	var hud_control: Control = _HUD.new()
 	hud.add_child(hud_control)
 
+	# Ability VFX layer — world-space one-shot effects (self-disables in 3D modes)
+	var vfx_layer := preload("res://systems/AbilityVfxLayer.gd").new()
+	vfx_layer.name = "AbilityVfxLayer"
+	add_child(vfx_layer)
+
 	# 3D/3Q visual layer — hides 2D world and renders a live 3D mirror
 	if match_config.view_mode != MatchConfig.ViewMode.FLAT_2D:
 		var view_layer := preload("res://systems/ViewLayer3D.gd").new()
