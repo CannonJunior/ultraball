@@ -24,12 +24,12 @@ const CELL_W    := FW / float(GRID_NX)
 const CELL_H    := FH / float(GRID_NY)
 
 # ── Height / threat ───────────────────────────────────────────────────────────
-const HEIGHT_SCALE    := 10.0   # world-units of maximum terrain lift
-const BALL_ACCUM      := 0.35   # threat per ball_path sample in a cell
-const CROSSING_BOOST  := 1.20   # threat per phase_crossing event
-const SCORE_PERM      := 3.00   # permanent threat added per goal in endzone cols
-const PULSE_PEAK      := 14.0   # initial surge height on goal (world-units, pre-scale)
-const PULSE_DECAY     := 3.50   # surge decay per second
+const HEIGHT_SCALE    := 30.0   # world-units of maximum terrain lift
+const BALL_ACCUM      := 0.50   # threat per ball_path sample in a cell
+const CROSSING_BOOST  := 1.50   # threat per phase_crossing event
+const SCORE_PERM      := 4.00   # permanent threat added per goal in endzone cols
+const PULSE_PEAK      := 32.0   # initial surge height on goal (pre-normalise raw units)
+const PULSE_DECAY     := 3.00   # surge decay per second
 
 # ── Dramatic-time ─────────────────────────────────────────────────────────────
 const PACE_NORMAL  := 0.30
@@ -80,6 +80,13 @@ var _viewport:    SubViewport    = null
 var _camera:      Camera3D       = null
 var _terrain_mi:  MeshInstance3D = null
 var _ball_mi:     MeshInstance3D = null
+
+# ── Camera orbit ──────────────────────────────────────────────────────────────
+var _cam_yaw:    float   = 0.0          # rotation around Y (radians)
+var _cam_pitch:  float   = 0.32         # elevation angle from horizontal (radians)
+var _cam_radius: float   = 92.0         # distance from field centre
+var _drag_active: bool   = false
+var _drag_last:   Vector2 = Vector2.ZERO
 
 # ── UI refs ────────────────────────────────────────────────────────────────────
 var _play_btn:  Button  = null
@@ -193,6 +200,8 @@ func _build_viewport() -> void:
 	container.stretch = true
 	container.set_anchors_preset(Control.PRESET_FULL_RECT)
 	container.offset_bottom = -102.0   # momentum strip + control bar
+	# Pass mouse events through so MatchReplayPlayer._gui_input handles orbit drag
+	container.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(container)
 
 	_viewport = SubViewport.new()
@@ -224,14 +233,13 @@ func _build_viewport() -> void:
 	fill.light_color      = Color(0.50, 0.62, 0.95)
 	_viewport.add_child(fill)
 
-	# Camera: oblique 3/4 view, elevated front-centre
+	# Camera: initial position computed from orbit state, updated via _update_camera_pos()
 	_camera = Camera3D.new()
-	_camera.fov  = 60.0
+	_camera.fov  = 62.0
 	_camera.near = 0.5
-	_camera.far  = 500.0
-	_camera.global_position = Vector3(70.0, 42.0, 72.0)
-	_camera.look_at(Vector3(70.0, 3.0, -20.0))
+	_camera.far  = 600.0
 	_viewport.add_child(_camera)
+	_update_camera_pos()
 
 	# Terrain mesh
 	var mat := StandardMaterial3D.new()
@@ -282,6 +290,16 @@ func _build_ui() -> void:
 	add_child(_away_lbl)
 
 	_update_score_labels()
+
+	# Orbit hint
+	var hint := Label.new()
+	hint.text = "drag to rotate  ·  scroll to zoom"
+	hint.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.offset_top = 8.0
+	hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.28))
+	hint.add_theme_font_size_override("font_size", 11)
+	add_child(hint)
 
 	# Momentum strip (positioned above control bar)
 	_strip = Control.new()
@@ -570,25 +588,32 @@ func _apply_gaussian_blur() -> void:
 	# Start from threat + pulse
 	for i in _smooth.size():
 		_smooth[i] = _threat[i] + _pulse[i]
-	# Two passes of 3×3 box blur
-	for _pass in 2:
-		var tmp: PackedFloat32Array = _smooth.duplicate()
-		for row in GRID_NY:
-			for col in GRID_NX:
-				var sum: float = 0.0; var cnt: float = 0.0
-				for dr in range(-1, 2):
-					for dc in range(-1, 2):
-						var r2: int = row + dr; var c2: int = col + dc
-						if r2 >= 0 and r2 < GRID_NY and c2 >= 0 and c2 < GRID_NX:
-							sum += tmp[r2 * GRID_NX + c2]; cnt += 1.0
-				_smooth[row * GRID_NX + col] = sum / cnt
+	# One pass of a weighted 3×3 kernel (centre=4, edge=2, corner=1, sum=16)
+	# Preserves peaks better than two unweighted passes.
+	var tmp: PackedFloat32Array = _smooth.duplicate()
+	for row in GRID_NY:
+		for col in GRID_NX:
+			var sum: float = 0.0
+			for dr in range(-1, 2):
+				for dc in range(-1, 2):
+					var r2: int = row + dr; var c2: int = col + dc
+					if r2 < 0 or r2 >= GRID_NY or c2 < 0 or c2 >= GRID_NX:
+						continue
+					# Weight: centre=4, cardinal neighbours=2, corners=1
+					var w: float = 1.0
+					if dr == 0 and dc == 0: w = 4.0
+					elif dr == 0 or dc == 0: w = 2.0
+					sum += tmp[r2 * GRID_NX + c2] * w
+			_smooth[row * GRID_NX + col] = sum / 16.0
 
 func _sample_height(col: int, row: int) -> float:
 	var gc: int = clampi(col, 0, GRID_NX - 1)
 	var gr: int = clampi(row, 0, GRID_NY - 1)
 	var raw: float = _smooth[gr * GRID_NX + gc]
-	# Normalise: threat ≥ 4.0 reaches full height; scale softly
-	return clampf(raw / maxf(4.0, _max_threat * 0.6), 0.0, 1.0)
+	# sqrt normalization: sensitive to small threat values, saturates at max.
+	# Even 1-2 ball samples produce visible height; hotspots spike dramatically.
+	var norm: float = clampf(raw / maxf(1.0, _max_threat), 0.0, 1.0)
+	return sqrt(norm)
 
 func _vertex_color(col_f: float) -> Color:
 	var seam: float = _seam_norm * float(GRID_NX)
@@ -599,6 +624,43 @@ func _vertex_color(col_f: float) -> Color:
 	# Bright seam highlight within ±0.7 columns
 	var seam_t: float = maxf(0.0, 1.0 - absf(sd) / 0.70)
 	return base.lerp(Color(1.0, 1.0, 1.0), seam_t * 0.55)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Camera orbit
+# ─────────────────────────────────────────────────────────────────────────────
+
+func _update_camera_pos() -> void:
+	if not is_instance_valid(_camera): return
+	# Orbit around field centre at ground level
+	var centre := Vector3(FW * 0.5, 0.0, -FH * 0.5)
+	var r: float = _cam_radius
+	var p: float = _cam_pitch
+	var y: float = _cam_yaw
+	var cx: float = centre.x + r * cos(p) * sin(y)
+	var cy: float = centre.y + r * sin(p)
+	var cz: float = centre.z + r * cos(p) * cos(y)
+	_camera.look_at_from_position(Vector3(cx, cy, cz),
+			centre + Vector3(0.0, HEIGHT_SCALE * 0.25, 0.0))
+
+func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mb: InputEventMouseButton = event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT:
+			_drag_active = mb.pressed
+			_drag_last   = mb.position
+		elif mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.pressed:
+			_cam_radius = maxf(_cam_radius - 10.0, 35.0)
+			_update_camera_pos()
+		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
+			_cam_radius = minf(_cam_radius + 10.0, 220.0)
+			_update_camera_pos()
+	elif event is InputEventMouseMotion and _drag_active:
+		var mm: InputEventMouseMotion = event as InputEventMouseMotion
+		var delta: Vector2 = mm.position - _drag_last
+		_drag_last  = mm.position
+		_cam_yaw   -= delta.x * 0.007
+		_cam_pitch  = clampf(_cam_pitch - delta.y * 0.005, 0.10, PI * 0.44)
+		_update_camera_pos()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Momentum strip (drawn on _strip child via draw signal)

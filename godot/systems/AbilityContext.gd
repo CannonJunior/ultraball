@@ -29,12 +29,14 @@ static func build(
 	caster_id_: String,
 	target_id_: String,
 	aim_pos: Vector2,
-	all_players: Array
+	all_players: Array,
+	caster_facing_: float = 0.0
 ) -> AbilityContext:
 	var ctx := AbilityContext.new()
-	ctx.caster_id = caster_id_
-	ctx.target_id = target_id_
-	ctx.aim_position = aim_pos
+	ctx.caster_id      = caster_id_
+	ctx.target_id      = target_id_
+	ctx.aim_position   = aim_pos
+	ctx.caster_facing  = caster_facing_
 
 	var caster_record: MatchState.PlayerRecord = MatchState.players.get(caster_id_)
 	if caster_record:

@@ -410,15 +410,13 @@ func _make_card(pid: String) -> Control:
 	kill_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	av.add_child(kill_lbl)
 
-	# Selection outline (home team only) drawn on top
-	var outline: _SelectedOutline = null
-	if team == 0:
-		outline = _SelectedOutline.new()
-		outline.set_anchors_preset(Control.PRESET_FULL_RECT)
-		outline.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		av.add_child(outline)
-		av.mouse_filter = Control.MOUSE_FILTER_STOP
-		av.gui_input.connect(_on_avatar_clicked.bind(pid))
+	# Target outline on all cards; click sets explicit target on the local player
+	var outline := _SelectedOutline.new()
+	outline.set_anchors_preset(Control.PRESET_FULL_RECT)
+	outline.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	av.add_child(outline)
+	av.mouse_filter = Control.MOUSE_FILTER_STOP
+	av.gui_input.connect(_on_avatar_clicked.bind(pid))
 
 	# Health bar
 	var hp_bar: _HpBar = _HpBar.new()
@@ -440,16 +438,18 @@ func _on_avatar_clicked(event: InputEvent, pid: String) -> void:
 	if not (event is InputEventMouseButton): return
 	var mb := event as InputEventMouseButton
 	if not (mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT): return
-	var node := _get_player_node(pid)
-	if node == null or not node.is_alive or not node.is_on_field: return
-	NetworkManager.local_player_id = pid
+	var local := _get_player_node(NetworkManager.local_player_id)
+	if local == null: return
+	local.set_explicit_target(pid)
+	_refresh_selection_outlines()
 
 func _refresh_selection_outlines() -> void:
-	var sel := NetworkManager.local_player_id
+	var local := _get_player_node(NetworkManager.local_player_id)
+	var target_id: String = local.current_target_id if local != null else ""
 	for pid: String in _card_entries:
 		var outline = _card_entries[pid].get("outline")
 		if outline == null: continue
-		if pid == sel:
+		if pid == target_id:
 			(outline as _SelectedOutline).set_selected(C_GOLD)
 		else:
 			(outline as _SelectedOutline).clear_selected()

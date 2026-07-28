@@ -22,6 +22,9 @@ var _phase_lines_activated: Array[bool] = [true, true, true, true, true]
 ## Per-possession 3-team phase line flags: 9 flags = 3 teams × 3 lines.
 var _phase_lines_3t: Array[bool] = [true, true, true, true, true, true, true, true, true]
 
+## player_id → seconds remaining before they may re-acquire the ball.
+var _possession_cooldowns: Dictionary = {}
+
 var _prev_ball_x: float = 70.0
 var _prev_ball_pos: Vector2 = Vector2(70.0, 20.0)
 
@@ -36,6 +39,10 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if not MatchState.match_active or MatchState.act_ended: return
 	var ball := MatchState.ball
+	for pid: String in _possession_cooldowns.keys():
+		_possession_cooldowns[pid] = _possession_cooldowns[pid] - delta
+		if _possession_cooldowns[pid] <= 0.0:
+			_possession_cooldowns.erase(pid)
 
 	if not ball.holder_id.is_empty():
 		_update_held(ball, delta)
@@ -167,6 +174,7 @@ func _check_endzone_scoring_3t(ball: MatchState.BallStateRecord) -> void:
 func _check_pickups(ball: MatchState.BallStateRecord) -> void:
 	for player in get_tree().get_nodes_in_group("players"):
 		if not player.is_alive: continue
+		if _possession_cooldowns.has(player.player_id): continue
 		if player.global_position.distance_to(ball.position) <= PICKUP_RADIUS:
 			_give_ball(ball, player.player_id)
 			return
@@ -176,6 +184,7 @@ func _check_catches(ball: MatchState.BallStateRecord) -> void:
 	for player in get_tree().get_nodes_in_group("players"):
 		if not player.is_alive: continue
 		if player.player_id == ball.holder_id: continue
+		if _possession_cooldowns.has(player.player_id): continue
 		if player.global_position.distance_to(ball.position) > CATCH_RADIUS: continue
 
 		if player.team_id == thrower_team:
@@ -194,7 +203,13 @@ func _handle_interception(ball: MatchState.BallStateRecord, interceptor: Node) -
 	EventBus.ball_caught.emit(interceptor.player_id)
 	EventBus.event_message_shown.emit("INTERCEPTED!", 2.0)
 
+func _start_possession_cooldown(pid: String) -> void:
+	var cd: float = GameSettings.ball_possession_cooldown
+	if cd > 0.0 and not pid.is_empty():
+		_possession_cooldowns[pid] = cd
+
 func _give_ball(ball: MatchState.BallStateRecord, player_id: String) -> void:
+	_start_possession_cooldown(ball.holder_id)
 	ball.holder_id = player_id
 	ball.possessing_team_id = MatchState.team_for_player(player_id)
 	ball.is_in_flight = false
@@ -221,6 +236,7 @@ func throw_ball(thrower_id: String, direction: Vector2, speed: float, is_charged
 	var ball := MatchState.ball
 	if ball.holder_id != thrower_id: return
 	ball.charge_at_throw = ball.charge_timer
+	_start_possession_cooldown(thrower_id)
 	ball.holder_id = ""
 	ball.is_in_flight = true
 	ball.is_charged_throw = is_charged
@@ -263,6 +279,7 @@ func _on_act_transition(_next_act: int) -> void:
 	_reset_ball_to_centre()
 
 func _reset_ball_to_centre() -> void:
+	_possession_cooldowns.clear()
 	var ball := MatchState.ball
 	var centre := Vector2(MatchState.FIELD3_CX, MatchState.FIELD3_CY) \
 		if MatchState.is_three_team else Vector2(70.0, 20.0)
@@ -287,6 +304,7 @@ func _reset_ball_to_centre() -> void:
 
 func _drop_ball(ball: MatchState.BallStateRecord, pos: Vector2, cause: String) -> void:
 	if not ball.holder_id.is_empty():
+		_start_possession_cooldown(ball.holder_id)
 		ball.holder_id = ""
 		ball.possessing_team_id = -1
 		ball.is_in_flight = false

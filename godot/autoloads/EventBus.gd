@@ -51,6 +51,8 @@ signal game_over(winner_team_id: int, final_home: int, final_away: int, final_th
 signal terrain_modified(event_type: String, world_pos: Vector2, radius: float, duration: float, intensity: float)
 signal pit_opened(world_pos: Vector2, radius: float, duration: float)
 signal terrain_reset(cell_col: int, cell_row: int)
+## Emitted whenever fine elevation_heights change (hill/valley set or cleared).
+signal terrain_elevation_changed()
 signal trap_spawn_requested(world_pos: Vector2, owner_team_id: int, trap_radius: float, snare_duration: float, slow_factor: float, trap_timer: float)
 
 # ── Creature ───────────────────────────────────────────────────────────────────

@@ -25,6 +25,17 @@ const C_SKY       := Color(0.05, 0.08, 0.14)
 
 const CAM_LERP := 8.0
 
+# Terrain height mesh constants — coarse 29×9 vertex grid over the play field
+const TERRAIN_NX       := 29        # 28 coarse columns + 1
+const TERRAIN_NY       :=  9        # 8 coarse rows + 1
+const TERRAIN_DX       :=  5.0      # metres per coarse column
+const TERRAIN_DY       :=  5.0      # metres per coarse row
+const TERRAIN_ELEV_COLS := 168
+const TERRAIN_ELEV_ROWS :=  48
+const TERRAIN_ELEV_CW  := 140.0 / 168.0
+const TERRAIN_ELEV_CH  :=  40.0 / 48.0
+const TERRAIN_Y_BASE   :=  0.01     # at field surface level
+
 # Throw arc preview constants — match BallSystem values exactly
 const ARC_STEPS       := 16
 const ARC_FLIGHT_TIME := 1.5     # seconds: dist(30m) / speed(20m/s)
@@ -54,6 +65,10 @@ var _arc_land:         MeshInstance3D     = null
 var _charge_ring_mat:  StandardMaterial3D = null
 var _charge_ring_segs: Array              = []  # CHARGE_SEGS MeshInstance3D boxes
 
+var _terrain_mesh_inst: MeshInstance3D    = null
+var _terrain_mat:       StandardMaterial3D = null
+var _terrain_dirty:     bool               = false
+
 # FULL_3D camera state
 var _camera_mode: int = CameraMode.BROADCAST
 var _ball_cam: bool = false
@@ -80,6 +95,7 @@ func _process(delta: float) -> void:
 	_sync_target_bracket()
 	_sync_throw_arc()
 	_sync_charge_ring()
+	_sync_terrain()
 	_update_camera(delta)
 
 func _input(event: InputEvent) -> void:
@@ -170,22 +186,12 @@ func _build_world() -> void:
 	fill.light_color      = Color(0.55, 0.65, 0.90)
 	_viewport.add_child(fill)
 
-	# Field surface: 2D x∈[0,140] y∈[0,40] → 3D X∈[0,140] Z∈[0,−40]
-	# Side channels extend outside: y∈[−10,0] top (3D Z∈[0,10]) and y∈[40,50] bottom (3D Z∈[−50,−40])
-	# Endzones
-	_add_box(Vector3( 10.0, 0.010, -20.0), Vector3(20.0, 0.04, 40.0), C_ENDZONE_H)
-	_add_box(Vector3(130.0, 0.010, -20.0), Vector3(20.0, 0.04, 40.0), C_ENDZONE_A)
+	# Field surface: terrain mesh replaces the flat surface for x∈[0,140] y∈[0,40].
+	# Zone colours (endzone, channel, field) are encoded in the terrain mesh vertex colours.
 
-	# End creature channels (inside field): x∈[20,30] and x∈[110,120], full y∈[0,40]
-	_add_box(Vector3( 25.0, 0.010, -20.0), Vector3(10.0, 0.04, 40.0), C_CHANNEL)
-	_add_box(Vector3(115.0, 0.010, -20.0), Vector3(10.0, 0.04, 40.0), C_CHANNEL)
-
-	# Side creature channels (outside field): y∈[−10,0] and y∈[40,50], x∈[20,120]
+	# Side creature channels (outside terrain mesh, y∈[−10,0] and y∈[40,50], x∈[20,120])
 	_add_box(Vector3(70.0, 0.010,   5.0), Vector3(100.0, 0.04, 10.0), C_CHANNEL)  # top
 	_add_box(Vector3(70.0, 0.010, -45.0), Vector3(100.0, 0.04, 10.0), C_CHANNEL)  # bottom
-
-	# Inner green playing field: x∈[30,110], full y∈[0,40]
-	_add_box(Vector3(70.0, 0.020, -20.0), Vector3(80.0, 0.04, 40.0), C_FIELD)
 
 	# Phase lines at x = 50, 70, 90 spanning full inner field height
 	for xm: float in [50.0, 70.0, 90.0]:
@@ -222,6 +228,21 @@ func _build_world() -> void:
 	# End walls at x=0 and x=140
 	_add_box(Vector3(  0.0, 0.06, -20.0), Vector3(0.20, 0.12, 42.0), Color(1, 1, 1, 0.3))
 	_add_box(Vector3(140.0, 0.06, -20.0), Vector3(0.20, 0.12, 42.0), Color(1, 1, 1, 0.3))
+
+	# Terrain height mesh — IS the field surface (replaces flat zone boxes).
+	# Rebuilt whenever elevation or pit data changes; also built once on startup.
+	_terrain_mat = StandardMaterial3D.new()
+	_terrain_mat.vertex_color_use_as_albedo = true
+	_terrain_mat.shading_mode  = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+	_terrain_mat.cull_mode     = BaseMaterial3D.CULL_DISABLED
+	_terrain_mesh_inst = MeshInstance3D.new()
+	_terrain_mesh_inst.mesh              = ArrayMesh.new()
+	_terrain_mesh_inst.material_override = _terrain_mat
+	_viewport.add_child(_terrain_mesh_inst)
+	EventBus.terrain_elevation_changed.connect(func() -> void: _terrain_dirty = true)
+	EventBus.pit_opened.connect(func(_p: Vector2, _r: float, _d: float) -> void: _terrain_dirty = true)
+	EventBus.terrain_reset.connect(func(_c: int, _row: int) -> void: _terrain_dirty = true)
+	_terrain_dirty = true  # build flat field surface on first _process tick
 
 	_camera = Camera3D.new()
 	_camera.near = 0.5
@@ -326,7 +347,8 @@ func _sync_players() -> void:
 		if alive:
 			var p: Vector2 = node.global_position
 			var zh: float = float(node.get("z_height")) * 0.6
-			root.global_position = Vector3(p.x, 0.81 + zh, -p.y)
+			var th: float = _terrain_sample_at(p)
+			root.global_position = Vector3(p.x, 0.81 + zh + th, -p.y)
 			# W moves in direction (sin θ, -cos θ) in 2D = (sin θ, 0, cos θ) in 3D.
 			# Make local -Z point there: root.rotation.y = θ + π.
 			root.rotation.y = float(node.get("global_rotation")) + PI
@@ -340,7 +362,8 @@ func _sync_ball() -> void:
 		return
 	var p: Vector2 = _ball_node.global_position
 	var zh: float = MatchState.ball.z_height * 0.6 if MatchState.ball != null else 0.0
-	_ball_mesh.global_position = Vector3(p.x, 0.4 + zh, -p.y)
+	var th: float = _terrain_sample_at(p)
+	_ball_mesh.global_position = Vector3(p.x, 0.4 + zh + th, -p.y)
 
 func _sync_creature() -> void:
 	if _creature_mesh == null or not is_instance_valid(_creature_node):
@@ -549,6 +572,104 @@ func _sync_charge_ring() -> void:
 			seg.visible = true
 		else:
 			seg.visible = false
+
+# ── Terrain height mesh ───────────────────────────────────────────────────────
+
+func _sync_terrain() -> void:
+	if not _terrain_dirty or _terrain_mesh_inst == null:
+		return
+	if MatchState.terrain == null:
+		return
+	var elev: PackedFloat32Array = MatchState.terrain.elevation_heights
+	if elev.is_empty():
+		return
+	_terrain_dirty = false
+	_rebuild_terrain_mesh(elev)
+
+func _rebuild_terrain_mesh(elev: PackedFloat32Array) -> void:
+	var verts  := PackedVector3Array()
+	var norms  := PackedVector3Array()
+	var cols   := PackedColorArray()
+	var inds   := PackedInt32Array()
+
+	# Pass 1: sample fine elevation at coarse vertex positions.
+	var heights := PackedFloat32Array()
+	heights.resize(TERRAIN_NX * TERRAIN_NY)
+	for r in TERRAIN_NY:
+		for c in TERRAIN_NX:
+			var fc := mini(c * 6, TERRAIN_ELEV_COLS - 1)
+			var fr := mini(r * 6, TERRAIN_ELEV_ROWS - 1)
+			heights[r * TERRAIN_NX + c] = elev[fr * TERRAIN_ELEV_COLS + fc]
+
+	# Pass 2: override vertices inside pit cells with a deep depression.
+	var pits: PackedByteArray = MatchState.terrain.cell_is_pit if MatchState.terrain != null else PackedByteArray()
+	if pits.size() == 224:
+		for r in TERRAIN_NY:
+			for c in TERRAIN_NX:
+				var cc := mini(c, 27)
+				var cr := mini(r, 7)
+				if pits[cr * 28 + cc] != 0:
+					heights[r * TERRAIN_NX + c] = -6.0
+
+	# Pass 3: build vertex geometry.
+	for r in TERRAIN_NY:
+		for c in TERRAIN_NX:
+			var h: float  = heights[r * TERRAIN_NX + c]
+			var x: float  = float(c) * TERRAIN_DX
+			var z: float  = -float(r) * TERRAIN_DY
+			verts.append(Vector3(x, TERRAIN_Y_BASE + h, z))
+
+			var hl: float = heights[r * TERRAIN_NX + maxi(c - 1, 0)]
+			var hr: float = heights[r * TERRAIN_NX + mini(c + 1, TERRAIN_NX - 1)]
+			var hu: float = heights[maxi(r - 1, 0) * TERRAIN_NX + c]
+			var hd: float = heights[mini(r + 1, TERRAIN_NY - 1) * TERRAIN_NX + c]
+			norms.append(Vector3(hl - hr, 2.0 * TERRAIN_DX, hd - hu).normalized())
+
+			var rgb: Color
+			if h <= -5.0:
+				rgb = Color(0.08, 0.06, 0.04)  # dark pit floor
+			else:
+				var t: float    = clampf(h / 4.0, -1.0, 1.0)
+				var base: Color = _terrain_zone_color(x)
+				if t > 0.0:
+					rgb = base.lerp(Color(0.72, 0.58, 0.24), t * 0.70)
+				else:
+					rgb = base.lerp(Color(0.06, 0.12, 0.38), -t * 0.70)
+			cols.append(Color(rgb.r, rgb.g, rgb.b, 1.0))
+
+	for r in TERRAIN_NY - 1:
+		for c in TERRAIN_NX - 1:
+			var i := r * TERRAIN_NX + c
+			inds.append(i);             inds.append(i + TERRAIN_NX); inds.append(i + 1)
+			inds.append(i + 1);         inds.append(i + TERRAIN_NX); inds.append(i + TERRAIN_NX + 1)
+
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = norms
+	arrays[Mesh.ARRAY_COLOR]  = cols
+	arrays[Mesh.ARRAY_INDEX]  = inds
+
+	var am := _terrain_mesh_inst.mesh as ArrayMesh
+	am.clear_surfaces()
+	if not verts.is_empty():
+		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+
+func _terrain_zone_color(x: float) -> Color:
+	if x < 20.0:  return C_ENDZONE_H
+	if x > 120.0: return C_ENDZONE_A
+	if x < 30.0 or x > 110.0: return C_CHANNEL
+	return C_FIELD
+
+func _terrain_sample_at(world_pos: Vector2) -> float:
+	if MatchState.terrain == null:
+		return 0.0
+	var elev: PackedFloat32Array = MatchState.terrain.elevation_heights
+	if elev.is_empty():
+		return 0.0
+	var c := clampi(int(world_pos.x / TERRAIN_ELEV_CW), 0, TERRAIN_ELEV_COLS - 1)
+	var r := clampi(int(world_pos.y / TERRAIN_ELEV_CH), 0, TERRAIN_ELEV_ROWS - 1)
+	return elev[r * TERRAIN_ELEV_COLS + c]
 
 # ── Screen projection ─────────────────────────────────────────────────────────
 

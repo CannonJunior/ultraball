@@ -353,9 +353,14 @@ func _make_stat_row(rank: int, r: Dictionary, max_dmg: float, max_heal: float, i
 	var row := _col_row()
 	row.custom_minimum_size.y = 48
 
+	var local_pid := NetworkManager.local_player_id
+	var is_local: bool = not local_pid.is_empty() and r.get("pid", "") == local_pid
+
 	var team_col: Color = C_HOME if r.team == 0 else (C_AWAY if r.team == 1 else Color(0.2, 0.9, 0.3))
 	var row_bg: Color
-	if is_leader:
+	if is_leader and is_local:
+		row_bg = Color(C_GOLD.r, C_GOLD.g, C_GOLD.b, 0.12)
+	elif is_leader or is_local:
 		row_bg = Color(C_GOLD.r, C_GOLD.g, C_GOLD.b, 0.07)
 	elif r.team == 0:
 		row_bg = Color(C_HOME.r, C_HOME.g, C_HOME.b, 0.05)
@@ -403,6 +408,12 @@ func _make_stat_row(rank: int, r: Dictionary, max_dmg: float, max_heal: float, i
 	badge_style.bg_color = team_col
 	badge_style.corner_radius_top_left = 6; badge_style.corner_radius_top_right = 6
 	badge_style.corner_radius_bottom_left = 6; badge_style.corner_radius_bottom_right = 6
+	if is_local:
+		badge_style.border_width_left   = 2
+		badge_style.border_width_right  = 2
+		badge_style.border_width_top    = 2
+		badge_style.border_width_bottom = 2
+		badge_style.border_color = C_GOLD
 	badge_panel.add_theme_stylebox_override("panel", badge_style)
 	var badge_lbl := _lbl(r.name[0], Color.WHITE, 13)
 	badge_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

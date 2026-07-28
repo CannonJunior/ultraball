@@ -119,6 +119,8 @@ func _spawn_player(rec: MatchState.PlayerRecord) -> void:
 	node.team_id = rec.team_id
 	node.class_definition = GameRegistry.get_class_definition(rec.class_id)
 	node.global_position = _team_spawn_position(rec.team_id, rec.deploy_slot)
+	if rec.player_id == NetworkManager.local_player_id:
+		node.global_rotation = _team_spawn_rotation(rec.team_id)
 	node.is_on_field = true
 	node.is_alive = true
 	add_child(node)
@@ -136,10 +138,20 @@ func _team_spawn_position(team_id: int, slot: int) -> Vector2:
 	var n := match_config.players_per_side if match_config else 7
 	var row := 5.0 + (float(slot) / float(max(1, n - 1))) * 30.0
 	match team_id:
-		0: return Vector2(10.0, row)
-		1: return Vector2(130.0, row)
+		0: return Vector2(20.0, row)
+		1: return Vector2(120.0, row)
 		2: return Vector2(70.0, row)
 	return Vector2(70.0, 20.0)
+
+func _team_spawn_rotation(team_id: int) -> float:
+	if MatchState.is_three_team:
+		# Face inward: forward = -norm, so rotation = atan2(-norm.x, norm.y)
+		var norm: Vector2 = MatchState.TEAM3_NORMALS[team_id]
+		return atan2(-norm.x, norm.y)
+	match team_id:
+		0: return PI * 0.5   # face right toward field centre
+		1: return -PI * 0.5  # face left toward field centre
+	return 0.0
 
 # ── Match start ────────────────────────────────────────────────────────────────
 
@@ -153,6 +165,9 @@ func _spawn_ai_directors() -> void:
 	var cfg := MatchState.config
 	var team_count := 3 if MatchState.is_three_team else 2
 	for t in range(0, team_count):
+		# In test mode the away unit is a stationary dummy — no AI director.
+		if cfg.test_mode and t == 1:
+			continue
 		var director := AiDirector.new()
 		director.name = "AiDirector_Team%d" % t
 		director.team_id = t

@@ -162,6 +162,7 @@ func _update_fine_elevation(world_pos: Vector2, radius: float, intensity: float,
 			var noise := (float(hash % 10000) / 10000.0 * 2.0 - 1.0) * noise_amp
 			var final_h := clampf(h + noise, minf(max_h, 0.0), maxf(max_h, 0.0))
 			elev[row * ELEV_COLS + col] = final_h
+	EventBus.terrain_elevation_changed.emit()
 
 func _clear_fine_elevation(world_pos: Vector2, radius: float) -> void:
 	var col_min := clampi(int((world_pos.x - radius) / ELEV_CELL_W), 0, ELEV_COLS - 1)
@@ -172,6 +173,7 @@ func _clear_fine_elevation(world_pos: Vector2, radius: float) -> void:
 	for col in range(col_min, col_max + 1):
 		for row in range(row_min, row_max + 1):
 			elev[row * ELEV_COLS + col] = 0.0
+	EventBus.terrain_elevation_changed.emit()
 
 # ── Elevation lerping (coarse grid) ───────────────────────────────────────────
 

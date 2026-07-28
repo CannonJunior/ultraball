@@ -127,7 +127,7 @@ func _fire_ability(caster_id: String, slot: int) -> void:
 
 	# Build context
 	var all_players := get_tree().get_nodes_in_group("players")
-	var ctx := AbilityContext.build(caster_id, target_id, aim_pos, all_players)
+	var ctx := AbilityContext.build(caster_id, target_id, aim_pos, all_players, player_node.global_rotation)
 
 	# Apply effects in order
 	for effect in definition.effects:

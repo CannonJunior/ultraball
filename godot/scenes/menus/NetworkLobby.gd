@@ -21,6 +21,7 @@ const C_DESC   := Color(1, 1, 1, 0.60)
 # ── State ─────────────────────────────────────────────────────────────────────
 var _match_mode        : int  = 0   # 0=TwoTeam 1=ThreeTeam
 var _fast_mode         : bool = false
+var _test_mode         : bool = false
 var _view_mode         : int  = 0   # 0=FLAT 1=THREE_QUARTER 2=FULL_3D
 var _creature          : int  = 4   # neutral creature (defaults to Chaos)
 var _home_team         : int  = 0   # index into TEAMS
@@ -419,6 +420,32 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 	_dur_btns = [btn_norm, btn_fast]
 	btn_norm.pressed.connect(_set_fast_mode.bind(false))
 	btn_fast.pressed.connect(_set_fast_mode.bind(true))
+
+	# ── Test Mode ─────────────────────────────────────────────────────────────
+	var test_card := _make_card()
+	inner.add_child(test_card)
+	var test_vbox := VBoxContainer.new()
+	test_vbox.add_theme_constant_override("separation", 10)
+	test_card.add_child(test_vbox)
+	test_vbox.add_child(_make_field_label("TEST MODE"))
+	test_vbox.add_child(_make_hint("1 unit vs. a stationary Target Dummy — no AI, no creatures"))
+	var test_row := HBoxContainer.new()
+	test_row.add_theme_constant_override("separation", 8)
+	test_vbox.add_child(test_row)
+	var btn_test_off := _make_speed_btn("OFF", "Normal match", not _test_mode)
+	var btn_test_on  := _make_speed_btn("ON",  "Training",     _test_mode)
+	btn_test_off.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn_test_on.size_flags_horizontal  = Control.SIZE_EXPAND_FILL
+	test_row.add_child(btn_test_off)
+	test_row.add_child(btn_test_on)
+	btn_test_off.pressed.connect(func() -> void:
+		_test_mode = false
+		_update_speed_btn(btn_test_off, true)
+		_update_speed_btn(btn_test_on,  false))
+	btn_test_on.pressed.connect(func() -> void:
+		_test_mode = true
+		_update_speed_btn(btn_test_off, false)
+		_update_speed_btn(btn_test_on,  true))
 
 	# ── Units Per Side ────────────────────────────────────────────────────────
 	var units_card := _make_card()
@@ -840,6 +867,7 @@ func _save_lobby_state() -> void:
 	f.set_value("lobby", "creature",        _creature)
 	f.set_value("lobby", "match_mode",      _match_mode)
 	f.set_value("lobby", "fast_mode",       _fast_mode)
+	f.set_value("lobby", "test_mode",       _test_mode)
 	f.set_value("lobby", "view_mode",       _view_mode)
 	f.set_value("lobby", "players_per_side",_players_per_side)
 	f.set_value("lobby", "home_roster",     _home_roster)
@@ -856,6 +884,7 @@ func _load_lobby_state() -> void:
 	_creature        = f.get_value("lobby", "creature",         _creature)
 	_match_mode      = f.get_value("lobby", "match_mode",       _match_mode)
 	_fast_mode       = f.get_value("lobby", "fast_mode",        _fast_mode)
+	_test_mode       = f.get_value("lobby", "test_mode",        _test_mode)
 	_view_mode       = f.get_value("lobby", "view_mode",        _view_mode)
 	_players_per_side= f.get_value("lobby", "players_per_side", _players_per_side)
 	var roster: Array = f.get_value("lobby", "home_roster", [])
@@ -887,6 +916,12 @@ func _build_config() -> MatchConfig:
 	cfg.is_human_controlled    = [true, false, false]
 	cfg.inactive_class_indices = PackedInt32Array(_inactive_classes)
 	cfg.players_per_side       = _players_per_side
+	cfg.test_mode              = _test_mode
+	if _test_mode:
+		cfg.players_per_side   = 1
+		cfg.away_team_name     = "TRAINING"
+		cfg.away_player_names  = PackedStringArray(["Target Dummy"])
+		cfg.away_class_indices = PackedInt32Array([0])
 	return cfg
 
 func _on_start_pressed() -> void:
@@ -1803,6 +1838,56 @@ func _build_settings_overlay() -> Control:
 			for j in style_btns.size():
 				_update_speed_btn(style_btns[j], GameSettings.hotkey_style == j)
 		)
+
+	vbox.add_child(_make_divider())
+
+	# ── Ball possession cooldown ───────────────────────────────────────────────
+	vbox.add_child(_make_field_label("BALL POSSESSION COOLDOWN"))
+	vbox.add_child(_make_hint("Seconds a player must wait before picking up the ball after losing possession"))
+	vbox.add_child(_make_spacer(4))
+
+	var cd_row := HBoxContainer.new()
+	cd_row.add_theme_constant_override("separation", 10)
+	vbox.add_child(cd_row)
+
+	var cd_minus := Button.new()
+	cd_minus.text = "−"
+	cd_minus.custom_minimum_size = Vector2(36, 36)
+	cd_minus.focus_mode = Control.FOCUS_NONE
+	cd_row.add_child(cd_minus)
+
+	var cd_val_lbl := Label.new()
+	cd_val_lbl.text = "%.0fs" % GameSettings.ball_possession_cooldown
+	cd_val_lbl.custom_minimum_size = Vector2(48, 0)
+	cd_val_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cd_val_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	cd_val_lbl.add_theme_font_size_override("font_size", 18)
+	cd_val_lbl.add_theme_color_override("font_color", Color.WHITE)
+	cd_row.add_child(cd_val_lbl)
+
+	var cd_plus := Button.new()
+	cd_plus.text = "+"
+	cd_plus.custom_minimum_size = Vector2(36, 36)
+	cd_plus.focus_mode = Control.FOCUS_NONE
+	cd_row.add_child(cd_plus)
+
+	var cd_hint := Label.new()
+	cd_hint.text = "(0 = disabled)"
+	cd_hint.add_theme_color_override("font_color", C_DIM)
+	cd_hint.add_theme_font_size_override("font_size", 10)
+	cd_hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	cd_row.add_child(cd_hint)
+
+	cd_minus.pressed.connect(func() -> void:
+		GameSettings.ball_possession_cooldown = maxf(0.0, GameSettings.ball_possession_cooldown - 1.0)
+		cd_val_lbl.text = "%.0fs" % GameSettings.ball_possession_cooldown
+		GameSettings.save_settings()
+	)
+	cd_plus.pressed.connect(func() -> void:
+		GameSettings.ball_possession_cooldown = minf(30.0, GameSettings.ball_possession_cooldown + 1.0)
+		cd_val_lbl.text = "%.0fs" % GameSettings.ball_possession_cooldown
+		GameSettings.save_settings()
+	)
 
 	return overlay
 

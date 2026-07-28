@@ -8,9 +8,17 @@ extends AbilityEffect
 @export var intensity: float = 1.0
 ## Duration in seconds. 0 = permanent until overridden.
 @export var duration: float = 8.0
+## When true, position the effect immediately in front of the caster rather than at aim_position.
+@export var use_caster_front: bool = false
+@export var front_distance: float = 8.0
 
 func apply(ctx: AbilityContext) -> bool:
-	var pos := ctx.aim_position if ctx.aim_position != Vector2.ZERO else ctx.caster_position
+	var pos: Vector2
+	if use_caster_front:
+		var fwd := Vector2(sin(ctx.caster_facing), -cos(ctx.caster_facing))
+		pos = ctx.caster_position + fwd * front_distance
+	else:
+		pos = ctx.aim_position if ctx.aim_position != Vector2.ZERO else ctx.caster_position
 	var type_name := _type_name()
 	if shape_type == 5:  # OpenPit
 		EventBus.pit_opened.emit(pos, radius, duration)

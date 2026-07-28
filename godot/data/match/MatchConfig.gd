@@ -6,6 +6,7 @@ enum ViewMode  { FLAT_2D = 0, THREE_QUARTER = 1, FULL_3D = 2 }
 
 @export_enum("TwoTeam", "ThreeTeam") var match_mode: int = 0
 @export var fast_mode: bool = false
+@export var test_mode: bool = false
 @export var players_per_side: int = 7
 
 @export var home_team_name: String = "HOME"
@@ -40,7 +41,7 @@ enum ViewMode  { FLAT_2D = 0, THREE_QUARTER = 1, FULL_3D = 2 }
 
 func to_dict() -> Dictionary:
 	return {
-		"match_mode": match_mode, "fast_mode": fast_mode,
+		"match_mode": match_mode, "fast_mode": fast_mode, "test_mode": test_mode,
 		"players_per_side": players_per_side,
 		"home_team_name": home_team_name, "away_team_name": away_team_name,
 		"third_team_name": third_team_name,
@@ -58,6 +59,7 @@ static func from_dict(d: Dictionary) -> MatchConfig:
 	var cfg := MatchConfig.new()
 	cfg.match_mode             = d.get("match_mode", 0)
 	cfg.fast_mode              = d.get("fast_mode", false)
+	cfg.test_mode              = d.get("test_mode", false)
 	cfg.players_per_side       = d.get("players_per_side", 7)
 	cfg.home_team_name         = d.get("home_team_name", "HOME")
 	cfg.away_team_name         = d.get("away_team_name", "AWAY")

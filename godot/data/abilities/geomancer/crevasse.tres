@@ -9,6 +9,8 @@ shape_type = 1
 radius = 9.0
 intensity = 1.0
 duration = 6.0
+use_caster_front = true
+front_distance = 8.0
 
 [resource]
 script = ExtResource("1_def")
