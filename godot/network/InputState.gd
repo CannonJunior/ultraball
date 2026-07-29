@@ -11,6 +11,8 @@ var hold_throw: bool = false
 var release_throw: bool = false
 var is_aiming: bool = false
 var aim_world_position: Vector2 = Vector2.ZERO
+var hold_ultra: bool = false
+var release_ultra: bool = false
 
 static func from_packet(packet: InputPacket) -> InputState:
 	var s := InputState.new()
@@ -22,6 +24,8 @@ static func from_packet(packet: InputPacket) -> InputState:
 	s.release_throw = packet.has_flag(InputPacket.FLAG_RELEASE_THROW)
 	s.is_aiming = packet.has_flag(InputPacket.FLAG_IS_AIMING)
 	s.aim_world_position = Vector2(packet.aim_x, packet.aim_y)
+	s.hold_ultra = packet.has_flag(InputPacket.FLAG_HOLD_ULTRA)
+	s.release_ultra = packet.has_flag(InputPacket.FLAG_RELEASE_ULTRA)
 	return s
 
 func to_packet(tick: int, player_id: String, peer_id: int) -> InputPacket:
@@ -37,6 +41,8 @@ func to_packet(tick: int, player_id: String, peer_id: int) -> InputPacket:
 	if hold_throw:      p.flags |= InputPacket.FLAG_HOLD_THROW
 	if release_throw:   p.flags |= InputPacket.FLAG_RELEASE_THROW
 	if is_aiming:       p.flags |= InputPacket.FLAG_IS_AIMING
+	if hold_ultra:      p.flags |= InputPacket.FLAG_HOLD_ULTRA
+	if release_ultra:   p.flags |= InputPacket.FLAG_RELEASE_ULTRA
 	p.aim_x = aim_world_position.x
 	p.aim_y = aim_world_position.y
 	return p

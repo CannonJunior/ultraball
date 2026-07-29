@@ -27,6 +27,9 @@ var is_on_field: bool = false
 ## Input state applied this frame (set by InputManager or AI)
 var _current_input: InputState = InputState.new()
 
+## While > 0, movement input cannot override an in-flight impulse (knockback/dash).
+var _impulse_timer: float = 0.0
+
 ## Jump / Z-axis state
 var z_height: float = 0.0
 var z_velocity: float = 0.0
@@ -60,6 +63,7 @@ func _physics_process(delta: float) -> void:
 
 	_apply_movement(delta)
 	_update_z(delta)
+	_block_steep_terrain()
 	move_and_slide()
 	_clamp_to_field()
 
@@ -77,6 +81,10 @@ func _physics_process(delta: float) -> void:
 	if _current_input.queued_ability_slot > 0:
 		EventBus.ability_queued.emit(player_id, _current_input.queued_ability_slot)
 
+	# Force field anchor: key released → anchor the active force field
+	if _current_input.release_ultra:
+		EventBus.force_field_anchor_requested.emit(player_id)
+
 	_update_auto_target()
 	aim_world_position = _current_input.aim_world_position if _current_input.is_aiming \
 		else global_position + Vector2(0.0, -1.0).rotated(rotation) * 15.0
@@ -93,6 +101,11 @@ func apply_input(input: InputState) -> void:
 func _apply_movement(delta: float) -> void:
 	if buffs.stun_timer > 0.0:
 		velocity = Vector2.ZERO
+		_impulse_timer = 0.0
+		return
+
+	if _impulse_timer > 0.0:
+		_impulse_timer -= delta
 		return
 
 	var speed := _effective_speed()
@@ -128,7 +141,12 @@ func _terrain_speed_mult() -> float:
 	row = clampi(row, 0, 7)
 	var t := MatchState.terrain
 	if t.cell_speed_mults.size() < 224: return 1.0
-	var grid_mult := t.cell_speed_mults[row * 28 + col]
+	var cell_idx := row * 28 + col
+	var grid_mult := t.cell_speed_mults[cell_idx]
+	# Geomancers are immune to their own Quagmire (mud surface type == 2)
+	if grid_mult < 1.0 and t.cell_surface_types[cell_idx] == 2 \
+			and class_definition != null and class_definition.class_id == "geomancer":
+		grid_mult = 1.0
 	# Fine elevation penalty: hills slow slightly, valleys slow more
 	var elev := _elevation_at(global_position)
 	var elev_mult := 1.0
@@ -153,6 +171,15 @@ func _update_z(delta: float) -> void:
 	if z_height > 0.0 or z_velocity > 0.0:
 		z_velocity -= Z_GRAVITY * delta
 		z_height = maxf(0.0, z_height + z_velocity * delta)
+
+func _block_steep_terrain() -> void:
+	if velocity.length_squared() < 0.01: return
+	const LOOK_DIST := 140.0 / 168.0  # one fine-elevation cell ≈ 0.833 m
+	var ahead := global_position + velocity.normalized() * LOOK_DIST
+	var elev_ahead := _elevation_at(ahead)
+	var elev_here  := _elevation_at(global_position)
+	if elev_ahead - elev_here > z_height + 0.4:
+		velocity = Vector2.ZERO
 
 # ── Field clamping ────────────────────────────────────────────────────────────
 

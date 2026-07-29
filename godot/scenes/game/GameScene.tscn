@@ -1,4 +1,4 @@
-[gd_scene load_steps=18 format=3]
+[gd_scene load_steps=17 format=3]
 
 [ext_resource type="Script" path="res://scenes/game/GameScene.gd" id="1"]
 [ext_resource type="Script" path="res://scenes/game/InputManager.gd" id="13"]
@@ -13,7 +13,6 @@
 [ext_resource type="Script" path="res://systems/StatTracker.gd" id="15"]
 [ext_resource type="PackedScene" path="res://scenes/game/field/Field.tscn" id="9"]
 [ext_resource type="PackedScene" path="res://scenes/entities/ball/Ball.tscn" id="10"]
-[ext_resource type="PackedScene" path="res://scenes/entities/creature/Creature.tscn" id="11"]
 [ext_resource type="PackedScene" path="res://scenes/entities/player/Player.tscn" id="12"]
 
 [node name="GameScene" type="Node2D"]
@@ -53,8 +52,6 @@ script = ExtResource("15")
 [node name="Entities" type="Node2D" parent="."]
 
 [node name="Ball" parent="Entities" instance=ExtResource("10")]
-
-[node name="Creature" parent="Entities" instance=ExtResource("11")]
 
 [node name="PlayerSpawner" type="MultiplayerSpawner" parent="."]
 spawn_path = NodePath("..")

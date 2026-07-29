@@ -6,17 +6,20 @@ extends Node
 
 const _TricksterTrap = preload("res://scenes/entities/TricksterTrap.gd")
 
-const ELEV_LERP_RATE := 3.0    # coarse height units per second
-const LAVA_DPS       := 15.0
-const ICE_SPEED_MULT := 1.8
-const MUD_SPEED_MULT := 0.45
+const ELEV_LERP_RATE     := 3.0    # coarse height units per second
+const LAVA_DPS           := 15.0
+const ICE_SPEED_MULT     := 1.8
+const MUD_SPEED_MULT     := 0.45
+const TERRAIN_RISE_DUR   := 1.0    # seconds for hill/valley to reach full height
+const PREVIEW_DELAY      := 1.5    # warning flash before terrain applies
+const EXPIRY_WARN_TIME   := 1.5    # seconds before expiry to emit warning flash
 
 # Fine elevation grid dimensions
 const ELEV_COLS := 168
 const ELEV_ROWS := 48
 const ELEV_CELL_W := 140.0 / ELEV_COLS   # ≈ 0.833 m
 const ELEV_CELL_H :=  40.0 / ELEV_ROWS   # ≈ 0.833 m
-const PLATEAU_FRAC := 0.3   # inner fraction of radius that is flat
+const DOME_LINE_WIDTH := 0.05  # unused remnant — hill profile now uses cosine dome
 
 ## Active temporary terrain events: Array[{type, col, row, timer, ...}]
 var _active_events: Array = []
@@ -26,8 +29,10 @@ var _fissure_projectiles: Array = []
 
 func _ready() -> void:
 	EventBus.terrain_modified.connect(_on_terrain_modified)
+	EventBus.terrain_incoming.connect(_on_terrain_incoming)
 	EventBus.pit_opened.connect(_on_pit_opened)
 	EventBus.trap_spawn_requested.connect(_on_trap_spawn_requested)
+	EventBus.terrain_timers_shifted.connect(_on_terrain_timers_shifted)
 
 func _physics_process(delta: float) -> void:
 	if not MatchState.match_active: return
@@ -101,6 +106,70 @@ func _apply_event_to_cell(idx: int, event_type: String, intensity: float = 1.0) 
 			t.cell_surface_types[idx] = 4
 			t.cell_speed_mults[idx] = ICE_SPEED_MULT
 
+## Queues a terrain event to apply after a 1.5s warning flash.
+func _on_terrain_incoming(
+	event_type: String, world_pos: Vector2,
+	radius: float, duration: float, intensity: float
+) -> void:
+	EventBus.terrain_preview_started.emit(event_type, world_pos, radius, intensity)
+	_active_events.append({
+		"type": "pending",
+		"event_type": event_type,
+		"world_pos": world_pos, "radius": radius,
+		"duration": duration, "intensity": intensity,
+		"timer": PREVIEW_DELAY,
+	})
+
+## Fires after the preview delay expires — applies terrain and queues restore/expiry events.
+func _apply_pending_terrain(ev: Dictionary) -> void:
+	var event_type: String = ev["event_type"]
+	var world_pos: Vector2 = ev["world_pos"]
+	var radius: float      = ev["radius"]
+	var duration: float    = ev["duration"]
+	var intensity: float   = ev["intensity"]
+
+	if event_type == "pit":
+		EventBus.pit_opened.emit(world_pos, radius, duration)
+		return
+
+	var center_col  := int(world_pos.x / 5.0)
+	var center_row  := int(world_pos.y / 5.0)
+	var cell_radius := int(ceil(radius / 5.0))
+	for dc in range(-cell_radius, cell_radius + 1):
+		for dr in range(-cell_radius, cell_radius + 1):
+			var col := center_col + dc
+			var row := center_row + dr
+			if not _valid_cell(col, row): continue
+			_apply_event_to_cell(_cell_index(col, row), event_type, intensity)
+			if duration > 0.0:
+				_active_events.append({
+					"type": "restore", "col": col, "row": row,
+					"timer": duration, "original_type": event_type
+				})
+
+	if event_type in ["hill", "valley"]:
+		var rise_sign := 1.0 if event_type == "hill" else -1.0
+		_active_events.append({
+			"type": "rising",
+			"world_pos": world_pos, "radius": radius,
+			"intensity": intensity, "rise_sign": rise_sign,
+			"timer": TERRAIN_RISE_DUR, "total": TERRAIN_RISE_DUR,
+		})
+		if duration > 0.0:
+			_active_events.append({
+				"type": "restore_elevation",
+				"world_pos": world_pos, "radius": radius,
+				"timer": duration
+			})
+
+	if duration > EXPIRY_WARN_TIME:
+		_active_events.append({
+			"type": "expiry_warning",
+			"event_type": event_type,
+			"world_pos": world_pos, "radius": radius,
+			"timer": duration - EXPIRY_WARN_TIME,
+		})
+
 func _on_pit_opened(world_pos: Vector2, radius: float, duration: float) -> void:
 	var center_col := int(world_pos.x / 5.0)
 	var center_row := int(world_pos.y / 5.0)
@@ -134,19 +203,14 @@ func _apply_shockwave_push(world_pos: Vector2, radius: float, intensity: float) 
 # ── Fine elevation grid (168×48) ───────────────────────────────────────────────
 
 func _update_fine_elevation(world_pos: Vector2, radius: float, intensity: float, sign: float) -> void:
-	var max_h    := sign * intensity * 4.0
-	var plateau_r := radius * PLATEAU_FRAC
-	var slope_span := radius - plateau_r
+	if radius < 0.001: return
+	var max_h     := sign * intensity * 4.0
 	var noise_amp := absf(max_h) * 0.15
 
-	var col_min := int((world_pos.x - radius) / ELEV_CELL_W)
-	var col_max := int((world_pos.x + radius) / ELEV_CELL_W)
-	var row_min := int((world_pos.y - radius) / ELEV_CELL_H)
-	var row_max := int((world_pos.y + radius) / ELEV_CELL_H)
-	col_min = clampi(col_min, 0, ELEV_COLS - 1)
-	col_max = clampi(col_max, 0, ELEV_COLS - 1)
-	row_min = clampi(row_min, 0, ELEV_ROWS - 1)
-	row_max = clampi(row_max, 0, ELEV_ROWS - 1)
+	var col_min := clampi(int((world_pos.x - radius) / ELEV_CELL_W), 0, ELEV_COLS - 1)
+	var col_max := clampi(int((world_pos.x + radius) / ELEV_CELL_W), 0, ELEV_COLS - 1)
+	var row_min := clampi(int((world_pos.y - radius) / ELEV_CELL_H), 0, ELEV_ROWS - 1)
+	var row_max := clampi(int((world_pos.y + radius) / ELEV_CELL_H), 0, ELEV_ROWS - 1)
 
 	var elev := MatchState.terrain.elevation_heights
 	for col in range(col_min, col_max + 1):
@@ -155,13 +219,11 @@ func _update_fine_elevation(world_pos: Vector2, radius: float, intensity: float,
 			var cell_cy := (row + 0.5) * ELEV_CELL_H
 			var d := Vector2(cell_cx, cell_cy).distance_to(world_pos)
 			if d > radius: continue
-			var h := max_h if d <= plateau_r \
-				else max_h * (1.0 - (d - plateau_r) / slope_span)
-			# Per-cell deterministic noise for natural variation
+			# Smooth cosine dome: full height at centre, tapers to zero at edge.
+			var h := max_h * pow(cos(d / radius * PI * 0.5), 2.0)
 			var hash := ((col * 1013904223) ^ (row * 1664525)) & 0x7FFFFFFF
 			var noise := (float(hash % 10000) / 10000.0 * 2.0 - 1.0) * noise_amp
-			var final_h := clampf(h + noise, minf(max_h, 0.0), maxf(max_h, 0.0))
-			elev[row * ELEV_COLS + col] = final_h
+			elev[row * ELEV_COLS + col] = clampf(h + noise, minf(max_h, 0.0), maxf(max_h, 0.0))
 	EventBus.terrain_elevation_changed.emit()
 
 func _clear_fine_elevation(world_pos: Vector2, radius: float) -> void:
@@ -209,18 +271,29 @@ func _tick_active_events(delta: float) -> void:
 	var expired: Array = []
 	for ev in _active_events:
 		ev["timer"] -= delta
+		# Incrementally raise/lower fine elevation each frame while rising.
+		if ev["type"] == "rising" and ev["timer"] > 0.0:
+			var frac := clampf(1.0 - ev["timer"] / ev["total"], 0.0, 1.0)
+			_update_fine_elevation(ev["world_pos"], ev["radius"], ev["intensity"] * frac, ev["rise_sign"])
 		if ev["timer"] <= 0.0:
 			expired.append(ev)
 	for ev in expired:
 		_active_events.erase(ev)
-		if ev["type"] == "close_pit":
-			MatchState.terrain.cell_is_pit[_cell_index(ev["col"], ev["row"])] = 0
-			EventBus.terrain_reset.emit(ev["col"], ev["row"])
-		elif ev["type"] == "restore":
-			_restore_cell(_cell_index(ev["col"], ev["row"]))
-			EventBus.terrain_reset.emit(ev["col"], ev["row"])
-		elif ev["type"] == "restore_elevation":
-			_clear_fine_elevation(ev["world_pos"], ev["radius"])
+		match ev["type"]:
+			"close_pit":
+				MatchState.terrain.cell_is_pit[_cell_index(ev["col"], ev["row"])] = 0
+				EventBus.terrain_reset.emit(ev["col"], ev["row"])
+			"restore":
+				_restore_cell(_cell_index(ev["col"], ev["row"]))
+				EventBus.terrain_reset.emit(ev["col"], ev["row"])
+			"restore_elevation":
+				_clear_fine_elevation(ev["world_pos"], ev["radius"])
+			"pending":
+				_apply_pending_terrain(ev)
+			"rising":
+				_update_fine_elevation(ev["world_pos"], ev["radius"], ev["intensity"], ev["rise_sign"])
+			"expiry_warning":
+				EventBus.terrain_expiry_warning.emit(ev["event_type"], ev["world_pos"], ev["radius"])
 
 func _restore_cell(idx: int) -> void:
 	var t := MatchState.terrain
@@ -271,6 +344,20 @@ func _check_pit_deaths() -> void:
 			# Hills above 1m elevate the player over the gap
 			if _elevation_at(player.global_position) >= 1.0: continue
 			EventBus.player_died.emit(player.player_id, "pit", "")
+
+# ── Chronokinesist: shift active terrain event timers ────────────────────────
+
+func _on_terrain_timers_shifted(world_pos: Vector2, radius: float, delta_seconds: float) -> void:
+	for ev in _active_events:
+		var ev_pos: Vector2
+		if ev.has("world_pos"):
+			ev_pos = ev["world_pos"]
+		elif ev.has("col") and ev.has("row"):
+			ev_pos = Vector2(ev["col"] * 5.0 + 2.5, ev["row"] * 5.0 + 2.5)
+		else:
+			continue
+		if world_pos.distance_to(ev_pos) <= radius:
+			ev["timer"] = maxf(0.0, ev["timer"] + delta_seconds)
 
 # ── Trickster trap spawning ───────────────────────────────────────────────────
 

@@ -7,7 +7,7 @@
 
 [sub_resource type="Resource" id="E1"]
 script = ExtResource("2_dash")
-distance = 8.0
+distance = 15.0
 toward_target = true
 reverse_direction = false
 invulnerable = false
@@ -26,11 +26,11 @@ duration = 1.0
 script = ExtResource("1_def")
 ability_id = "charge"
 display_name = "Charge"
-description = "Dash to target (8m) · 25 dmg · 1s stun"
+description = "Dash to target (15m) · 25 dmg · 1s stun"
 slot = 6
 cooldown = 10.0
 mana_cost = 40.0
 mana_type = 2
-range = 8.0
+range = 15.0
 effects = [SubResource("E1"), SubResource("E2"), SubResource("E3")]
 metadata/_custom_type_script = "uid://b38bten5wru66"

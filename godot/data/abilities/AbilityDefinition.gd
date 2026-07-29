@@ -8,6 +8,8 @@ extends Resource
 ## 1-indexed slot (1–10; slot 10 = ultra).
 @export var slot: int = 1
 @export var cooldown: float = 5.0
+## Hold the key up to this many seconds before releasing to fire. 0 = instant.
+@export var charge_max: float = 0.0
 @export var mana_cost: float = 0.0
 ## 0=None 1=Red 2=Blue 3=Yellow 4=Ultra
 @export_enum("None", "Red", "Blue", "Yellow", "Ultra") var mana_type: int = 0
@@ -39,3 +41,11 @@ extends Resource
 
 ## Secondary tags for pip indicators: "aoe", "cc", "snare", "fumble"
 @export var tags: PackedStringArray
+
+## Returns true when at least one effect is a HealEffect or HoTEffect that targets the caster.
+func is_self_heal() -> bool:
+	for effect in effects:
+		if effect == null: continue
+		if (effect is HealEffect or effect is HoTEffect) and effect.get("targets_self") == true:
+			return true
+	return false

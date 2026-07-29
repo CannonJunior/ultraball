@@ -25,18 +25,23 @@ var _on_field: Dictionary = {}       # player_id -> bool
 ## IDs of entities hit so far this ability (populated by effects).
 var hit_ids: Array[String] = []
 
+## Normalised charge time [0.0–charge_max] for chargeable abilities; 0 = instant.
+var charge_t: float = 0.0
+
 static func build(
 	caster_id_: String,
 	target_id_: String,
 	aim_pos: Vector2,
 	all_players: Array,
-	caster_facing_: float = 0.0
+	caster_facing_: float = 0.0,
+	charge_t_: float = 0.0
 ) -> AbilityContext:
 	var ctx := AbilityContext.new()
 	ctx.caster_id      = caster_id_
 	ctx.target_id      = target_id_
 	ctx.aim_position   = aim_pos
 	ctx.caster_facing  = caster_facing_
+	ctx.charge_t       = charge_t_
 
 	var caster_record: MatchState.PlayerRecord = MatchState.players.get(caster_id_)
 	if caster_record:

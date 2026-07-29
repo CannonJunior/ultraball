@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd0000053"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://nwjwptslhmfe" path="res://data/abilities/effects/SnareEffect.gd" id="2_snare"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_snare")
+duration = 3.5
+slow_factor = 0.45
+aoe_radius = 0.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "time_lock"
+display_name = "Time Lock"
+description = "55% slow for 3.5s (15m range)"
+slot = 3
+cooldown = 8.0
+mana_cost = 25.0
+mana_type = 2
+range = 15.0
+target_mode = 0
+ability_type = 4
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

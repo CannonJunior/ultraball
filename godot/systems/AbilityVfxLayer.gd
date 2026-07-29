@@ -18,7 +18,15 @@ const C_DMG    := Color(1.0,   0.40,  0.10)
 const C_HOME   := Color(1.0,   0.231, 0.325)
 const C_AWAY   := Color(0.184, 0.514, 1.0)
 
+const TERRAIN_PREVIEW_DUR := 1.5
+const TERRAIN_EXPIRY_DUR  := 1.5
+
 var _active: Array = []
+
+# Ability charge bar state
+var _charging_player_id: String = ""
+var _charge_elapsed: float      = 0.0
+var _charge_max: float          = 0.0
 
 func _ready() -> void:
 	z_index = 10
@@ -31,14 +39,24 @@ func _ready() -> void:
 	EventBus.player_died.connect(_on_player_died)
 	EventBus.ultra_scored.connect(_on_ultra_scored)
 	EventBus.ball_picked_up.connect(_on_ball_picked_up)
+	EventBus.force_field_shattered.connect(_on_force_field_shattered)
+	EventBus.terrain_preview_started.connect(_on_terrain_preview_started)
+	EventBus.terrain_expiry_warning.connect(_on_terrain_expiry_warning)
+	EventBus.ability_charge_started.connect(_on_ability_charge_started)
+	EventBus.ability_charge_released.connect(_on_ability_charge_released)
 
 func _process(delta: float) -> void:
-	if _active.is_empty():
-		return
-	for v in _active:
-		v.t = minf(v.t + delta, v.dur)
-	_active = _active.filter(func(v): return v.t < v.dur)
-	queue_redraw()
+	var needs_redraw := false
+	if not _active.is_empty():
+		for v in _active:
+			v.t = minf(v.t + delta, v.dur)
+		_active = _active.filter(func(v): return v.t < v.dur)
+		needs_redraw = true
+	if not _charging_player_id.is_empty():
+		_charge_elapsed = minf(_charge_elapsed + delta, _charge_max)
+		needs_redraw = true
+	if needs_redraw:
+		queue_redraw()
 
 # ── Signal handlers ────────────────────────────────────────────────────────────
 
@@ -84,6 +102,25 @@ func _on_ultra_scored(_team_id: int, scorer_id: String) -> void:
 func _on_ball_picked_up(pid: String) -> void:
 	_spawn("pickup_pulse", _player_pos(pid), C_GOLD, 0.25, {})
 
+func _on_force_field_shattered(pos: Vector2) -> void:
+	_spawn("ff_shatter", pos, Color(0.75, 0.92, 1.0), 0.60, {"radius": 5.0})
+
+func _on_terrain_preview_started(event_type: String, world_pos: Vector2, radius: float, _intensity: float) -> void:
+	_spawn("terrain_preview", world_pos, _terrain_color(event_type), TERRAIN_PREVIEW_DUR, {"radius": radius})
+
+func _on_terrain_expiry_warning(event_type: String, world_pos: Vector2, radius: float) -> void:
+	_spawn("terrain_expiry", world_pos, _terrain_color(event_type), TERRAIN_EXPIRY_DUR, {"radius": radius})
+
+func _on_ability_charge_started(player_id: String, _slot: int, charge_max: float) -> void:
+	_charging_player_id = player_id
+	_charge_elapsed     = 0.0
+	_charge_max         = charge_max
+
+func _on_ability_charge_released(_pid: String, _slot: int, _charge_t: float) -> void:
+	_charging_player_id = ""
+	_charge_elapsed     = 0.0
+	_charge_max         = 0.0
+
 # ── Spawn ──────────────────────────────────────────────────────────────────────
 
 func _spawn(type: String, pos: Vector2, color: Color, dur: float, data: Dictionary) -> void:
@@ -95,14 +132,19 @@ func _draw() -> void:
 	for v in _active:
 		var p: float = float(v.t) / float(v.dur)
 		match v.type:
-			"cast_ring":    _draw_cast_ring(v, p)
-			"impact_flash": _draw_impact_flash(v, p)
-			"aoe_burst":    _draw_aoe_burst(v, p)
-			"hit_spark":    _draw_hit_spark(v, p)
-			"heal_rise":    _draw_heal_rise(v, p)
-			"death_burst":  _draw_death_burst(v, p)
-			"ultra_burst":  _draw_ultra_burst(v, p)
-			"pickup_pulse": _draw_pickup_pulse(v, p)
+			"cast_ring":      _draw_cast_ring(v, p)
+			"impact_flash":   _draw_impact_flash(v, p)
+			"aoe_burst":      _draw_aoe_burst(v, p)
+			"hit_spark":      _draw_hit_spark(v, p)
+			"heal_rise":      _draw_heal_rise(v, p)
+			"death_burst":    _draw_death_burst(v, p)
+			"ultra_burst":    _draw_ultra_burst(v, p)
+			"pickup_pulse":   _draw_pickup_pulse(v, p)
+			"ff_shatter":     _draw_ff_shatter(v, p)
+			"terrain_preview": _draw_terrain_preview(v, p)
+			"terrain_expiry":  _draw_terrain_expiry(v, p)
+	if not _charging_player_id.is_empty() and _charge_max > 0.0:
+		_draw_ability_charge_bar(_player_pos(_charging_player_id), _charge_elapsed / _charge_max)
 
 func _draw_cast_ring(v: Dictionary, p: float) -> void:
 	var ep := _ease_out(p)
@@ -177,6 +219,62 @@ func _draw_pickup_pulse(v: Dictionary, p: float) -> void:
 	var a := lerpf(0.80, 0.00, p)
 	draw_arc(v.pos, r, 0.0, TAU, 32, Color(C_GOLD.r, C_GOLD.g, C_GOLD.b, a), 0.04)
 
+func _draw_ff_shatter(v: Dictionary, p: float) -> void:
+	var radius: float = v.data.get("radius", 5.0)
+	var ep  := _ease_out(p)
+	var a   := lerpf(1.0, 0.0, p * p)
+	var col := Color(v.color.r, v.color.g, v.color.b, a)
+	# Expanding burst ring
+	draw_arc(v.pos, lerpf(radius * 0.8, radius * 1.7, ep), 0.0, TAU, 48,
+		col, lerpf(0.18, 0.04, p))
+	# Inner flash circle
+	draw_circle(v.pos, lerpf(radius * 0.5, 0.0, ep),
+		Color(v.color.r, v.color.g, v.color.b, a * 0.35))
+	# Radiating shard lines
+	for i in 16:
+		var angle := i * TAU / 16.0 + p * 0.3
+		var dir   := Vector2(cos(angle), sin(angle))
+		var r0    := lerpf(radius * 0.4, radius * 0.9, ep)
+		var r1    := lerpf(radius * 0.7, radius * 1.9, ep)
+		draw_line(v.pos + dir * r0, v.pos + dir * r1, col, 0.06)
+
+func _draw_terrain_preview(v: Dictionary, p: float) -> void:
+	var radius: float = v.data.get("radius", 3.0)
+	# 3 pulses over the full preview window
+	var pulse := sin(p * TAU * 3.0) * 0.5 + 0.5
+	var col: Color = v.color
+	draw_circle(v.pos, radius, Color(col.r, col.g, col.b, pulse * 0.18))
+	draw_arc(v.pos, radius, 0.0, TAU, 64, Color(col.r, col.g, col.b, pulse * 0.85), 0.14)
+	draw_arc(v.pos, radius * 0.55, 0.0, TAU, 32, Color(col.r, col.g, col.b, pulse * 0.35), 0.06)
+
+func _draw_terrain_expiry(v: Dictionary, p: float) -> void:
+	var radius: float = v.data.get("radius", 3.0)
+	# 4 faster pulses, fading toward end
+	var pulse := sin(p * TAU * 4.0) * 0.5 + 0.5
+	var fade  := lerpf(1.0, 0.0, p)
+	var col: Color = v.color
+	draw_circle(v.pos, radius, Color(col.r, col.g, col.b, pulse * fade * 0.15))
+	draw_arc(v.pos, radius, 0.0, TAU, 64, Color(col.r, col.g, col.b, pulse * fade * 0.75), 0.12)
+	for i in 8:
+		var angle := float(i) / 8.0 * TAU
+		var d     := Vector2(cos(angle), sin(angle))
+		draw_line(v.pos + d * radius,
+				  v.pos + d * (radius + 0.4 * fade),
+				  Color(col.r, col.g, col.b, pulse * fade * 0.55), 0.07)
+
+func _draw_ability_charge_bar(pos: Vector2, pct: float) -> void:
+	var bar_w   := 2.0
+	var bar_h   := 0.18
+	var bar_pos := pos + Vector2(0.0, 0.95)
+	var left    := bar_pos - Vector2(bar_w * 0.5, 0.0)
+	draw_rect(Rect2(left, Vector2(bar_w, bar_h)), Color(0.04, 0.04, 0.12, 0.88))
+	if pct > 0.0:
+		var t        := clampf((pct - 0.8) / 0.2, 0.0, 1.0)
+		var fill_col := C_GOLD.lerp(C_RED, t)
+		draw_rect(Rect2(left, Vector2(bar_w * pct, bar_h)),
+				  Color(fill_col.r, fill_col.g, fill_col.b, 0.95))
+	draw_rect(Rect2(left, Vector2(bar_w, bar_h)), Color(1.0, 1.0, 1.0, 0.28), false, 0.03)
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 func _ease_out(t: float) -> float:
@@ -195,6 +293,16 @@ func _player_pos(pid: String) -> Vector2:
 		if node.player_id == pid:
 			return node.global_position
 	return Vector2.ZERO
+
+func _terrain_color(event_type: String) -> Color:
+	match event_type:
+		"hill":   return Color(0.35, 0.80, 0.15)
+		"valley": return Color(0.30, 0.55, 0.95)
+		"pit":    return Color(0.90, 0.15, 0.05)
+		"mud":    return Color(0.60, 0.40, 0.10)
+		"lava":   return Color(1.00, 0.35, 0.00)
+		"ice":    return Color(0.50, 0.90, 1.00)
+	return Color(0.80, 0.80, 0.80)
 
 func _centroid(pids: Array) -> Vector2:
 	var sum := Vector2.ZERO

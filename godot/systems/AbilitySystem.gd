@@ -23,6 +23,7 @@ func _ready() -> void:
 	EventBus.ability_used.connect(_on_ability_used)
 	EventBus.ability_queued.connect(_on_ability_queued)
 	EventBus.ability_queue_pop.connect(_on_ability_queue_pop)
+	EventBus.ability_charge_released.connect(_on_ability_charge_released)
 	EventBus.buff_applied.connect(_on_buff_applied)
 	EventBus.player_subbed_in.connect(_on_player_subbed_in)
 
@@ -67,6 +68,24 @@ func _drain_queue_for(pid: String) -> void:
 			return  # out_of_range / on_cd / etc. — wait
 
 func _on_ability_queued(player_id: String, slot: int) -> void:
+	# Instant self-heal: fire immediately off-GCD, bypassing the queue entirely.
+	if GameSettings.instant_self_heal:
+		var rec: MatchState.PlayerRecord = MatchState.players.get(player_id)
+		if rec != null:
+			var def: AbilityDefinition = GameRegistry.get_ability(rec.class_id, slot)
+			if def != null and def.is_self_heal():
+				if _get_cooldown(player_id, slot) > 0.0:
+					EventBus.ability_failed.emit(player_id, slot, "on_cd")
+					return
+				var player_node := _get_player_node(player_id)
+				if player_node == null or not player_node.mana.can_afford(def.mana_type, def.mana_cost):
+					EventBus.ability_failed.emit(player_id, slot, "no_mana")
+					return
+				var saved_gcd: float = _gcd.get(player_id, 0.0)
+				_fire_ability(player_id, slot)
+				_gcd[player_id] = saved_gcd  # restore GCD — self-heals don't consume it
+				return
+
 	if not _queues.has(player_id):
 		_queues[player_id] = []
 	var queue: Array = _queues[player_id]
@@ -101,9 +120,16 @@ func _on_ability_used(caster_id: String, slot: int) -> void:
 		return
 	_fire_ability(caster_id, slot)
 
+func _on_ability_charge_released(caster_id: String, slot: int, charge_t: float) -> void:
+	if not _can_use_now(caster_id, slot):
+		var reason := _failure_reason(caster_id, slot)
+		EventBus.ability_failed.emit(caster_id, slot, reason)
+		return
+	_fire_ability(caster_id, slot, charge_t)
+
 # ── Fire ──────────────────────────────────────────────────────────────────────
 
-func _fire_ability(caster_id: String, slot: int) -> void:
+func _fire_ability(caster_id: String, slot: int, charge_t: float = 0.0) -> void:
 	var player_rec: MatchState.PlayerRecord = MatchState.players.get(caster_id)
 	if player_rec == null: return
 
@@ -127,7 +153,7 @@ func _fire_ability(caster_id: String, slot: int) -> void:
 
 	# Build context
 	var all_players := get_tree().get_nodes_in_group("players")
-	var ctx := AbilityContext.build(caster_id, target_id, aim_pos, all_players, player_node.global_rotation)
+	var ctx := AbilityContext.build(caster_id, target_id, aim_pos, all_players, player_node.global_rotation, charge_t)
 
 	# Apply effects in order
 	for effect in definition.effects:

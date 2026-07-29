@@ -9,13 +9,14 @@ const BASE_FONT_SIZE := 14
 const MAX_FONT_SIZE  := 26     # for large hits/heals
 
 const TYPE_COLORS := {
-	"dmg":   Color(1.00, 0.30, 0.30),
-	"heal":  Color(0.25, 1.00, 0.40),
-	"killa": Color(1.00, 0.80, 0.10),
-	"miss":  Color(0.60, 0.60, 0.60),
-	"crit":  Color(1.00, 1.00, 0.25),
-	"ultra": Color(0.90, 0.35, 1.00),
-	"fail":  Color(1.00, 0.40, 0.10),
+	"dmg":     Color(1.00, 0.30, 0.30),
+	"heal":    Color(0.25, 1.00, 0.40),
+	"killa":   Color(1.00, 0.80, 0.10),
+	"miss":    Color(0.60, 0.60, 0.60),
+	"crit":    Color(1.00, 1.00, 0.25),
+	"ultra":   Color(0.90, 0.35, 1.00),
+	"fail":    Color(1.00, 0.40, 0.10),
+	"terrain": Color(0.55, 0.90, 0.30),
 }
 
 # Each entry: {label: Label, active: bool, vel: Vector2, age: float}
@@ -59,7 +60,7 @@ func _on_spawned(world_pos: Vector2, text: String, indicator_type: String) -> vo
 	if mag > 0.0:
 		fs = clampi(BASE_FONT_SIZE + int(mag / 20.0), BASE_FONT_SIZE, MAX_FONT_SIZE)
 	else:
-		fs = BASE_FONT_SIZE + 4 if indicator_type in ["killa", "ultra"] else BASE_FONT_SIZE
+		fs = BASE_FONT_SIZE + 4 if indicator_type in ["killa", "ultra", "terrain"] else BASE_FONT_SIZE
 	lbl.add_theme_font_size_override("font_size", fs)
 	# World → screen conversion: use 3D camera projection when available,
 	# fall back to canvas transform in flat-2D mode.

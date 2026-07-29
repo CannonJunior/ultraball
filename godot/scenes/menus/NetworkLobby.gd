@@ -6,6 +6,20 @@ const _MatchConfig    := preload("res://data/match/MatchConfig.gd")
 const _TeamPortrait   := preload("res://scenes/game/hud/TeamPortrait.gd")
 const _LOBBY_SAVE_PATH := "user://lobby_settings.cfg"
 
+# ── AI resource constructors ──────────────────────────────────────────────────
+const _StratBalanced      := preload("res://systems/ai/strategies/BalancedStrategy.gd")
+const _StratNumericalEdge := preload("res://systems/ai/strategies/NumericalEdgeStrategy.gd")
+const _StratAggressive    := preload("res://systems/ai/strategies/AggressiveStrategy.gd")
+const _StratFloodEndzone  := preload("res://systems/ai/strategies/FloodEndzoneStrategy.gd")
+const _StratPossessionBleed := preload("res://systems/ai/strategies/PossessionBleedStrategy.gd")
+const _TactFocusFire      := preload("res://systems/ai/tactics/FocusFireTactics.gd")
+const _TactPickAndScreen  := preload("res://systems/ai/tactics/PickAndScreenTactics.gd")
+const _TactQuickRelease   := preload("res://systems/ai/tactics/QuickReleaseTactics.gd")
+const _TactCreatureFlank  := preload("res://systems/ai/tactics/CreatureFlankTactics.gd")
+const _TactWedgeRun       := preload("res://systems/ai/tactics/WedgeRunTactics.gd")
+const _TactHeroBall       := preload("res://systems/ai/tactics/HeroBallTactics.gd")
+const _TactBalanced       := preload("res://systems/ai/tactics/BalancedTactics.gd")
+
 # ── Palette ──────────────────────────────────────────────────────────────────
 const C_BG     := Color(0.016, 0.020, 0.039)   # #04050A
 const C_SURF   := Color(0.031, 0.031, 0.059)   # #08080F
@@ -80,14 +94,17 @@ var _lan_status_lbl  : Label         = null
 var _lan_peer_lbl    : Label         = null
 var _lan_ip_edit     : LineEdit      = null
 var _start_btn       : Button        = null
+var _solo_btn        : Button        = null
+var _lan_btn         : Button        = null
+var _my_team_lbl     : Label         = null
 
 # ── Data ──────────────────────────────────────────────────────────────────────
 const STRATEGIES := [
-	["💣", "TEMPO TRAP",      "Deny phase lines; force opponent to hold the ball until it explodes"],
-	["🔢", "NUMBERS GAME",    "Eliminate 2–3 opponents early; exploit the numbers edge to score freely"],
-	["🦅", "CHANNEL CONTROL", "Control creature channels for protected scoring corridors"],
-	["🌊", "FLOOD THE ZONE",  "Flood 3–4 players into the endzone; defense can't cover everyone"],
-	["🩸", "BLEED OUT",       "Never surrender the ball; drain the clock; only score when safe"],
+	["⚖️", "BALANCED",       "Ball carrier advances; 2 defenders press the ball; support spreads ahead"],
+	["🔢", "NUMBERS GAME",   "On defense converge all pressure on the weakest enemy for quick eliminations"],
+	["💥", "AGGRESSIVE",     "3 defenders press the carrier on defense; tighter support spacing on offense"],
+	["🌊", "FLOOD THE ZONE", "Flood 3–4 players into the endzone; defense can't cover everyone"],
+	["🩸", "BLEED OUT",      "Never surrender the ball; drain the clock; only score when safe"],
 ]
 
 const TACTICS := [
@@ -198,7 +215,8 @@ const RULES := [
 ]
 
 const CLASS_NAMES := [
-	"SPECTRE", "CORSAIR", "GEOMANCER", "ARCHON", "WARDEN", "TRICKSTER", "WRECKER", "VITALIST"
+	"SPECTRE", "CORSAIR", "GEOMANCER", "ARCHON", "WARDEN", "TRICKSTER", "WRECKER", "VITALIST",
+	"CHRONOKINESIST"
 ]
 const CLASS_DESCS := [
 	"Ghost phase — evasion and burst speed",
@@ -209,16 +227,18 @@ const CLASS_DESCS := [
 	"Deceiver — illusions and flanking",
 	"Berserker — brutal knockback and brute force",
 	"Healer — team sustain and revival support",
+	"Time-manipulating ranged attacker. Speeds allies, slows enemies, extends or collapses terrain effects, and bends the act clock itself.",
 ]
 const CLASS_COLORS := [
-	Color(0.267, 1.000, 0.800),   # Spectre   #44FFCC
-	Color(1.000, 0.267, 0.667),   # Corsair   #FF44AA
-	Color(1.000, 0.333, 0.267),   # Geomancer #FF5544
-	Color(0.267, 0.533, 1.000),   # Archon    #4488FF
-	Color(1.000, 0.800, 0.267),   # Warden    #FFCC44
-	Color(0.667, 0.267, 1.000),   # Trickster #AA44FF
-	Color(1.000, 0.467, 0.000),   # Wrecker   #FF7700
-	Color(0.267, 0.867, 0.533),   # Vitalist  #44DD88
+	Color(0.267, 1.000, 0.800),   # Spectre         #44FFCC
+	Color(1.000, 0.267, 0.667),   # Corsair         #FF44AA
+	Color(1.000, 0.333, 0.267),   # Geomancer       #FF5544
+	Color(0.267, 0.533, 1.000),   # Archon          #4488FF
+	Color(1.000, 0.800, 0.267),   # Warden          #FFCC44
+	Color(0.667, 0.267, 1.000),   # Trickster       #AA44FF
+	Color(1.000, 0.467, 0.000),   # Wrecker         #FF7700
+	Color(0.267, 0.867, 0.533),   # Vitalist        #44DD88
+	Color(0.550, 0.120, 0.880),   # Chronokinesist  #8C1FE0
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -377,6 +397,101 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 	inner.add_child(_build_lan_card())
 	inner.add_child(_make_spacer(8))
 
+	# ── Teams ─────────────────────────────────────────────────────────────────────
+	var teams_card := _make_card()
+	inner.add_child(teams_card)
+	var teams_vbox := VBoxContainer.new()
+	teams_vbox.add_theme_constant_override("separation", 10)
+	teams_card.add_child(teams_vbox)
+	teams_vbox.add_child(_make_field_label("TEAMS"))
+
+	_my_team_lbl = Label.new()
+	_my_team_lbl.add_theme_font_size_override("font_size", 12)
+	_my_team_lbl.add_theme_color_override("font_color", C_GOLD)
+	_my_team_lbl.visible = false
+	teams_vbox.add_child(_my_team_lbl)
+
+	var home_row := HBoxContainer.new()
+	home_row.add_theme_constant_override("separation", 8)
+	teams_vbox.add_child(home_row)
+	var home_lbl := Label.new()
+	home_lbl.text = "HOME"
+	home_lbl.add_theme_font_size_override("font_size", 11)
+	home_lbl.add_theme_color_override("font_color", C_DIM)
+	home_lbl.custom_minimum_size = Vector2(48, 0)
+	home_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	home_row.add_child(home_lbl)
+	_home_team_ob = _make_team_option_button(_home_team)
+	_home_team_ob.item_selected.connect(_set_home_team)
+	home_row.add_child(_home_team_ob)
+
+	var away_row := HBoxContainer.new()
+	away_row.add_theme_constant_override("separation", 8)
+	teams_vbox.add_child(away_row)
+	var away_lbl := Label.new()
+	away_lbl.text = "AWAY"
+	away_lbl.add_theme_font_size_override("font_size", 11)
+	away_lbl.add_theme_color_override("font_color", C_DIM)
+	away_lbl.custom_minimum_size = Vector2(48, 0)
+	away_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	away_row.add_child(away_lbl)
+	_away_team_ob = _make_team_option_button(_away_team)
+	_away_team_ob.item_selected.connect(_set_away_team)
+	away_row.add_child(_away_team_ob)
+
+	inner.add_child(_make_spacer(8))
+
+	# ── Game Site + Creature ──────────────────────────────────────────────────────
+	var site_card := _make_card()
+	inner.add_child(site_card)
+	var site_vbox := VBoxContainer.new()
+	site_vbox.add_theme_constant_override("separation", 10)
+	site_card.add_child(site_vbox)
+	site_vbox.add_child(_make_field_label("GAME SITE"))
+	site_vbox.add_child(_make_hint("Home/Away uses that team's creature. Neutral enables a custom pick."))
+	var site_row := HBoxContainer.new()
+	site_row.add_theme_constant_override("separation", 8)
+	site_vbox.add_child(site_row)
+	var sbtn_home := _make_speed_btn("HOME",    "Home team's field", _site == 0)
+	var sbtn_away := _make_speed_btn("AWAY",    "Away team's field", _site == 1)
+	var sbtn_neut := _make_speed_btn("NEUTRAL", "Neutral site",      _site == 2)
+	for b: Button in [sbtn_home, sbtn_away, sbtn_neut]:
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	site_row.add_child(sbtn_home)
+	site_row.add_child(sbtn_away)
+	site_row.add_child(sbtn_neut)
+	_site_btns = [sbtn_home, sbtn_away, sbtn_neut]
+	sbtn_home.pressed.connect(_set_site.bind(0))
+	sbtn_away.pressed.connect(_set_site.bind(1))
+	sbtn_neut.pressed.connect(_set_site.bind(2))
+
+	site_vbox.add_child(_make_divider())
+	site_vbox.add_child(_make_spacer(4))
+	site_vbox.add_child(_make_field_label("CREATURE"))
+
+	_creature_auto_lbl = Label.new()
+	_creature_auto_lbl.add_theme_font_size_override("font_size", 14)
+	_creature_auto_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
+	_creature_auto_lbl.visible = true
+	site_vbox.add_child(_creature_auto_lbl)
+
+	_neutral_crea_vbox = VBoxContainer.new()
+	_neutral_crea_vbox.add_theme_constant_override("separation", 4)
+	_neutral_crea_vbox.visible = false
+	site_vbox.add_child(_neutral_crea_vbox)
+	_crea_btns.clear()
+	for i in range(CREATURES.size()):
+		var c: Array = CREATURES[i]
+		var rb := _make_choice_radio(c[0], c[1], c[2], _creature == i)
+		rb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_neutral_crea_vbox.add_child(rb)
+		_crea_btns.append(rb)
+		rb.pressed.connect(_set_creature.bind(i))
+
+	_refresh_creature_display()
+
+	inner.add_child(_make_spacer(8))
+
 	# ── Section Header ────────────────────────────────────────────────────────
 	inner.add_child(_make_section_header("MATCH CONFIGURATION"))
 	inner.add_child(_make_spacer(4))
@@ -507,92 +622,6 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 	btn2d.pressed.connect(_set_view_mode.bind(0))
 	btn3q.pressed.connect(_set_view_mode.bind(1))
 	btn3d.pressed.connect(_set_view_mode.bind(2))
-
-	# ── Teams ─────────────────────────────────────────────────────────────────────
-	var teams_card := _make_card()
-	inner.add_child(teams_card)
-	var teams_vbox := VBoxContainer.new()
-	teams_vbox.add_theme_constant_override("separation", 10)
-	teams_card.add_child(teams_vbox)
-	teams_vbox.add_child(_make_field_label("TEAMS"))
-
-	var home_row := HBoxContainer.new()
-	home_row.add_theme_constant_override("separation", 8)
-	teams_vbox.add_child(home_row)
-	var home_lbl := Label.new()
-	home_lbl.text = "HOME"
-	home_lbl.add_theme_font_size_override("font_size", 11)
-	home_lbl.add_theme_color_override("font_color", C_DIM)
-	home_lbl.custom_minimum_size = Vector2(48, 0)
-	home_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	home_row.add_child(home_lbl)
-	_home_team_ob = _make_team_option_button(_home_team)
-	_home_team_ob.item_selected.connect(_set_home_team)
-	home_row.add_child(_home_team_ob)
-
-	var away_row := HBoxContainer.new()
-	away_row.add_theme_constant_override("separation", 8)
-	teams_vbox.add_child(away_row)
-	var away_lbl := Label.new()
-	away_lbl.text = "AWAY"
-	away_lbl.add_theme_font_size_override("font_size", 11)
-	away_lbl.add_theme_color_override("font_color", C_DIM)
-	away_lbl.custom_minimum_size = Vector2(48, 0)
-	away_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	away_row.add_child(away_lbl)
-	_away_team_ob = _make_team_option_button(_away_team)
-	_away_team_ob.item_selected.connect(_set_away_team)
-	away_row.add_child(_away_team_ob)
-
-	# ── Game Site + Creature ──────────────────────────────────────────────────────
-	var site_card := _make_card()
-	inner.add_child(site_card)
-	var site_vbox := VBoxContainer.new()
-	site_vbox.add_theme_constant_override("separation", 10)
-	site_card.add_child(site_vbox)
-	site_vbox.add_child(_make_field_label("GAME SITE"))
-	site_vbox.add_child(_make_hint("Home/Away uses that team's creature. Neutral enables a custom pick."))
-	var site_row := HBoxContainer.new()
-	site_row.add_theme_constant_override("separation", 8)
-	site_vbox.add_child(site_row)
-	var sbtn_home := _make_speed_btn("HOME",    "Home team's field", _site == 0)
-	var sbtn_away := _make_speed_btn("AWAY",    "Away team's field", _site == 1)
-	var sbtn_neut := _make_speed_btn("NEUTRAL", "Neutral site",      _site == 2)
-	for b: Button in [sbtn_home, sbtn_away, sbtn_neut]:
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	site_row.add_child(sbtn_home)
-	site_row.add_child(sbtn_away)
-	site_row.add_child(sbtn_neut)
-	_site_btns = [sbtn_home, sbtn_away, sbtn_neut]
-	sbtn_home.pressed.connect(_set_site.bind(0))
-	sbtn_away.pressed.connect(_set_site.bind(1))
-	sbtn_neut.pressed.connect(_set_site.bind(2))
-
-	site_vbox.add_child(_make_divider())
-	site_vbox.add_child(_make_spacer(4))
-	site_vbox.add_child(_make_field_label("CREATURE"))
-
-	_creature_auto_lbl = Label.new()
-	_creature_auto_lbl.add_theme_font_size_override("font_size", 14)
-	_creature_auto_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
-	_creature_auto_lbl.visible = true
-	site_vbox.add_child(_creature_auto_lbl)
-
-	_neutral_crea_vbox = VBoxContainer.new()
-	_neutral_crea_vbox.add_theme_constant_override("separation", 4)
-	_neutral_crea_vbox.visible = false
-	site_vbox.add_child(_neutral_crea_vbox)
-	_crea_btns.clear()
-	for i in range(CREATURES.size()):
-		var c: Array = CREATURES[i]
-		var rb := _make_choice_radio(c[0], c[1], c[2], _creature == i)
-		rb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_neutral_crea_vbox.add_child(rb)
-		_crea_btns.append(rb)
-		rb.pressed.connect(_set_creature.bind(i))
-
-	_refresh_creature_display()
-
 	# ── Home Strategy + Tactics ───────────────────────────────────────────────
 	var strat_row := HBoxContainer.new()
 	strat_row.add_theme_constant_override("separation", 12)
@@ -781,6 +810,24 @@ func _set_creature(idx: int) -> void:
 	_refresh_creature_display()
 	_save_lobby_state()
 
+func _strategy_for(idx: int) -> Resource:
+	match idx:
+		1: return _StratNumericalEdge.new()
+		2: return _StratAggressive.new()
+		3: return _StratFloodEndzone.new()
+		4: return _StratPossessionBleed.new()
+	return _StratBalanced.new()
+
+func _tactics_for(idx: int) -> Resource:
+	match idx:
+		0: return _TactFocusFire.new()
+		1: return _TactPickAndScreen.new()
+		2: return _TactQuickRelease.new()
+		3: return _TactCreatureFlank.new()
+		4: return _TactWedgeRun.new()
+		5: return _TactHeroBall.new()
+	return _TactBalanced.new()
+
 func _set_home_strat(idx: int) -> void:
 	_home_strat = idx
 	for i in _hs_radios.size():
@@ -914,9 +961,11 @@ func _build_config() -> MatchConfig:
 	for i in 15: away_default.append(i)
 	cfg.away_class_indices     = PackedInt32Array(away_default)
 	cfg.is_human_controlled    = [true, false, false]
-	cfg.inactive_class_indices = PackedInt32Array(_inactive_classes)
-	cfg.players_per_side       = _players_per_side
-	cfg.test_mode              = _test_mode
+	cfg.inactive_class_indices  = PackedInt32Array(_inactive_classes)
+	cfg.players_per_side        = _players_per_side
+	cfg.test_mode               = _test_mode
+	cfg.ai_strategy_resources   = [_strategy_for(_home_strat), _strategy_for(_opp_strat)]
+	cfg.ai_tactics_resources    = [_tactics_for(_home_tact),   _tactics_for(_opp_tact)]
 	if _test_mode:
 		cfg.players_per_side   = 1
 		cfg.away_team_name     = "TRAINING"
@@ -942,12 +991,12 @@ func _build_lan_card() -> Control:
 	var mode_row := HBoxContainer.new()
 	mode_row.add_theme_constant_override("separation", 8)
 	vbox.add_child(mode_row)
-	var solo_btn := _make_speed_btn("SOLO", "Offline play", not _lan_mode)
-	var lan_btn  := _make_speed_btn("LAN",  "Local network", _lan_mode)
-	solo_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lan_btn.size_flags_horizontal  = Control.SIZE_EXPAND_FILL
-	mode_row.add_child(solo_btn)
-	mode_row.add_child(lan_btn)
+	_solo_btn = _make_speed_btn("SOLO", "Offline play", not _lan_mode)
+	_lan_btn  = _make_speed_btn("LAN",  "Local network", _lan_mode)
+	_solo_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_lan_btn.size_flags_horizontal  = Control.SIZE_EXPAND_FILL
+	mode_row.add_child(_solo_btn)
+	mode_row.add_child(_lan_btn)
 
 	# LAN options sub-section
 	_lan_opts = VBoxContainer.new()
@@ -1001,8 +1050,8 @@ func _build_lan_card() -> Control:
 	_lan_peer_lbl.add_theme_font_size_override("font_size", 9)
 	_lan_opts.add_child(_lan_peer_lbl)
 
-	solo_btn.pressed.connect(_set_lan_mode.bind(false))
-	lan_btn.pressed.connect(_set_lan_mode.bind(true))
+	_solo_btn.pressed.connect(_set_lan_mode.bind(false))
+	_lan_btn.pressed.connect(_set_lan_mode.bind(true))
 
 	return card
 
@@ -1010,10 +1059,13 @@ func _set_lan_mode(enable: bool) -> void:
 	_lan_mode = enable
 	if _lan_opts:
 		_lan_opts.visible = enable
+	if _solo_btn: _update_speed_btn(_solo_btn, not enable)
+	if _lan_btn:  _update_speed_btn(_lan_btn, enable)
 	if not enable:
 		NetworkManager.go_offline()
 		_lan_is_host = false
 		_connected_peers = 0
+		if _my_team_lbl: _my_team_lbl.visible = false
 		if _start_btn:
 			_start_btn.disabled = false
 			_start_btn.text = "START MATCH"
@@ -1024,6 +1076,9 @@ func _on_lan_host_pressed() -> void:
 		_lan_is_host = true
 		_connected_peers = 0
 		_update_lan_status()
+		if _my_team_lbl:
+			_my_team_lbl.visible = true
+			_my_team_lbl.text = "YOUR TEAM: HOME"
 		if _start_btn:
 			_start_btn.disabled = false
 			_start_btn.text = "START MATCH"
@@ -1037,6 +1092,9 @@ func _on_lan_join_pressed() -> void:
 	var err := NetworkManager.join_enet(addr)
 	if err == OK:
 		_lan_is_host = false
+		if _my_team_lbl:
+			_my_team_lbl.visible = true
+			_my_team_lbl.text = "YOUR TEAM: AWAY"
 		if _lan_status_lbl:
 			_lan_status_lbl.text = "Connecting to %s:%d…" % [addr, NetworkManager.ENET_PORT]
 		if _start_btn:
@@ -1045,9 +1103,13 @@ func _on_lan_join_pressed() -> void:
 	elif _lan_status_lbl:
 		_lan_status_lbl.text = "Join failed (error %d)" % err
 
-func _on_net_peer_connected(_id: int) -> void:
+func _on_net_peer_connected(id: int) -> void:
 	_connected_peers += 1
 	_update_lan_status()
+	if NetworkManager.is_server():
+		var player_id := "%d_00" % _connected_peers
+		NetworkManager.register_peer_player(id, player_id)
+		NetworkManager.assign_local_player.rpc_id(id, player_id)
 
 func _on_net_peer_disconnected(_id: int) -> void:
 	_connected_peers = maxi(0, _connected_peers - 1)
@@ -1593,7 +1655,7 @@ func _make_roster_divider() -> Control:
 
 
 func _make_roster_row(slot_idx: int, player_idx: int, clickable: bool) -> Control:
-	var class_idx  : int    = player_idx % 8
+	var class_idx  : int    = player_idx % CLASS_NAMES.size()
 	var cls_color  : Color  = CLASS_COLORS[class_idx]
 	var cls_name   : String = CLASS_NAMES[class_idx]
 	var is_field   : bool   = slot_idx < _players_per_side
@@ -1696,7 +1758,7 @@ func _begin_drag(slot_idx: int) -> void:
 	_drag_from_slot = slot_idx
 
 	var player_idx : int    = _home_roster[slot_idx]
-	var class_idx  : int    = player_idx % 8
+	var class_idx  : int    = player_idx % CLASS_NAMES.size()
 	var cls_color  : Color  = CLASS_COLORS[class_idx]
 	var cls_name   : String = CLASS_NAMES[class_idx]
 	var is_field   : bool   = slot_idx < _players_per_side
@@ -1783,7 +1845,7 @@ func _build_settings_overlay() -> Control:
 	card.anchor_left  = 0.5; card.anchor_right  = 0.5
 	card.anchor_top   = 0.5; card.anchor_bottom = 0.5
 	card.offset_left  = -250; card.offset_right  = 250
-	card.offset_top   = -150; card.offset_bottom = 150
+	card.offset_top   = -220; card.offset_bottom = 220
 	card.mouse_filter = Control.MOUSE_FILTER_STOP
 	overlay.add_child(card)
 
@@ -1887,6 +1949,37 @@ func _build_settings_overlay() -> Control:
 		GameSettings.ball_possession_cooldown = minf(30.0, GameSettings.ball_possession_cooldown + 1.0)
 		cd_val_lbl.text = "%.0fs" % GameSettings.ball_possession_cooldown
 		GameSettings.save_settings()
+	)
+
+	vbox.add_child(_make_divider())
+
+	# ── Instant self-heal ──────────────────────────────────────────────────────
+	vbox.add_child(_make_field_label("INSTANT SELF-HEAL"))
+	vbox.add_child(_make_hint("Self-healing abilities fire immediately on cast, bypassing the ability queue and global cooldown"))
+	vbox.add_child(_make_spacer(4))
+
+	var ish_row := HBoxContainer.new()
+	ish_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(ish_row)
+
+	var ish_on_btn  := _make_speed_btn("ON",  "Heals fire instantly", GameSettings.instant_self_heal)
+	var ish_off_btn := _make_speed_btn("OFF", "Heals join the queue", not GameSettings.instant_self_heal)
+	ish_on_btn.size_flags_horizontal  = Control.SIZE_EXPAND_FILL
+	ish_off_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ish_row.add_child(ish_on_btn)
+	ish_row.add_child(ish_off_btn)
+
+	ish_on_btn.pressed.connect(func() -> void:
+		GameSettings.instant_self_heal = true
+		GameSettings.save_settings()
+		_update_speed_btn(ish_on_btn, true)
+		_update_speed_btn(ish_off_btn, false)
+	)
+	ish_off_btn.pressed.connect(func() -> void:
+		GameSettings.instant_self_heal = false
+		GameSettings.save_settings()
+		_update_speed_btn(ish_on_btn, false)
+		_update_speed_btn(ish_off_btn, true)
 	)
 
 	return overlay

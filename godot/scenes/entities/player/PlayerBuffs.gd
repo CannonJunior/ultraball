@@ -156,7 +156,8 @@ func _on_debuff_applied(player_id: String, debuff_name: String, duration: float,
 			if dodge_remaining > 0.0: return
 			var dir: Vector2 = params.get("direction", Vector2.RIGHT)
 			var dist: float = params.get("distance", 3.0)
-			p.velocity += dir * (dist / 0.2)   # impulse over ~0.2s
+			p.velocity += dir * (dist / 0.2)
+			p._impulse_timer = 0.2
 		"mana_drain":
 			p.mana.drain(params.get("mana_type", 3), params.get("amount", 15.0))
 		"fumble":
@@ -171,6 +172,7 @@ func _on_debuff_applied(player_id: String, debuff_name: String, duration: float,
 			var dir: Vector2 = params.get("direction", Vector2.RIGHT)
 			var dist: float = params.get("distance", 6.0)
 			p.velocity = dir * (dist / 0.15)
+			p._impulse_timer = 0.15
 		"cleanse_cc":
 			stun_timer = 0.0
 			snare_remaining = 0.0

@@ -9,6 +9,7 @@ shape_type = 5
 radius = 4.0
 intensity = 1.0
 duration = 5.0
+preview_delay = 1.5
 
 [resource]
 script = ExtResource("1_def")

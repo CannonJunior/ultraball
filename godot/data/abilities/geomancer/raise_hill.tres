@@ -9,8 +9,13 @@ shape_type = 0
 radius = 9.0
 intensity = 1.0
 duration = 6.0
-use_caster_front = true
-front_distance = 8.0
+preview_delay = 1.5
+chargeable = true
+charge_max = 3.0
+charge_min_intensity = 0.25
+charge_max_intensity = 1.5
+charge_min_radius = 9.0
+charge_max_radius = 2.0
 
 [resource]
 script = ExtResource("1_def")
@@ -18,7 +23,8 @@ ability_id = "raise_hill"
 display_name = "Raise Hill"
 description = "Raise hill at aim point"
 slot = 2
-cooldown = 1.5
+cooldown = 8.0
+charge_max = 3.0
 mana_cost = 15.0
 mana_type = 2
 range = 0.0

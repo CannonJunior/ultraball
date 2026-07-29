@@ -8,6 +8,10 @@ signal ability_queued(player_id: String, slot: int)
 signal ability_queue_pop(player_id: String)
 signal ability_queue_changed(player_id: String, queue: Array)
 signal gcd_started(player_id: String, duration: float)
+## Emitted by InputManager when a chargeable ability key is released.
+signal ability_charge_released(player_id: String, slot: int, charge_t: float)
+## Emitted by InputManager when the local player begins holding a chargeable ability key.
+signal ability_charge_started(player_id: String, slot: int, charge_max: float)
 
 # ── Damage and Death ───────────────────────────────────────────────────────────
 ## payload keys: attacker_id, target_id, amount, knockback_distance, facing
@@ -49,11 +53,24 @@ signal game_over(winner_team_id: int, final_home: int, final_away: int, final_th
 # ── Terrain ────────────────────────────────────────────────────────────────────
 ## event_type: "hill" | "valley" | "mud" | "lava" | "ice" | "pit" | "shockwave"
 signal terrain_modified(event_type: String, world_pos: Vector2, radius: float, duration: float, intensity: float)
+## Emitted instead of terrain_modified/pit_opened when TerrainShapeEffect has preview_delay > 0.
+signal terrain_incoming(event_type: String, world_pos: Vector2, radius: float, duration: float, intensity: float)
+## Emitted by TerrainMutationSystem when the warning flash period begins.
+signal terrain_preview_started(event_type: String, world_pos: Vector2, radius: float, intensity: float)
+## Emitted 1.5s before a delayed terrain effect expires.
+signal terrain_expiry_warning(event_type: String, world_pos: Vector2, radius: float)
 signal pit_opened(world_pos: Vector2, radius: float, duration: float)
 signal terrain_reset(cell_col: int, cell_row: int)
 ## Emitted whenever fine elevation_heights change (hill/valley set or cleared).
 signal terrain_elevation_changed()
 signal trap_spawn_requested(world_pos: Vector2, owner_team_id: int, trap_radius: float, snare_duration: float, slow_factor: float, trap_timer: float)
+## Shift active terrain event timers in the area: positive extends, negative collapses.
+signal terrain_timers_shifted(world_pos: Vector2, radius: float, delta_seconds: float)
+
+# ── Force Field ────────────────────────────────────────────────────────────────
+signal force_field_spawned(caster_id: String, caster_team_id: int, caster_position: Vector2)
+signal force_field_anchor_requested(caster_id: String)
+signal force_field_shattered(position: Vector2)
 
 # ── Creature ───────────────────────────────────────────────────────────────────
 signal creature_killed_player(victim_id: String, team_id: int)

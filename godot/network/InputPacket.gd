@@ -16,6 +16,8 @@ const FLAG_JUMP          := 1 << 0
 const FLAG_HOLD_THROW    := 1 << 1
 const FLAG_RELEASE_THROW := 1 << 2
 const FLAG_IS_AIMING     := 1 << 3
+const FLAG_HOLD_ULTRA    := 1 << 4
+const FLAG_RELEASE_ULTRA := 1 << 5
 var flags: int = 0
 
 var aim_x: float = 0.0

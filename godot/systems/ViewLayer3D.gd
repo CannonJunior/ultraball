@@ -46,16 +46,19 @@ const PASS_DIST       := 20.0    # metres of pass preview to show (flat)
 const CHARGE_SEGS     := 36      # ring segments (one per 10°)
 const RING_RADIUS     := 1.3     # metres — just outside 1.62 cube corners
 const C_MAX_CHARGE    := 7.0     # seconds — matches BallSystem.MAX_CHARGE
+const ABILITY_BAR_SEGS   := 20
+const ABILITY_BAR_W      := 2.0   # metres wide
+const TERRAIN_RING_SEGS  := 48    # segments for terrain preview/expiry rings
+const TERRAIN_IND_DUR    := 1.5   # seconds — matches PREVIEW_DELAY / EXPIRY_WARN_TIME
 
 var view_mode: int = MatchConfig.ViewMode.THREE_QUARTER
 
 var _viewport:      SubViewport
 var _camera:        Camera3D
-var _player_meshes: Dictionary = {}  # player_id -> Node3D (cube + arrow)
-var _ball_mesh:     MeshInstance3D = null
-var _creature_mesh: MeshInstance3D = null
-var _ball_node:     Node = null
-var _creature_node: Node = null
+var _player_meshes:   Dictionary = {}  # player_id -> Node3D (cube + arrow)
+var _creature_meshes: Dictionary = {}  # creature node -> MeshInstance3D
+var _ball_mesh:       MeshInstance3D = null
+var _ball_node: Node = null
 var _target_bracket:     Node3D = null
 var _target_bracket_mat: StandardMaterial3D = null
 
@@ -69,6 +72,31 @@ var _terrain_mesh_inst: MeshInstance3D    = null
 var _terrain_mat:       StandardMaterial3D = null
 var _terrain_dirty:     bool               = false
 
+# Ability charge bar (below casting unit)
+var _ability_bar_segs:      Array              = []
+var _ability_bar_mat:       StandardMaterial3D = null
+var _ability_charging:      bool               = false
+var _ability_charge_elapsed: float             = 0.0
+var _ability_charge_max_val: float             = 0.0
+var _ability_charge_pid:    String             = ""
+
+# Terrain preview / expiry rings (ImmediateMesh lines drawn on the ground)
+var _terrain_preview_mesh: MeshInstance3D     = null
+var _terrain_preview_imm:  ImmediateMesh      = null
+var _terrain_preview_mat:  StandardMaterial3D = null
+var _preview_pos:    Vector3 = Vector3.ZERO
+var _preview_radius: float   = 0.0
+var _preview_timer:  float   = 0.0
+var _preview_color:  Color   = Color.WHITE
+
+var _terrain_expiry_mesh: MeshInstance3D     = null
+var _terrain_expiry_imm:  ImmediateMesh      = null
+var _terrain_expiry_mat:  StandardMaterial3D = null
+var _expiry_pos:    Vector3 = Vector3.ZERO
+var _expiry_radius: float   = 0.0
+var _expiry_timer:  float   = 0.0
+var _expiry_color:  Color   = Color.WHITE
+
 # FULL_3D camera state
 var _camera_mode: int = CameraMode.BROADCAST
 var _ball_cam: bool = false
@@ -80,22 +108,29 @@ func _ready() -> void:
 	_build_viewport()
 	_build_world()
 	var game := get_parent()
-	_ball_node     = game.get_node_or_null("Entities/Ball")
-	_creature_node = game.get_node_or_null("Entities/Creature")
-	_ball_mesh     = _make_sphere(0.35, C_BALL)
-	_creature_mesh = _make_creature_mesh()
+	_ball_node = game.get_node_or_null("Entities/Ball")
+	_ball_mesh = _make_sphere(0.35, C_BALL)
 	_target_bracket = _make_target_bracket()
 	_arc_dots = _make_arc_preview()
 	_charge_ring_segs = _make_charge_ring()
+	_ability_bar_segs = _make_ability_bar()
+	_build_terrain_indicators()
+	EventBus.terrain_preview_started.connect(_on_terrain_preview_started)
+	EventBus.terrain_expiry_warning.connect(_on_terrain_expiry_warning)
+	EventBus.ability_charge_started.connect(_on_ability_charge_started)
+	EventBus.ability_charge_released.connect(_on_ability_charge_released)
 
 func _process(delta: float) -> void:
 	_sync_players()
 	_sync_ball()
-	_sync_creature()
+	_sync_creatures()
 	_sync_target_bracket()
 	_sync_throw_arc()
 	_sync_charge_ring()
 	_sync_terrain()
+	_sync_terrain_preview(delta)
+	_sync_terrain_expiry(delta)
+	_sync_ability_bar(delta)
 	_update_camera(delta)
 
 func _input(event: InputEvent) -> void:
@@ -122,8 +157,10 @@ func _try_pick_target(screen_pos: Vector2) -> bool:
 		if d < best_dist:
 			best_dist = d
 			best_pid = pid
-	if _creature_mesh != null and _creature_mesh.visible:
-		var screen2d: Vector2 = _camera.unproject_position(_creature_mesh.global_position)
+	for _cnode in _creature_meshes:
+		var cmi: MeshInstance3D = _creature_meshes[_cnode]
+		if not cmi.visible: continue
+		var screen2d: Vector2 = _camera.unproject_position(cmi.global_position)
 		var d := screen_pos.distance_to(screen2d)
 		if d < best_dist:
 			best_dist = d
@@ -365,14 +402,23 @@ func _sync_ball() -> void:
 	var th: float = _terrain_sample_at(p)
 	_ball_mesh.global_position = Vector3(p.x, 0.4 + zh + th, -p.y)
 
-func _sync_creature() -> void:
-	if _creature_mesh == null or not is_instance_valid(_creature_node):
-		return
-	var alive: bool = _creature_node.get("is_alive") == true
-	_creature_mesh.visible = alive
-	if alive:
-		var p: Vector2 = _creature_node.global_position
-		_creature_mesh.global_position = Vector3(p.x, 4.5, -p.y)
+func _sync_creatures() -> void:
+	var creatures := get_tree().get_nodes_in_group("creatures")
+	for node in _creature_meshes.keys():
+		if not is_instance_valid(node):
+			(_creature_meshes[node] as MeshInstance3D).queue_free()
+			_creature_meshes.erase(node)
+	for creature in creatures:
+		if not _creature_meshes.has(creature):
+			var r: float = float(creature.get("body_radius")) if creature.get("body_radius") else 4.0
+			_creature_meshes[creature] = _make_creature_box(r)
+		var mi: MeshInstance3D = _creature_meshes[creature]
+		var alive: bool = creature.get("is_alive") == true
+		mi.visible = alive
+		if alive:
+			var p: Vector2 = creature.global_position
+			var r: float = float(creature.get("body_radius")) if creature.get("body_radius") else 4.0
+			mi.global_position = Vector3(p.x, r, -p.y)
 
 # ── Target bracket ────────────────────────────────────────────────────────────
 
@@ -733,33 +779,34 @@ func _add_box(center: Vector3, sz: Vector3, color: Color) -> MeshInstance3D:
 	_viewport.add_child(mi)
 	return mi
 
-func _make_creature_mesh() -> MeshInstance3D:
+func _make_creature_box(radius: float) -> MeshInstance3D:
 	var ctype: int = MatchState.config.creature_type if MatchState.config != null else 0
-	match ctype:
-		0:  return _make_capsule(2.0, 7.0,  Color(0.80, 0.88, 1.00))  # Wraith      — pale blue-white
-		1:  return _make_capsule(4.0, 6.0,  Color(0.10, 0.75, 0.20))  # Serpent     — vivid green
-		2:  return _make_capsule(6.0, 10.0, Color(0.50, 0.45, 0.40))  # Golem       — stone gray
-		3:  return _make_capsule(1.8, 6.0,  Color(0.92, 1.00, 1.00))  # Specter     — near-white cyan
-		4:  return _make_capsule(3.0, 5.0,  Color(0.95, 0.30, 0.05))  # Hellhound   — fire orange
-		5:  return _make_capsule(3.0, 5.0,  Color(0.95, 0.85, 0.10))  # Thunderbird — electric yellow
-		6:  return _make_capsule(3.5, 9.0,  Color(0.10, 0.40, 0.65))  # Wyvern      — steel blue
-		7:  return _make_capsule(5.5, 7.0,  Color(0.30, 0.52, 0.10))  # Basilisk    — olive green
-		8:  return _make_capsule(3.5, 10.0, Color(0.60, 0.05, 0.55))  # Demon       — deep purple
-		9:  return _make_capsule(2.2, 8.0,  Color(0.70, 1.00, 0.78))  # Banshee     — ghostly green-white
-		10: return _make_capsule(3.5, 8.0,  Color(0.90, 0.10, 0.90))  # Chaos       — magenta
-	return _make_capsule(4.0, 9.0, C_CREATURE)
-
-func _make_capsule(radius: float, height: float, color: Color) -> MeshInstance3D:
+	var color := _creature_color(ctype)
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color
-	var cm := CapsuleMesh.new()
-	cm.radius = radius
-	cm.height = height
+	var bm := BoxMesh.new()
+	var side := radius * 2.0
+	bm.size = Vector3(side, side, side)
 	var mi := MeshInstance3D.new()
-	mi.mesh = cm
+	mi.mesh = bm
 	mi.material_override = mat
 	_viewport.add_child(mi)
 	return mi
+
+func _creature_color(ctype: int) -> Color:
+	match ctype:
+		0:  return Color(0.80, 0.88, 1.00)  # Wraith
+		1:  return Color(0.10, 0.75, 0.20)  # Serpent
+		2:  return Color(0.50, 0.45, 0.40)  # Golem
+		3:  return Color(0.92, 1.00, 1.00)  # Specter
+		4:  return Color(0.95, 0.30, 0.05)  # Hellhound
+		5:  return Color(0.95, 0.85, 0.10)  # Thunderbird
+		6:  return Color(0.10, 0.40, 0.65)  # Wyvern
+		7:  return Color(0.30, 0.52, 0.10)  # Basilisk
+		8:  return Color(0.60, 0.05, 0.55)  # Demon
+		9:  return Color(0.70, 1.00, 0.78)  # Banshee
+		10: return Color(0.90, 0.10, 0.90)  # Chaos
+	return C_CREATURE
 
 func _make_sphere(radius: float, color: Color) -> MeshInstance3D:
 	var mat := StandardMaterial3D.new()
@@ -772,3 +819,157 @@ func _make_sphere(radius: float, color: Color) -> MeshInstance3D:
 	mi.material_override = mat
 	_viewport.add_child(mi)
 	return mi
+
+# ── Ability charge bar ────────────────────────────────────────────────────────
+
+func _make_ability_bar() -> Array:
+	_ability_bar_mat = StandardMaterial3D.new()
+	_ability_bar_mat.albedo_color = Color(1.0, 0.87, 0.0)
+	_ability_bar_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var segs: Array = []
+	var seg_w := ABILITY_BAR_W / ABILITY_BAR_SEGS
+	for _i in ABILITY_BAR_SEGS:
+		var bm := BoxMesh.new()
+		bm.size = Vector3(seg_w * 0.82, 0.07, 0.07)
+		var mi := MeshInstance3D.new()
+		mi.mesh              = bm
+		mi.material_override = _ability_bar_mat
+		mi.visible           = false
+		_viewport.add_child(mi)
+		segs.append(mi)
+	return segs
+
+func _sync_ability_bar(delta: float) -> void:
+	if _ability_bar_segs.is_empty():
+		return
+	if not _ability_charging or _ability_charge_pid.is_empty():
+		for seg in _ability_bar_segs: (seg as MeshInstance3D).visible = false
+		return
+
+	_ability_charge_elapsed = minf(_ability_charge_elapsed + delta, _ability_charge_max_val)
+
+	var player_node: Node = null
+	for n in get_tree().get_nodes_in_group("players"):
+		if str(n.get("player_id")) == _ability_charge_pid and n.get("is_alive") == true:
+			player_node = n
+			break
+	if player_node == null:
+		for seg in _ability_bar_segs: (seg as MeshInstance3D).visible = false
+		return
+
+	var p2:  Vector2 = player_node.global_position
+	var zh:  float   = float(player_node.get("z_height")) * 0.6
+	var th:  float   = _terrain_sample_at(p2)
+	var center := Vector3(p2.x, 0.12 + zh + th, -p2.y)
+
+	var pct        := _ability_charge_elapsed / _ability_charge_max_val
+	var fill_count := int(ABILITY_BAR_SEGS * pct)
+	var lerp_t     := clampf((pct - 0.8) / 0.2, 0.0, 1.0)
+	_ability_bar_mat.albedo_color = Color(1.0, lerpf(0.87, 0.0, lerp_t), 0.0)
+
+	var seg_w := ABILITY_BAR_W / ABILITY_BAR_SEGS
+	for i in ABILITY_BAR_SEGS:
+		var seg := _ability_bar_segs[i] as MeshInstance3D
+		if i < fill_count:
+			seg.global_position = Vector3(
+				center.x - ABILITY_BAR_W * 0.5 + (i + 0.5) * seg_w,
+				center.y, center.z)
+			seg.visible = true
+		else:
+			seg.visible = false
+
+func _on_ability_charge_started(player_id: String, _slot: int, charge_max: float) -> void:
+	_ability_charging       = true
+	_ability_charge_elapsed = 0.0
+	_ability_charge_max_val = charge_max
+	_ability_charge_pid     = player_id
+
+func _on_ability_charge_released(_pid: String, _slot: int, _t: float) -> void:
+	_ability_charging       = false
+	_ability_charge_elapsed = 0.0
+	_ability_charge_max_val = 0.0
+	_ability_charge_pid     = ""
+
+# ── Terrain preview / expiry rings ────────────────────────────────────────────
+
+func _build_terrain_indicators() -> void:
+	_terrain_preview_mat = StandardMaterial3D.new()
+	_terrain_preview_mat.shading_mode  = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_terrain_preview_mat.transparency  = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_terrain_preview_mat.albedo_color  = Color.WHITE
+	_terrain_preview_imm  = ImmediateMesh.new()
+	_terrain_preview_mesh = MeshInstance3D.new()
+	_terrain_preview_mesh.mesh              = _terrain_preview_imm
+	_terrain_preview_mesh.material_override = _terrain_preview_mat
+	_terrain_preview_mesh.visible           = false
+	_viewport.add_child(_terrain_preview_mesh)
+
+	_terrain_expiry_mat = StandardMaterial3D.new()
+	_terrain_expiry_mat.shading_mode  = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_terrain_expiry_mat.transparency  = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_terrain_expiry_mat.albedo_color  = Color.WHITE
+	_terrain_expiry_imm  = ImmediateMesh.new()
+	_terrain_expiry_mesh = MeshInstance3D.new()
+	_terrain_expiry_mesh.mesh              = _terrain_expiry_imm
+	_terrain_expiry_mesh.material_override = _terrain_expiry_mat
+	_terrain_expiry_mesh.visible           = false
+	_viewport.add_child(_terrain_expiry_mesh)
+
+func _sync_terrain_preview(delta: float) -> void:
+	if _preview_timer <= 0.0:
+		_terrain_preview_mesh.visible = false
+		return
+	_preview_timer -= delta
+	var p     := 1.0 - _preview_timer / TERRAIN_IND_DUR
+	var pulse := sin(p * TAU * 3.0) * 0.5 + 0.5
+	_terrain_preview_mat.albedo_color = Color(
+		_preview_color.r, _preview_color.g, _preview_color.b, pulse * 0.9)
+	_terrain_preview_mesh.visible = true
+	_terrain_preview_imm.clear_surfaces()
+	_draw_ground_ring(_terrain_preview_imm, _preview_pos, _preview_radius, 0.10)
+	_draw_ground_ring(_terrain_preview_imm, _preview_pos, _preview_radius * 0.55, 0.10)
+
+func _sync_terrain_expiry(delta: float) -> void:
+	if _expiry_timer <= 0.0:
+		_terrain_expiry_mesh.visible = false
+		return
+	_expiry_timer -= delta
+	var p     := 1.0 - _expiry_timer / TERRAIN_IND_DUR
+	var pulse := sin(p * TAU * 4.0) * 0.5 + 0.5
+	var fade  := lerpf(1.0, 0.0, p)
+	_terrain_expiry_mat.albedo_color = Color(
+		_expiry_color.r, _expiry_color.g, _expiry_color.b, pulse * fade * 0.85)
+	_terrain_expiry_mesh.visible = true
+	_terrain_expiry_imm.clear_surfaces()
+	_draw_ground_ring(_terrain_expiry_imm, _expiry_pos, _expiry_radius, 0.10)
+
+func _draw_ground_ring(imm: ImmediateMesh, center: Vector3, radius: float, y: float) -> void:
+	imm.surface_begin(Mesh.PRIMITIVE_LINES)
+	for i in TERRAIN_RING_SEGS:
+		var a0 := float(i)       / float(TERRAIN_RING_SEGS) * TAU
+		var a1 := float(i + 1)  / float(TERRAIN_RING_SEGS) * TAU
+		imm.surface_add_vertex(center + Vector3(sin(a0) * radius, y, cos(a0) * radius))
+		imm.surface_add_vertex(center + Vector3(sin(a1) * radius, y, cos(a1) * radius))
+	imm.surface_end()
+
+func _on_terrain_preview_started(event_type: String, world_pos: Vector2, radius: float, _intensity: float) -> void:
+	_preview_pos    = Vector3(world_pos.x, 0.0, -world_pos.y)
+	_preview_radius = radius
+	_preview_timer  = TERRAIN_IND_DUR
+	_preview_color  = _terrain_color_3d(event_type)
+
+func _on_terrain_expiry_warning(event_type: String, world_pos: Vector2, radius: float) -> void:
+	_expiry_pos    = Vector3(world_pos.x, 0.0, -world_pos.y)
+	_expiry_radius = radius
+	_expiry_timer  = TERRAIN_IND_DUR
+	_expiry_color  = _terrain_color_3d(event_type)
+
+func _terrain_color_3d(event_type: String) -> Color:
+	match event_type:
+		"hill":   return Color(0.35, 0.80, 0.15)
+		"valley": return Color(0.30, 0.55, 0.95)
+		"pit":    return Color(0.90, 0.15, 0.05)
+		"mud":    return Color(0.60, 0.40, 0.10)
+		"lava":   return Color(1.00, 0.35, 0.00)
+		"ice":    return Color(0.50, 0.90, 1.00)
+	return Color(0.80, 0.80, 0.80)

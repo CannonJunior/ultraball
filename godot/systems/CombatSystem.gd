@@ -26,6 +26,12 @@ func _on_damage_requested(payload: Dictionary) -> void:
 
 	var amount := base_amount * output_mult
 
+	# Intercept: if target is inside a friendly force field, the field absorbs the hit.
+	var ff := _find_protecting_force_field(attacker_id, target_node)
+	if ff != null:
+		ff.absorb_damage(amount, attacker_id)
+		return
+
 	var hp_before: float = target_node.buffs.health
 	var incoming_mult: float = target_node.buffs.get_incoming_damage_multiplier()
 	var final_dmg := amount * incoming_mult
@@ -54,4 +60,14 @@ func _get_player(pid: String) -> Node:
 	if pid.is_empty(): return null
 	for n in get_tree().get_nodes_in_group("players"):
 		if n.player_id == pid: return n
+	return null
+
+func _find_protecting_force_field(attacker_id: String, target_node: Node) -> Node:
+	var attacker_rec: MatchState.PlayerRecord = MatchState.players.get(attacker_id)
+	if attacker_rec == null: return null
+	for ff in get_tree().get_nodes_in_group("force_fields"):
+		if ff.caster_team_id != target_node.team_id: continue
+		if attacker_rec.team_id == ff.caster_team_id: continue
+		if target_node.global_position.distance_to(ff.global_position) > ff.RADIUS: continue
+		return ff
 	return null

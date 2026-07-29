@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd0000054"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://difsutgisynhx" path="res://data/abilities/effects/SpeedBoostEffect.gd" id="2_speed"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_speed")
+speed_multiplier = 2.0
+duration = 2.5
+targets_self = true
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "phase"
+display_name = "Phase"
+description = "2× speed for 2.5s (self)"
+slot = 4
+cooldown = 5.0
+mana_cost = 20.0
+mana_type = 2
+range = 0.0
+target_mode = 2
+ability_type = 2
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

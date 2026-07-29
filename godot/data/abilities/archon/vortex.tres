@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ab12cd0000032"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" path="res://data/abilities/effects/ScaledAoEPullEffect.gd" id="2_vortex"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_vortex")
+near_threshold = 10.0
+near_pull = 6.0
+scale_factor = 0.3
+far_pull_max = 12.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "vortex"
+display_name = "Vortex"
+description = "Pull all enemies: <10m→up to 6m closer, else 30% of range up to 12m"
+slot = 8
+cooldown = 20.0
+mana_cost = 60.0
+mana_type = 2
+range = 0.0
+target_mode = 3
+ability_type = 4
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

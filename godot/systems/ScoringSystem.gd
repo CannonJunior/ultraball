@@ -92,8 +92,8 @@ func _is_in_endzone(player_id: String) -> bool:
 	var team := MatchState.team_for_player(player_id)
 	if MatchState.is_three_team:
 		return _is_in_endzone_3t(pos, team)
-	if team == 0: return pos.x >= 120.0   # HOME scores by crossing yellow line into AWAY endzone
-	if team == 1: return pos.x <= 20.0    # AWAY scores by crossing yellow line into HOME endzone
+	if team == 0: return pos.x <= 20.0    # HOME scores by returning ball to their own (left) endzone
+	if team == 1: return pos.x >= 120.0   # AWAY scores by returning ball to their own (right) endzone
 	return false
 
 func _is_in_endzone_3t(pos: Vector2, team: int) -> bool:

@@ -20,15 +20,18 @@ const CREATURE_ID  := "creature"
 const MAX_HP       := 1000.0
 const REGEN_RATE   := 50.0   # HP/s
 const SLAM_DAMAGE  := 100.0
-const SLAM_RADIUS  := 1.0
 const SLAM_CD      := 1.5
+const SLAM_RADIUS  := 5.0   # must exceed physics contact distance (~4.35 m)
 
 var hp:              float = MAX_HP
 var is_alive:        bool  = true
 var _slam_cd:        float = 0.0
 var _respawn_timer:  float = 0.0
 
-## Rectangular patrol path (2-team).
+## Which team owns this creature (set by GameScene at spawn time).
+var team_id: int = 0
+
+## Outer-perimeter patrol path (2-team): all four sides of the creature channels.
 const WAYPOINTS_2T: Array = [
 	Vector2( 25.0, -5.0),
 	Vector2(115.0, -5.0),
@@ -36,17 +39,15 @@ const WAYPOINTS_2T: Array = [
 	Vector2( 25.0, 45.0),
 ]
 
-## Star-perimeter patrol (3-team).
-const WAYPOINTS_3T: Array = [
-	Vector2(135.0, 121.5),
-	Vector2(135.0, 166.5),
-	Vector2( 85.0, 166.5),
-	Vector2( 87.5, 125.9),
-	Vector2( 48.5, 103.4),
-	Vector2( 73.5,  60.1),
-	Vector2(107.5,  82.6),
-	Vector2(146.5,  60.1),
-	Vector2(171.5, 103.4),
+## Per-team patrol paths (3-team): split the star perimeter into thirds.
+const WAYPOINTS_3T_0: Array = [
+	Vector2(135.0, 121.5), Vector2(135.0, 166.5), Vector2( 85.0, 166.5),
+]
+const WAYPOINTS_3T_1: Array = [
+	Vector2( 87.5, 125.9), Vector2( 48.5, 103.4), Vector2( 73.5,  60.1),
+]
+const WAYPOINTS_3T_2: Array = [
+	Vector2(107.5,  82.6), Vector2(146.5,  60.1), Vector2(171.5, 103.4),
 ]
 
 var _waypoints: Array = WAYPOINTS_2T
@@ -59,10 +60,18 @@ var _goad_pos: Vector2 = Vector2.ZERO
 func _ready() -> void:
 	add_to_group("creatures")
 	if MatchState.is_three_team:
-		_waypoints = WAYPOINTS_3T
+		match team_id:
+			1:    _waypoints = WAYPOINTS_3T_1
+			2:    _waypoints = WAYPOINTS_3T_2
+			_:    _waypoints = WAYPOINTS_3T_0
+	else:
+		_waypoints = WAYPOINTS_2T
 	global_position = _waypoints[0]
 	EventBus.damage_requested.connect(_on_damage_requested)
 	_apply_creature_type()
+	var visual := get_node_or_null("Visual")
+	if visual and visual.has_method("setup"):
+		visual.setup(body_radius, _creature_type)
 
 func _physics_process(delta: float) -> void:
 	if not is_alive:

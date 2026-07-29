@@ -7,6 +7,8 @@ extends Node2D
 const _BalancedStrategy = preload("res://systems/ai/strategies/BalancedStrategy.gd")
 const _BalancedTactics   = preload("res://systems/ai/tactics/BalancedTactics.gd")
 const _HUD               = preload("res://scenes/game/hud/HUD.gd")
+const _ForceField        = preload("res://scenes/entities/ForceField.gd")
+const _Creature          = preload("res://scenes/entities/creature/Creature.tscn")
 
 @export var match_config: MatchConfig
 
@@ -34,6 +36,7 @@ func _ready() -> void:
 	MatchState.is_paused = false
 	_populate_roster()
 	_spawn_initial_players()
+	_spawn_creatures()
 	_start_match()
 	# HUD
 	var hud_control: Control = _HUD.new()
@@ -58,6 +61,7 @@ func _ready() -> void:
 		var predictor := ClientPredictor.new()
 		predictor.name = "ClientPredictor"
 		add_child(predictor)
+	EventBus.force_field_spawned.connect(_on_force_field_spawned)
 	# Server: handle future peer connections (assign player authority)
 	EventBus.peer_connected.connect(_on_peer_connected)
 	# Handle peers that connected before GameScene was instantiated (normal lobby flow)
@@ -153,6 +157,16 @@ func _team_spawn_rotation(team_id: int) -> float:
 		1: return -PI * 0.5  # face left toward field centre
 	return 0.0
 
+# ── Creature spawning ──────────────────────────────────────────────────────────
+
+func _spawn_creatures() -> void:
+	var num_teams := 3 if MatchState.is_three_team else 1
+	for t in num_teams:
+		var creature := _Creature.instantiate()
+		creature.team_id = t
+		creature.name = "Creature%d" % t
+		$Entities.add_child(creature)
+
 # ── Match start ────────────────────────────────────────────────────────────────
 
 func _start_match() -> void:
@@ -176,6 +190,14 @@ func _spawn_ai_directors() -> void:
 		add_child(director)
 
 # ── Network: assign arriving clients to player slots ──────────────────────────
+
+func _on_force_field_spawned(caster_id: String, caster_team_id: int, caster_position: Vector2) -> void:
+	var ff := _ForceField.new()
+	ff.field_id = "ff_" + caster_id
+	ff.caster_id = caster_id
+	ff.caster_team_id = caster_team_id
+	ff.global_position = caster_position
+	add_child(ff)
 
 func _on_peer_connected(peer_id: int) -> void:
 	if not NetworkManager.is_server(): return
