@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ubltz00000003"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" path="res://data/abilities/effects/ChainLightningEffect.gd" id="2_chain"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_chain")
+damage = 30.0
+chain_damage = 20.0
+chain_radius = 6.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "chain_lightning"
+display_name = "Chain Lightning"
+description = "Channel 2.5s: 30 dmg · bounces to 2 nearby enemies within 6m (20 dmg)"
+slot = 3
+cooldown = 4.0
+charge_max = 2.5
+mana_cost = 50.0
+mana_type = 2
+range = 35.0
+target_mode = 0
+ability_type = 0
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

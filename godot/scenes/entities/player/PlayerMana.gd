@@ -10,7 +10,7 @@ const MAX_YELLOW := 100.0
 const MAX_ULTRA := 10.0
 const ULTRA_HOLD_RATE := 0.1   # ultra/s while carrying the ball
 
-var red: float = 100.0
+var red: float = 0.0
 var blue: float = 100.0
 var yellow: float = 100.0
 var ultra: float = 0.0
@@ -30,6 +30,7 @@ func _ready() -> void:
 		_yellow_regen = player.class_definition.yellow_regen
 	EventBus.ball_picked_up.connect(_on_ball_picked_up)
 	EventBus.ball_dropped.connect(_on_ball_dropped)
+	EventBus.act_started.connect(_on_act_started)
 
 func _process(delta: float) -> void:
 	red = minf(MAX_RED, red + _red_regen * delta)
@@ -37,7 +38,9 @@ func _process(delta: float) -> void:
 	var yellow_rate := _yellow_regen * (2.0 if is_holding_ball else 1.0)
 	yellow = minf(MAX_YELLOW, yellow + yellow_rate * delta)
 	if is_holding_ball:
-		ultra = minf(MAX_ULTRA, ultra + ULTRA_HOLD_RATE * delta)
+		var buffs: Node = get_parent().get_node_or_null("PlayerBuffs")
+		var ultra_rate := ULTRA_HOLD_RATE * (1.33 if (buffs != null and buffs.stormseeker_remaining > 0.0) else 1.0)
+		ultra = minf(MAX_ULTRA, ultra + ultra_rate * delta)
 
 func can_afford(mana_type: int, cost: float) -> bool:
 	match mana_type:
@@ -88,3 +91,7 @@ func _on_ball_dropped(_pos: Vector2, _cause: String) -> void:
 	var player := get_parent()
 	if player and MatchState.ball.holder_id != player.player_id:
 		is_holding_ball = false
+
+func _on_act_started(_act: int) -> void:
+	ultra = 0.0
+	red = 0.0

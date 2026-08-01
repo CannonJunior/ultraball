@@ -1,6 +1,8 @@
 class_name ViewLayer3D
 extends Node
 
+const PlayerLookup = preload("res://systems/PlayerLookup.gd")
+
 ## Renders a live 3D mirror of the 2D game world inside a SubViewport.
 ## Game physics remain entirely 2D; this layer reads positions each frame.
 ## Coordinate mapping: 2D(x, y) → 3D(x, elevation, -y)
@@ -8,11 +10,6 @@ extends Node
 
 enum CameraMode { BROADCAST = 0, THIRD_PERSON = 1 }
 
-const TEAM_COLORS: Array = [
-	Color(1.00, 0.23, 0.32),  # HOME red
-	Color(0.18, 0.51, 1.00),  # AWAY blue
-	Color(0.20, 0.90, 0.30),  # THIRD green
-]
 const C_FIELD     := Color(0.13, 0.38, 0.16)
 const C_CHANNEL   := Color(0.20, 0.05, 0.28)
 const C_ENDZONE_H := Color(0.34, 0.11, 0.11)
@@ -57,6 +54,7 @@ var _viewport:      SubViewport
 var _camera:        Camera3D
 var _player_meshes:   Dictionary = {}  # player_id -> Node3D (cube + arrow)
 var _creature_meshes: Dictionary = {}  # creature node -> MeshInstance3D
+var _stale_player_ids: Array[String] = []  # reused buffer; avoids per-frame allocation
 var _ball_mesh:       MeshInstance3D = null
 var _ball_node: Node = null
 var _target_bracket:     Node3D = null
@@ -359,11 +357,9 @@ func _update_camera(delta: float) -> void:
 func _local_player_node() -> Node:
 	var pid := NetworkManager.local_player_id
 	if not pid.is_empty():
-		for n in get_tree().get_nodes_in_group("players"):
-			if n.player_id == pid and n.is_alive and n.is_on_field:
-				return n
-		return null
-	for n in get_tree().get_nodes_in_group("players"):
+		var n := PlayerLookup.get_node(pid)
+		return n if n != null and n.is_alive and n.is_on_field else null
+	for n in PlayerLookup.get_all_nodes():
 		if n.get("team_id") == 0 and n.is_alive and n.is_on_field:
 			return n
 	return null
@@ -372,12 +368,11 @@ func _local_player_node() -> Node:
 
 func _sync_players() -> void:
 	var seen: Dictionary = {}
-	for node in get_tree().get_nodes_in_group("players"):
+	for node in PlayerLookup.get_all_nodes():
 		var pid: String = node.player_id
 		seen[pid] = true
 		if not _player_meshes.has(pid):
-			var t: int = clampi(int(node.get("team_id")), 0, 2)
-			_player_meshes[pid] = _make_player_unit(TEAM_COLORS[t])
+			_player_meshes[pid] = _make_player_unit(MatchState.team_color(int(node.get("team_id"))))
 		var root: Node3D = _player_meshes[pid]
 		var alive: bool = node.get("is_alive") == true and node.get("is_on_field") == true
 		root.visible = alive
@@ -389,10 +384,19 @@ func _sync_players() -> void:
 			# W moves in direction (sin θ, -cos θ) in 2D = (sin θ, 0, cos θ) in 3D.
 			# Make local -Z point there: root.rotation.y = θ + π.
 			root.rotation.y = float(node.get("global_rotation")) + PI
-	for pid: String in _player_meshes.keys().duplicate():
+			var cube_mat: StandardMaterial3D = root.get_child(0).material_override
+			if pid == NetworkManager.local_player_id:
+				var cls = node.get("class_definition")
+				cube_mat.albedo_color = cls.body_color if cls != null else MatchState.team_color(int(node.get("team_id")))
+			else:
+				cube_mat.albedo_color = MatchState.team_color(int(node.get("team_id")))
+	_stale_player_ids.clear()
+	for pid: String in _player_meshes:
 		if not seen.has(pid):
-			_player_meshes[pid].queue_free()
-			_player_meshes.erase(pid)
+			_stale_player_ids.append(pid)
+	for pid: String in _stale_player_ids:
+		_player_meshes[pid].queue_free()
+		_player_meshes.erase(pid)
 
 func _sync_ball() -> void:
 	if _ball_mesh == null or not is_instance_valid(_ball_node):
@@ -484,7 +488,7 @@ func _sync_target_bracket() -> void:
 		return
 
 	_target_bracket.scale = Vector3(1.0, 1.0, 1.0)
-	for n in get_tree().get_nodes_in_group("players"):
+	for n in PlayerLookup.get_all_nodes():
 		if str(n.get("player_id")) == target_id \
 				and n.get("is_alive") == true and n.get("is_on_field") == true:
 			var p: Vector2 = n.global_position
@@ -848,11 +852,7 @@ func _sync_ability_bar(delta: float) -> void:
 
 	_ability_charge_elapsed = minf(_ability_charge_elapsed + delta, _ability_charge_max_val)
 
-	var player_node: Node = null
-	for n in get_tree().get_nodes_in_group("players"):
-		if str(n.get("player_id")) == _ability_charge_pid and n.get("is_alive") == true:
-			player_node = n
-			break
+	var player_node: Node = PlayerLookup.get_node(_ability_charge_pid)
 	if player_node == null:
 		for seg in _ability_bar_segs: (seg as MeshInstance3D).visible = false
 		return

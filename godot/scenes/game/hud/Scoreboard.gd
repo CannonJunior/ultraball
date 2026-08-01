@@ -1,7 +1,7 @@
 extends Control
 
-const C_HOME  := Color(1.000, 0.231, 0.325)
-const C_AWAY  := Color(0.184, 0.514, 1.000)
+const _ProvisionalBar := preload("res://scenes/game/hud/ProvisionalBar.gd")
+
 const C_GOLD  := Color(1.000, 0.796, 0.239)
 const C_CYAN  := Color(0.098, 0.890, 0.890)
 const C_BG    := Color(0.016, 0.020, 0.039)
@@ -20,16 +20,9 @@ const HP_BAR_W  := 26
 const HP_BAR_H  :=  4
 const CARD_PAD  :=  3
 
-class _HpBar extends Control:
-	var pct        : float = 1.0
-	var fill_color : Color = Color.WHITE
-	func set_pct(v: float) -> void:
-		pct = clampf(v, 0.0, 1.0)
-		queue_redraw()
-	func _draw() -> void:
-		draw_rect(Rect2(0, 0, size.x, size.y), Color(1, 1, 1, 0.10))
-		if pct > 0.0:
-			draw_rect(Rect2(0, 0, size.x * pct, size.y), fill_color)
+class _HpBar extends _ProvisionalBar:
+	func _init() -> void:
+		bg_color = Color(1, 1, 1, 0.10)
 
 class _SelectedOutline extends Control:
 	var outline_color: Color = Color.TRANSPARENT
@@ -90,7 +83,7 @@ func _draw() -> void:
 
 	# Home panel (always full width of home section)
 	draw_rect(Rect2(0.0, 0.0, clx, BAR_H), C_BG)
-	draw_rect(Rect2(0.0, 0.0, clx, BAR_H), Color(C_HOME.r, C_HOME.g, C_HOME.b, 0.70))
+	draw_rect(Rect2(0.0, 0.0, clx, BAR_H), Color(MatchState.team_color(0).r, MatchState.team_color(0).g, MatchState.team_color(0).b, 0.70))
 
 	# Center section
 	draw_rect(Rect2(clx, 0.0, CENTER_W, BAR_H), C_BG)
@@ -98,7 +91,7 @@ func _draw() -> void:
 
 	# Away panel (always full width of away section)
 	draw_rect(Rect2(crx, 0.0, w - crx, BAR_H), C_BG)
-	draw_rect(Rect2(crx, 0.0, w - crx, BAR_H), Color(C_AWAY.r, C_AWAY.g, C_AWAY.b, 0.70))
+	draw_rect(Rect2(crx, 0.0, w - crx, BAR_H), Color(MatchState.team_color(1).r, MatchState.team_color(1).g, MatchState.team_color(1).b, 0.70))
 
 	# Inner border lines at center section edges
 	draw_line(Vector2(clx, 0.0), Vector2(clx, BAR_H), Color.WHITE, 2.0)
@@ -122,7 +115,7 @@ func _build() -> void:
 	left_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	left_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	_home_name_lbl = _lbl(home_name, C_HOME, 20)
+	_home_name_lbl = _lbl(home_name, MatchState.team_color(0), 20)
 	_home_name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	left_vbox.add_child(_home_name_lbl)
 
@@ -172,7 +165,7 @@ func _build() -> void:
 	right_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	_away_name_lbl = _lbl(away_name, C_AWAY, 20)
+	_away_name_lbl = _lbl(away_name, MatchState.team_color(1), 20)
 	_away_name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	right_vbox.add_child(_away_name_lbl)
 
@@ -360,7 +353,7 @@ func _make_card(pid: String) -> Control:
 	var alive := rec.is_alive if rec else true
 	var name_str := rec.display_name if rec and not rec.display_name.is_empty() else pid
 	var initial  := name_str.substr(0, 1).to_upper()
-	var tc       := C_HOME if team == 0 else C_AWAY
+	var tc       := MatchState.team_color(team)
 	var kills    := MatchState.stat(pid).kills
 
 	var margin := MarginContainer.new()
@@ -425,12 +418,12 @@ func _make_card(pid: String) -> Control:
 	col.add_child(hp_bar)
 
 	_card_entries[pid] = {
-		"av_bg":    av_bg,
-		"init_lbl": init_lbl,
-		"hp_bar":   hp_bar,
-		"kill_lbl": kill_lbl,
+		"av_bg":      av_bg,
+		"init_lbl":   init_lbl,
+		"hp_bar":     hp_bar,
+		"kill_lbl":   kill_lbl,
 		"team_color": tc,
-		"outline":  outline,
+		"outline":    outline,
 	}
 	return margin
 
@@ -462,8 +455,9 @@ func _update_card_health() -> void:
 		if buffs == null: continue
 		var mx: float = buffs.get("max_health")
 		var hp: float = buffs.get("health")
+		var prov: float = buffs.get("provisional_damage")
 		if mx > 0.0:
-			(_card_entries[pid]["hp_bar"] as _HpBar).set_pct(hp / mx)
+			(_card_entries[pid]["hp_bar"] as _HpBar).set_health(hp / mx, prov / mx)
 
 func _get_player_node(pid: String) -> Node:
 	if _player_node_cache.has(pid) and is_instance_valid(_player_node_cache[pid]):
@@ -481,19 +475,19 @@ func _on_card_player_died(pid: String, _cause: String, _killer: String) -> void:
 	(e["init_lbl"] as Label).modulate.a   = 0.35
 	var bar := e["hp_bar"] as _HpBar
 	bar.fill_color = Color(0.45, 0.45, 0.45)
-	bar.set_pct(0.0)
+	bar.set_health(0.0, 0.0)
 
 func _on_card_player_subbed(pid: String, _replaced: String, team: int) -> void:
 	if not _card_entries.has(pid):
 		_rebuild_cards()
 		return
 	var e: Dictionary = _card_entries[pid]
-	var tc := C_HOME if team == 0 else C_AWAY
+	var tc := MatchState.team_color(team)
 	(e["av_bg"]    as ColorRect).color  = Color(tc.r, tc.g, tc.b, 0.65)
 	(e["init_lbl"] as Label).modulate.a = 1.0
 	var bar := e["hp_bar"] as _HpBar
 	bar.fill_color = tc
-	bar.set_pct(1.0)
+	bar.set_health(1.0, 0.0)
 
 func _on_card_killa_scored(_killer_team: int, killer_id: String, _victim_id: String) -> void:
 	if killer_id.is_empty() or not _card_entries.has(killer_id): return
@@ -501,3 +495,4 @@ func _on_card_killa_scored(_killer_team: int, killer_id: String, _victim_id: Str
 	var kill_lbl := _card_entries[killer_id]["kill_lbl"] as Label
 	kill_lbl.text    = str(kills)
 	kill_lbl.visible = true
+

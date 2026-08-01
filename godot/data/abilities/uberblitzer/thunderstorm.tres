@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ubltz0000000a"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" path="res://data/abilities/effects/AoEDamageEffect.gd" id="2_aoe"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_aoe")
+damage = 50.0
+radius = 200.0
+knockback_distance = 0.0
+use_aim_position = false
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "thunderstorm"
+display_name = "Thunderstorm"
+description = "ULTRA: 50 dmg to all enemies on the field"
+slot = 10
+cooldown = 0.0
+mana_cost = 8.0
+mana_type = 4
+range = 0.0
+target_mode = 3
+ability_type = 8
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

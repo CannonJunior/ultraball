@@ -4,7 +4,9 @@ extends Node
 ## Applies terrain shape events, handles pit deaths, manages fissure sequence,
 ## and maintains both the coarse 28×8 grid and the fine 168×48 elevation grid.
 
-const _TricksterTrap = preload("res://scenes/entities/TricksterTrap.gd")
+const _TricksterTrap  = preload("res://scenes/entities/TricksterTrap.gd")
+const ElevationQuery  = preload("res://systems/ElevationQuery.gd")
+const PlayerLookup    = preload("res://systems/PlayerLookup.gd")
 
 const ELEV_LERP_RATE     := 3.0    # coarse height units per second
 const LAVA_DPS           := 15.0
@@ -27,6 +29,9 @@ var _active_events: Array = []
 ## Fissure projectiles in flight: Array[{pos, velocity, target, radius, state, timer}]
 var _fissure_projectiles: Array = []
 
+## Cached once per physics frame; avoids repeated group scans in hot loops.
+var _players_cache: Array = []
+
 func _ready() -> void:
 	EventBus.terrain_modified.connect(_on_terrain_modified)
 	EventBus.terrain_incoming.connect(_on_terrain_incoming)
@@ -36,6 +41,7 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	if not MatchState.match_active: return
+	_players_cache = PlayerLookup.get_all_nodes()
 	_tick_elevation(delta)
 	_tick_hazards(delta)
 	_tick_active_events(delta)
@@ -188,7 +194,7 @@ func _on_pit_opened(world_pos: Vector2, radius: float, duration: float) -> void:
 # ── Shockwave: radial knockback to all players ─────────────────────────────────
 
 func _apply_shockwave_push(world_pos: Vector2, radius: float, intensity: float) -> void:
-	for player in get_tree().get_nodes_in_group("players"):
+	for player in PlayerLookup.get_all_nodes():
 		if not player.is_alive or not player.is_on_field: continue
 		var diff: Vector2 = player.global_position - world_pos
 		var dist: float = diff.length()
@@ -250,7 +256,7 @@ func _tick_elevation(delta: float) -> void:
 # ── Hazard DoT ────────────────────────────────────────────────────────────────
 
 func _tick_hazards(delta: float) -> void:
-	for player in get_tree().get_nodes_in_group("players"):
+	for player in _players_cache:
 		if not player.is_alive or not player.is_on_field: continue
 		var col := int(player.global_position.x / 5.0)
 		var row := int(player.global_position.y / 5.0)
@@ -335,7 +341,7 @@ func _tick_fissure_projectiles(delta: float) -> void:
 # ── Pit death check ───────────────────────────────────────────────────────────
 
 func _check_pit_deaths() -> void:
-	for player in get_tree().get_nodes_in_group("players"):
+	for player in _players_cache:
 		if not player.is_alive or not player.is_on_field: continue
 		var col := int(player.global_position.x / 5.0)
 		var row := int(player.global_position.y / 5.0)
@@ -384,8 +390,4 @@ func _cell_index(col: int, row: int) -> int:
 	return row * 28 + col
 
 func _elevation_at(pos: Vector2) -> float:
-	var col := clampi(int(pos.x / ELEV_CELL_W), 0, ELEV_COLS - 1)
-	var row := clampi(int(pos.y / ELEV_CELL_H), 0, ELEV_ROWS - 1)
-	var elev := MatchState.terrain.elevation_heights
-	if elev.size() < ELEV_COLS * ELEV_ROWS: return 0.0
-	return elev[row * ELEV_COLS + col]
+	return ElevationQuery.at(pos)

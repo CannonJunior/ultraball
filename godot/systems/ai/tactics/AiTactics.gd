@@ -9,7 +9,7 @@ const CREATURE_AVOID  := 6.0    # avoidance radius around creature (m)
 const PLAYER_AVOID    := 2.5    # separation radius between AI players (m)
 const ATTACK_RANGE_SQ := 16.0   # 4 m radius² for opportunistic ability use
 
-# ── Shared helpers ─────────────────────────────────────────────────────────────
+# ── Navigation ─────────────────────────────────────────────────────────────────
 
 ## Movement direction toward target with creature + player avoidance blended in.
 func navigate_toward(agent: AiView.PlayerView, target: Vector2, view: AiView) -> Vector2:
@@ -18,7 +18,11 @@ func navigate_toward(agent: AiView.PlayerView, target: Vector2, view: AiView) ->
 		dir = Vector2.ZERO
 	else:
 		dir = dir.normalized()
-	return _blend_avoidance(agent, view, dir)
+	# Result is world-space; rotate to player-local so Player._apply_movement()'s
+	# dir.rotated(rotation) converts it back to world-space correctly regardless
+	# of the agent's facing angle. Act transitions reset AI rotations via
+	# _on_positions_reset, which previously broke movement in act 2+.
+	return _blend_avoidance(agent, view, dir).rotated(-agent.facing)
 
 func _blend_avoidance(agent: AiView.PlayerView, view: AiView, dir: Vector2) -> Vector2:
 	var avoid := Vector2.ZERO
@@ -40,6 +44,8 @@ func _blend_avoidance(agent: AiView.PlayerView, view: AiView, dir: Vector2) -> V
 		return dir
 	return blended.normalized()
 
+# ── Situational queries ────────────────────────────────────────────────────────
+
 ## Count alive enemies within 5 m of agent.
 func enemy_pressure(agent: AiView.PlayerView, view: AiView) -> int:
 	var count := 0
@@ -48,49 +54,46 @@ func enemy_pressure(agent: AiView.PlayerView, view: AiView) -> int:
 		if agent.position.distance_squared_to(e.position) < 25.0: count += 1
 	return count
 
+# ── Pass selection ─────────────────────────────────────────────────────────────
+
 ## Find the best pass receiver for a holder.
-## pass_threshold = metres ahead the receiver must be (ignored when charge is critical).
+## Uses arm-local advance score so "ahead" is correct in both field modes.
+## pass_threshold: metres of advance required (ignored when charge is critical).
 func find_best_receiver(
 	agent: AiView.PlayerView,
 	view: AiView,
 	pass_threshold: float
 ) -> AiView.PlayerView:
-	var tid := view.requesting_team_id
-	var charge_danger := view.ball.charge_pct > CHARGE_DANGER
-	var allies := view.allies()
-	var enemies := view.enemies()
+	var tid            := view.requesting_team_id
+	var charge_danger  := view.ball.charge_pct > CHARGE_DANGER
+	var allies         := view.allies()
+	var enemies        := view.enemies()
+	var agent_advance  := AiStrategy.advance_score(agent.position, tid)
 	var best: AiView.PlayerView = null
-	var best_score := -INF
+	var best_score     := -INF
 
 	for ally in allies:
 		if ally.player_id == agent.player_id or not ally.is_alive: continue
-		var is_ahead: bool
-		if charge_danger:
-			is_ahead = true
-		elif tid == 0:
-			is_ahead = ally.position.x > agent.position.x + pass_threshold
-		else:
-			is_ahead = ally.position.x < agent.position.x - pass_threshold
+		var ally_advance := AiStrategy.advance_score(ally.position, tid)
+		var is_ahead     := charge_danger or (ally_advance > agent_advance + pass_threshold)
 		if not is_ahead: continue
 
 		var near_enemies := 0
-		var closest_sq := INF
+		var closest_sq   := INF
 		for e in enemies:
 			if not e.is_alive: continue
 			var sq := ally.position.distance_squared_to(e.position)
 			if sq < 25.0: near_enemies += 1
 			if sq < closest_sq: closest_sq = sq
-		if near_enemies > (1 if charge_danger else 0): continue
+		if near_enemies > 1: continue
 
-		var goal_x := AiStrategy.endzone_x(tid)
-		var advance := -absf(ally.position.x - goal_x)
 		var openness := minf(sqrt(closest_sq) / 10.0, 2.0)
-		var score := advance + openness
+		var score    := ally_advance + openness
 		if score > best_score:
 			best_score = score
 			best = ally
 
-	# Under heavy pressure: take any open teammate regardless of position
+	# Under heavy pressure: take any open teammate regardless of advance position
 	if best == null and enemy_pressure(agent, view) >= 2:
 		for ally in allies:
 			if ally.player_id == agent.player_id or not ally.is_alive: continue
@@ -103,7 +106,9 @@ func find_best_receiver(
 
 	return best
 
-## Queue slot 1 (basic attack) when an enemy wanders within attack range.
+# ── Ability use ────────────────────────────────────────────────────────────────
+
+## Queue slot 1 (basic attack) when an enemy is within attack range.
 func try_queue_ability(agent: AiView.PlayerView, view: AiView, input: InputState) -> void:
 	for e in view.enemies():
 		if not e.is_alive or e.is_stunned: continue

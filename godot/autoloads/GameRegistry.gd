@@ -3,7 +3,7 @@ extends Node
 const CLASS_IDS: Array[String] = [
 	"spectre", "corsair", "geomancer", "archon",
 	"warden", "trickster", "wrecker", "vitalist",
-	"chronokinesist"
+	"chronokinesist", "uberblitzer"
 ]
 
 var _classes: Dictionary = {}         # class_id -> ClassDefinition

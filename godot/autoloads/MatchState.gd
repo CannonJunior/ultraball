@@ -20,6 +20,19 @@ const TEAM3_NORMALS := [
 	Vector2(-0.8660254037844387, -0.5),
 ]
 
+const TEAM_COLOR_PALETTE: Array[Color] = [
+	Color(0.94, 0.16, 0.22),  # 0 REAPERS   — blood red
+	Color(0.14, 0.88, 0.28),  # 1 VIPERS    — venom green
+	Color(0.35, 0.62, 1.00),  # 2 TITANS    — steel blue
+	Color(0.70, 0.75, 1.00),  # 3 GHOSTS    — pale violet
+	Color(1.00, 0.50, 0.05),  # 4 INFERNO   — blaze orange
+	Color(0.94, 0.90, 0.10),  # 5 STORM     — lightning yellow
+	Color(0.08, 0.88, 0.84),  # 6 RAPTORS   — afterburner teal
+	Color(0.55, 0.20, 1.00),  # 7 COBRAS    — royal purple
+	Color(0.96, 0.18, 0.82),  # 8 WARLOCKS  — magenta
+	Color(0.55, 0.76, 0.96),  # 9 PHANTOMS  — phantom silver
+]
+
 # Match configuration (set before match starts)
 var config: MatchConfig = null
 var is_three_team: bool = false
@@ -58,6 +71,18 @@ var creature_positions: Array[Vector2] = []
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+func team_color(team_id: int) -> Color:
+	var idx: int
+	if config != null:
+		match team_id:
+			0: idx = config.home_team_idx
+			1: idx = config.away_team_idx
+			2: idx = config.third_team_idx
+			_: idx = team_id
+	else:
+		idx = clampi(team_id, 0, TEAM_COLOR_PALETTE.size() - 1)
+	return TEAM_COLOR_PALETTE[clampi(idx, 0, TEAM_COLOR_PALETTE.size() - 1)]
+
 func score(team: int) -> int:
 	return scores[team]
 
@@ -91,6 +116,23 @@ func is_fast_mode() -> bool:
 
 func act_duration() -> float:
 	return 60.0 if is_fast_mode() else 180.0
+
+func reset_for_new_match() -> void:
+	current_act = 1
+	act_timer = 180.0
+	match_active = false
+	act_ended = false
+	game_over = false
+	is_paused = false
+	scores = [0, 0, 0]
+	kills = [0, 0, 0]
+	act5_leading_team = -1
+	act5_ultra_target = 3
+	players = {}
+	ball = BallStateRecord.new()
+	terrain = TerrainStateRecord.new()
+	player_stats = {}
+	creature_positions = []
 
 func reset_for_new_act() -> void:
 	act_ended = false

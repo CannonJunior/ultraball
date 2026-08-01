@@ -5,6 +5,8 @@ extends Node
 ## Applies the attacker's damage output multiplier; PlayerBuffs handles the
 ## target's incoming multiplier, dodge check, health reduction, and kill detection.
 
+const PlayerLookup = preload("res://systems/PlayerLookup.gd")
+
 func _ready() -> void:
 	EventBus.damage_requested.connect(_on_damage_requested)
 
@@ -50,17 +52,42 @@ func _on_damage_requested(payload: Dictionary) -> void:
 	# PlayerBuffs handles incoming multiplier, dodge, health reduction, and kill.
 	EventBus.damage_applied.emit(attacker_id, target_id, amount, false)
 
+	if attacker_node != null:
+		_try_honor_healing(attacker_node, attacker_id, amount)
+
 	EventBus.damage_indicator_spawned.emit(
 		target_node.global_position,
 		str(int(round(amount))),
 		"damage"
 	)
 
+const HONOR_HEAL_RANGE  := 40.0
+const HONOR_HEAL_PCT    := 0.25
+const HONOR_MAX_ALLIES  := 4
+
+func _try_honor_healing(attacker: Node, attacker_id: String, damage: float) -> void:
+	if attacker.get("stance") != "honor": return
+	var rec: MatchState.PlayerRecord = MatchState.players.get(attacker_id)
+	if rec == null or rec.class_id != "warden": return
+	var heal := damage * HONOR_HEAL_PCT
+	if heal <= 0.0: return
+	var allies: Array = []
+	for node in PlayerLookup.get_all_nodes():
+		if node.player_id == attacker_id: continue
+		if not node.is_alive or not node.is_on_field: continue
+		var ally_rec: MatchState.PlayerRecord = MatchState.players.get(node.player_id)
+		if ally_rec == null or ally_rec.team_id != rec.team_id: continue
+		if attacker.global_position.distance_to(node.global_position) <= HONOR_HEAL_RANGE:
+			allies.append(node)
+	allies.sort_custom(func(a, b):
+		return attacker.global_position.distance_squared_to(a.global_position) \
+			 < attacker.global_position.distance_squared_to(b.global_position))
+	for i in mini(HONOR_MAX_ALLIES, allies.size()):
+		EventBus.healing_applied.emit(attacker_id, allies[i].player_id, heal)
+
 func _get_player(pid: String) -> Node:
 	if pid.is_empty(): return null
-	for n in get_tree().get_nodes_in_group("players"):
-		if n.player_id == pid: return n
-	return null
+	return PlayerLookup.get_node(pid)
 
 func _find_protecting_force_field(attacker_id: String, target_node: Node) -> Node:
 	var attacker_rec: MatchState.PlayerRecord = MatchState.players.get(attacker_id)

@@ -7,6 +7,15 @@ extends Node
 var health: float = 100.0
 var max_health: float = 100.0
 
+## Ghost zone showing recent damage taken; fades after PROV_RECOVERY_DELAY seconds. Does not restore HP.
+var provisional_damage: float = 0.0
+var _prov_delay: float = 0.0
+const PROV_RECOVERY_DELAY := 0.8   # seconds before recovery begins
+const PROV_RECOVERY_RATE  := 20.0  # HP recovered per second
+
+## Uberblitzer Stormseeker buff: seconds remaining.
+var stormseeker_remaining: float = 0.0
+
 # ── Buff timers (remaining, max for progress ring) ────────────────────────────
 var speed_mult_remaining: float = 0.0
 var speed_mult_max: float = 1.0
@@ -70,27 +79,44 @@ func _process(delta: float) -> void:
 	speed_mult_remaining = maxf(0.0, speed_mult_remaining - delta)
 	damage_boost_remaining = maxf(0.0, damage_boost_remaining - delta)
 	damage_reduction_remaining = maxf(0.0, damage_reduction_remaining - delta)
+	stormseeker_remaining = maxf(0.0, stormseeker_remaining - delta)
 
 	if hot_remaining > 0.0:
 		hot_remaining -= delta
 		health = minf(max_health, health + hot_rate * delta)
 
+	if health >= max_health:
+		provisional_damage = 0.0
+	elif provisional_damage > 0.0:
+		_prov_delay = maxf(0.0, _prov_delay - delta)
+		if _prov_delay <= 0.0:
+			provisional_damage = maxf(0.0, provisional_damage - PROV_RECOVERY_RATE * delta)
+
 func get_speed_multiplier() -> float:
 	var m := 1.0
 	if speed_mult_remaining > 0.0: m *= speed_mult_factor
 	if snare_remaining > 0.0: m *= snare_factor
+	var p := get_parent()
+	if p:
+		var st: String = p.get("stance") if p.get("stance") != null else ""
+		if st == "lightning": m *= 1.2
+		elif st == "thunder": m *= 0.8
 	return m
 
 func get_damage_output_multiplier() -> float:
 	var m := 1.0
 	if damage_boost_remaining > 0.0: m *= damage_boost_factor
 	if hex_timer > 0.0: m *= hex_damage_factor
+	var p := get_parent()
+	if p and p.get("stance") == "thunder": m *= 1.2
 	return m
 
 func get_incoming_damage_multiplier() -> float:
 	var m := 1.0
 	if damage_reduction_remaining > 0.0: m *= damage_reduction_factor
 	if marked_timer > 0.0: m *= marked_damage_mult
+	var p := get_parent()
+	if p and p.get("stance") == "lightning": m *= 1.2
 	return m
 
 func is_invulnerable() -> bool:
@@ -114,6 +140,8 @@ func _on_buff_applied(player_id: String, buff_name: String, duration: float) -> 
 			duration_double_next = true
 		"phase_line_bonus":
 			pass  # AbilitySystem handles cooldown refresh on phase line crossing
+		"stormseeker":
+			stormseeker_remaining = maxf(stormseeker_remaining, duration)
 		# speed_boost, damage_boost, damage_reduction, hot, cleanse:
 		# the corresponding _set debuff carries the actual values — no-op here
 
@@ -191,14 +219,19 @@ func _on_damage_applied(attacker_id: String, target_id: String, amount: float, i
 	if not p or p.player_id != target_id: return
 	if dodge_remaining > 0.0: return
 	var final_dmg := amount * get_incoming_damage_multiplier()
+	var before := health
 	health = maxf(0.0, health - final_dmg)
+	provisional_damage += before - health   # exactly the HP actually lost
+	_prov_delay = PROV_RECOVERY_DELAY
 	if is_kill or health <= 0.0:
 		EventBus.player_died.emit(target_id, "combat", attacker_id)
 
 func _on_healing_applied(_healer_id: String, target_id: String, amount: float) -> void:
 	var p := get_parent()
 	if not p or p.player_id != target_id: return
-	health = minf(max_health, health + amount)
+	var serene_mult := 1.2 if p.get("stance") == "serene" else 1.0
+	health = minf(max_health, health + amount * serene_mult)
+	provisional_damage = minf(provisional_damage, maxf(0.0, max_health - health))
 
 func _on_periodic_hot_applied(payload: Dictionary) -> void:
 	var p := get_parent()

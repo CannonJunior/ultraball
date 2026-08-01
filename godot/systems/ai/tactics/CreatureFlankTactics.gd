@@ -1,8 +1,8 @@
 class_name CreatureFlankTactics
 extends "res://systems/ai/tactics/BalancedTactics.gd"
 
-## Support positions on the opposite side of the creature from the holder,
-## herding it toward enemies.
+## Position on the opposite side of the creature from the holder,
+## herding it toward enemy players.
 
 func _mover_input(
 	agent: AiView.PlayerView,
@@ -16,13 +16,21 @@ func _mover_input(
 		try_queue_ability(agent, view, input)
 		return
 
-	var creature_y := view.creatures[0].position.y
-	var lane_base := AiStrategy.lane_y(agent.roster_slot)
-	# Opposite side of creature from holder
-	var side_y := clampf(lane_base, 22.0, 38.0) if holder.position.y < creature_y \
-		else clampf(lane_base, 2.0, 18.0)
-	var tid := view.requesting_team_id
-	var spread := 8.0 + float(agent.roster_slot % 3) * 6.0
-	var tx := holder.position.x + spread if tid == 0 else holder.position.x - spread
-	input.move_direction = navigate_toward(agent, Vector2(clampf(tx, 0.0, 140.0), side_y), view)
+	var tid      := view.requesting_team_id
+	var norm     := AiStrategy.team_advance_dir(tid)
+	var perp     := Vector2(-norm.y, norm.x)
+	var creature := view.creatures[0]
+
+	# Compute which lateral side of the creature the holder is on
+	var holder_side  := (holder.position - creature.position).dot(perp)
+	# Place this agent on the opposite side — flanking to herd the creature
+	var side_sign    := -1.0 if holder_side > 0.0 else 1.0
+	var rank_offset  := float(agent.roster_slot % 3) * 4.0  # stagger multiple flankers
+
+	# Advance ahead of or alongside the carrier along the arm
+	var c_local  := AiStrategy.world_to_arm_local(holder.position, tid)
+	var spread   := 8.0 + float(agent.roster_slot % 3) * 6.0
+	var target_along := c_local.x + spread
+	var target   := AiStrategy.arm_to_world(target_along, (10.0 + rank_offset) * side_sign, tid)
+	input.move_direction = navigate_toward(agent, target, view)
 	try_queue_ability(agent, view, input)

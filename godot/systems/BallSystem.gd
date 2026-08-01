@@ -3,6 +3,8 @@ extends Node
 
 ## Ball physics: phase line detection, pickup/catch, charge timer, arc flight.
 
+const PlayerLookup = preload("res://systems/PlayerLookup.gd")
+
 const THROW_SPEED := 20.0         # m/s — charged throw horizontal speed
 const PASS_SPEED := 25.0          # m/s — regular pass speed
 const PICKUP_RADIUS := 1.0        # metres — walk-up grab
@@ -28,21 +30,33 @@ var _possession_cooldowns: Dictionary = {}
 var _prev_ball_x: float = 70.0
 var _prev_ball_pos: Vector2 = Vector2(70.0, 20.0)
 
+## Cached once per physics frame to avoid repeated group scans.
+var _players_cache: Array = []
+## Last charge fraction emitted; avoids 60 Hz signal flood while ball is held.
+var _last_emitted_charge: float = -1.0
+## Reusable buffer for cooldown expiry — avoids per-frame Array allocation.
+var _expired_cooldowns: Array[String] = []
+
 func _ready() -> void:
 	EventBus.player_died.connect(_on_player_died)
 	EventBus.ball_dropped.connect(_on_ball_dropped)
 	EventBus.throw_requested.connect(_on_throw_requested)
+	EventBus.pass_to_player_requested.connect(_on_pass_to_player_requested)
 	EventBus.ultra_scored.connect(_on_scored)
 	EventBus.meta_scored.connect(_on_scored)
 	EventBus.act_transition_complete.connect(_on_act_transition)
 
 func _physics_process(delta: float) -> void:
 	if not MatchState.match_active or MatchState.act_ended: return
+	_players_cache = PlayerLookup.get_all_nodes()
 	var ball := MatchState.ball
-	for pid: String in _possession_cooldowns.keys():
-		_possession_cooldowns[pid] = _possession_cooldowns[pid] - delta
+	_expired_cooldowns.clear()
+	for pid: String in _possession_cooldowns:
+		_possession_cooldowns[pid] -= delta
 		if _possession_cooldowns[pid] <= 0.0:
-			_possession_cooldowns.erase(pid)
+			_expired_cooldowns.append(pid)
+	for pid: String in _expired_cooldowns:
+		_possession_cooldowns.erase(pid)
 
 	if not ball.holder_id.is_empty():
 		_update_held(ball, delta)
@@ -60,8 +74,13 @@ func _update_held(ball: MatchState.BallStateRecord, delta: float) -> void:
 		return
 
 	ball.position = holder.global_position
-	ball.charge_timer += delta
-	EventBus.throw_charge_changed.emit(ball.charge_timer / MAX_CHARGE)
+	var holder_buffs: Node = holder.get_node_or_null("PlayerBuffs")
+	if holder_buffs == null or holder_buffs.stormseeker_remaining <= 0.0:
+		ball.charge_timer += delta
+	var charge_pct := ball.charge_timer / MAX_CHARGE
+	if absf(charge_pct - _last_emitted_charge) >= 0.05:
+		_last_emitted_charge = charge_pct
+		EventBus.throw_charge_changed.emit(charge_pct)
 
 	if ball.charge_timer >= MAX_CHARGE:
 		_explode_ball(ball)
@@ -172,7 +191,7 @@ func _check_endzone_scoring_3t(ball: MatchState.BallStateRecord) -> void:
 # ── Pickup and catch ──────────────────────────────────────────────────────────
 
 func _check_pickups(ball: MatchState.BallStateRecord) -> void:
-	for player in get_tree().get_nodes_in_group("players"):
+	for player in _players_cache:
 		if not player.is_alive: continue
 		if _possession_cooldowns.has(player.player_id): continue
 		if player.global_position.distance_to(ball.position) <= PICKUP_RADIUS:
@@ -181,7 +200,7 @@ func _check_pickups(ball: MatchState.BallStateRecord) -> void:
 
 func _check_catches(ball: MatchState.BallStateRecord) -> void:
 	var thrower_team := ball.possessing_team_id
-	for player in get_tree().get_nodes_in_group("players"):
+	for player in _players_cache:
 		if not player.is_alive: continue
 		if player.player_id == ball.holder_id: continue
 		if _possession_cooldowns.has(player.player_id): continue
@@ -196,7 +215,7 @@ func _check_catches(ball: MatchState.BallStateRecord) -> void:
 
 func _handle_interception(ball: MatchState.BallStateRecord, interceptor: Node) -> void:
 	var original_team := ball.possessing_team_id
-	for p in get_tree().get_nodes_in_group("players"):
+	for p in _players_cache:
 		if p.team_id == original_team and p.is_alive:
 			EventBus.debuff_applied.emit(p.player_id, "stun", 1.0, {})
 	_give_ball(ball, interceptor.player_id)
@@ -210,6 +229,7 @@ func _start_possession_cooldown(pid: String) -> void:
 
 func _give_ball(ball: MatchState.BallStateRecord, player_id: String) -> void:
 	_start_possession_cooldown(ball.holder_id)
+	_last_emitted_charge = -1.0
 	ball.holder_id = player_id
 	ball.possessing_team_id = MatchState.team_for_player(player_id)
 	ball.is_in_flight = false
@@ -229,8 +249,16 @@ func _give_ball(ball: MatchState.BallStateRecord, player_id: String) -> void:
 func _on_throw_requested(thrower_id: String, direction: Vector2, is_charged: bool) -> void:
 	var ball := MatchState.ball
 	if ball.holder_id != thrower_id: return
-	var speed := THROW_SPEED if is_charged else PASS_SPEED
+	var thrower := _get_player_node(thrower_id)
+	var lightning_mult := 1.2 if (thrower != null and thrower.get("stance") == "lightning") else 1.0
+	var speed := (THROW_SPEED if is_charged else PASS_SPEED) * lightning_mult
 	throw_ball(thrower_id, direction, speed, is_charged)
+
+func _on_pass_to_player_requested(holder_id: String, target_id: String) -> void:
+	var ball := MatchState.ball
+	if ball.holder_id != holder_id: return
+	var direction := (_get_player_position(target_id) - _get_player_position(holder_id)).normalized()
+	throw_ball(holder_id, direction, PASS_SPEED, false)
 
 func throw_ball(thrower_id: String, direction: Vector2, speed: float, is_charged: bool) -> void:
 	var ball := MatchState.ball
@@ -254,7 +282,7 @@ func throw_ball(thrower_id: String, direction: Vector2, speed: float, is_charged
 
 func _handle_failed_throw(ball: MatchState.BallStateRecord) -> void:
 	var stun_dur := maxf(1.5, ball.charge_at_throw)
-	for p in get_tree().get_nodes_in_group("players"):
+	for p in _players_cache:
 		if p.team_id == ball.possessing_team_id and p.is_alive:
 			EventBus.debuff_applied.emit(p.player_id, "stun", stun_dur, {})
 	EventBus.event_message_shown.emit("DROPPED!", 1.5)
@@ -303,15 +331,12 @@ func _reset_ball_to_centre() -> void:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 func _drop_ball(ball: MatchState.BallStateRecord, pos: Vector2, cause: String) -> void:
+	# Start cooldown and clear velocity before emitting; _on_ball_dropped handles
+	# the rest so external emitters (SubstitutionSystem, PlayerBuffs) also get a
+	# consistent reset without duplicating the logic here.
 	if not ball.holder_id.is_empty():
 		_start_possession_cooldown(ball.holder_id)
-		ball.holder_id = ""
-		ball.possessing_team_id = -1
-		ball.is_in_flight = false
 		ball.velocity = Vector2.ZERO
-		ball.charge_timer = 0.0
-	if pos != Vector2.ZERO:
-		ball.position = pos
 	EventBus.ball_dropped.emit(pos, cause)
 
 func _on_player_died(player_id: String, _cause: String, _killer: String) -> void:
@@ -329,19 +354,26 @@ func _on_ball_dropped(position: Vector2, _cause: String) -> void:
 
 func _bounce_ball_at_boundary(ball: MatchState.BallStateRecord) -> void:
 	if MatchState.is_three_team:
-		var sz := MatchState.FIELD3_SIZE
-		if ball.position.y < 0.0:
-			ball.position.y = 0.0
-			ball.velocity.y = 0.0
-		elif ball.position.y > sz:
-			ball.position.y = sz
-			ball.velocity.y = 0.0
-		if ball.position.x < 0.0:
-			ball.position.x = 0.0
-			ball.velocity.x = 0.0
-		elif ball.position.x > sz:
-			ball.position.x = sz
-			ball.velocity.x = 0.0
+		var center := Vector2(MatchState.FIELD3_CX, MatchState.FIELD3_CY)
+		var best_arm := 0
+		var best_dot := -INF
+		for i in 3:
+			var d: float = (ball.position - center).dot(MatchState.TEAM3_NORMALS[i])
+			if d > best_dot:
+				best_dot = d
+				best_arm = i
+		var norm: Vector2 = MatchState.TEAM3_NORMALS[best_arm]
+		var perp := Vector2(-norm.y, norm.x)
+		var rel  := ball.position - center
+		var along := rel.dot(norm)
+		var side  := rel.dot(perp)
+		var clamped_along := clampf(along, -MatchState.FIELD3_INRADIUS, MatchState.FIELD3_ARM_END)
+		var clamped_side  := clampf(side, -MatchState.FIELD3_ARM_HALF_W, MatchState.FIELD3_ARM_HALF_W)
+		if along != clamped_along:
+			ball.velocity -= ball.velocity.dot(norm) * norm
+		if side != clamped_side:
+			ball.velocity -= ball.velocity.dot(perp) * perp
+		ball.position = center + norm * clamped_along + perp * clamped_side
 		return
 	if ball.position.y < 0.0:
 		ball.position.y = 0.0
@@ -357,10 +389,7 @@ func _bounce_ball_at_boundary(ball: MatchState.BallStateRecord) -> void:
 		ball.velocity.x = 0.0
 
 func _get_player_node(pid: String) -> Node:
-	for n in get_tree().get_nodes_in_group("players"):
-		if n.player_id == pid: return n
-	return null
+	return PlayerLookup.get_node(pid)
 
 func _get_player_position(pid: String) -> Vector2:
-	var n := _get_player_node(pid)
-	return n.global_position if n else Vector2.ZERO
+	return PlayerLookup.get_position(pid)

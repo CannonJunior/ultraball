@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ubltz00000004"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" path="res://data/abilities/effects/AoEDamageEffect.gd" id="2_aoe"]
+[ext_resource type="Script" uid="uid://yrako34mp3x4" path="res://data/abilities/effects/StunEffect.gd" id="3_stun"]
+[ext_resource type="Script" uid="uid://nwjwptslhmfe" path="res://data/abilities/effects/SnareEffect.gd" id="4_snare"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_aoe")
+damage = 12.0
+radius = 5.0
+knockback_distance = 0.0
+use_aim_position = false
+
+[sub_resource type="Resource" id="E2"]
+script = ExtResource("3_stun")
+duration = 1.5
+
+[sub_resource type="Resource" id="E3"]
+script = ExtResource("4_snare")
+duration = 2.0
+slow_factor = 0.4
+aoe_radius = 0.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "thunderclap"
+display_name = "Thunderclap"
+description = "AoE 5m: 12 dmg · target: 1.5s stun · 2s snare (60% slow)"
+slot = 4
+cooldown = 8.0
+mana_cost = 30.0
+mana_type = 2
+range = 6.0
+target_mode = 0
+ability_type = 4
+effects = [SubResource("E1"), SubResource("E2"), SubResource("E3")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

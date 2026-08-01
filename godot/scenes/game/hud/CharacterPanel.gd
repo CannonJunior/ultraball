@@ -3,6 +3,7 @@ extends Control
 ## Unified bottom HUD panel: player card (left) | ability slots (centre) | target card (right).
 
 # Effect types not yet in Godot's global-class cache must be preloaded explicitly.
+const _ProvisionalBar     := preload("res://scenes/game/hud/ProvisionalBar.gd")
 const _AoEDamageEffect    := preload("res://data/abilities/effects/AoEDamageEffect.gd")
 const _AoEHealEffect      := preload("res://data/abilities/effects/AoEHealEffect.gd")
 const _InvulnEffect       := preload("res://data/abilities/effects/InvulnerabilityEffect.gd")
@@ -17,6 +18,12 @@ const C_ENEMY      := Color(1.0, 0.35, 0.35)
 const C_NONE       := Color(1, 1, 1, 0.20)
 const C_QUEUE_GOLD := Color(1.00, 0.85, 0.15)
 const C_QUEUE_FAIL := Color(1.00, 0.22, 0.10)
+
+const C_STANCE_HONOR      := Color(0.85, 0.65, 0.10)
+const C_STANCE_DUTY       := Color(0.25, 0.55, 0.90)
+const C_STANCE_LIGHTNING  := Color(0.40, 0.80, 1.00)
+const C_STANCE_THUNDER    := Color(0.75, 0.45, 0.95)
+const C_STANCE_SERENE     := Color(0.55, 0.95, 0.80)
 
 const HP_COLOR    := Color(0.20, 0.85, 0.20)
 const MANA_COLORS := [
@@ -62,7 +69,7 @@ const SLOT_BORDER_MANA    := Color(0.15, 0.35, 0.90)  # Mana drain
 var _class_dot    : ColorRect
 var _name_lbl     : Label
 var _class_lbl    : Label
-var _hp_bar       : ProgressBar
+var _hp_bar       : _ProvisionalBar
 var _mana_bars     : Array[ProgressBar] = []
 var _mana_bar_rows : Array[Control]     = []
 var _ultra_bar     : Control            = null
@@ -76,10 +83,18 @@ var _queue_preview_dots : Array[ColorRect] = []
 var _queue_positions    : Dictionary       = {}   # slot_num -> 1-indexed position in queue
 var _cached_queue       : Array            = []   # current queue array for local player
 
+var _stance_row      : Control        = null
+var _stance_btn_area : HBoxContainer  = null
+var _stance_btns     : Array[PanelContainer] = []
+var _stance_btn_ids  : Array[String]  = []
+var _stance_btn_lbls : Array[Label]   = []
+var _stance_btn_sboxes : Array[StyleBoxFlat] = []
+var _last_stance_class : String       = ""
+
 var _target_icon  : Label
 var _target_name  : Label
 var _target_class : Label
-var _target_hp    : ProgressBar
+var _target_hp    : _ProvisionalBar
 
 class _UltraGradientBar extends Control:
 	var _grad_tex : GradientTexture1D
@@ -179,7 +194,7 @@ func _build_player_pane() -> Control:
 	_class_lbl.add_theme_color_override("font_color", C_DIM)
 	hdr.add_child(_class_lbl)
 
-	_hp_bar = _make_bar(HP_COLOR)
+	_hp_bar = _make_hp_bar(HP_COLOR)
 	vbox.add_child(_bar_row("HP ", _hp_bar, HP_COLOR))
 
 	_mana_bars.clear()
@@ -204,7 +219,101 @@ func _build_player_pane() -> Control:
 	_mana_bar_rows.append(ultra_row)
 	vbox.add_child(ultra_row)
 
+	_stance_row = _build_stance_row()
+	_stance_row.visible = false
+	vbox.add_child(_stance_row)
+
 	return vbox
+
+func _build_stance_row() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var lbl := Label.new()
+	lbl.text = "STA"
+	lbl.custom_minimum_size.x = 30
+	lbl.add_theme_font_size_override("font_size", 9)
+	lbl.add_theme_color_override("font_color", C_DIM)
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(lbl)
+
+	_stance_btn_area = HBoxContainer.new()
+	_stance_btn_area.add_theme_constant_override("separation", 3)
+	_stance_btn_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_stance_btn_area.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(_stance_btn_area)
+
+	return row
+
+func _rebuild_stance_buttons(class_id: String) -> void:
+	for child in _stance_btn_area.get_children():
+		child.queue_free()
+	_stance_btns.clear()
+	_stance_btn_ids.clear()
+	_stance_btn_lbls.clear()
+	_stance_btn_sboxes.clear()
+
+	var stances: Array[String] = []
+	match class_id:
+		"warden":      stances = ["honor", "duty"]
+		"uberblitzer": stances = ["lightning", "serene", "thunder"]
+
+	for s: String in stances:
+		var panel := PanelContainer.new()
+		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		var sbox := StyleBoxFlat.new()
+		sbox.bg_color = Color(0.08, 0.08, 0.12)
+		sbox.border_color = Color.TRANSPARENT
+		sbox.border_width_left  = 1; sbox.border_width_right  = 1
+		sbox.border_width_top   = 1; sbox.border_width_bottom = 1
+		sbox.corner_radius_top_left    = 2; sbox.corner_radius_top_right    = 2
+		sbox.corner_radius_bottom_left = 2; sbox.corner_radius_bottom_right = 2
+		sbox.content_margin_left  = 2; sbox.content_margin_right  = 2
+		sbox.content_margin_top   = 1; sbox.content_margin_bottom = 1
+		panel.add_theme_stylebox_override("panel", sbox)
+
+		var btn_lbl := Label.new()
+		btn_lbl.text = _stance_abbrev(s)
+		btn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		btn_lbl.add_theme_font_size_override("font_size", 9)
+		btn_lbl.add_theme_color_override("font_color", C_DIM)
+		btn_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		panel.add_child(btn_lbl)
+
+		var target := s
+		panel.gui_input.connect(func(event: InputEvent) -> void:
+			if event is InputEventMouseButton \
+					and event.button_index == MOUSE_BUTTON_LEFT \
+					and event.pressed:
+				var p := _local_player()
+				if p:
+					EventBus.stance_set_requested.emit(p.player_id, target)
+		)
+
+		_stance_btn_area.add_child(panel)
+		_stance_btns.append(panel)
+		_stance_btn_ids.append(s)
+		_stance_btn_lbls.append(btn_lbl)
+		_stance_btn_sboxes.append(sbox)
+
+func _stance_color(stance: String) -> Color:
+	match stance:
+		"duty":      return C_STANCE_DUTY
+		"lightning": return C_STANCE_LIGHTNING
+		"thunder":   return C_STANCE_THUNDER
+		"serene":    return C_STANCE_SERENE
+		_:           return C_STANCE_HONOR
+
+func _stance_abbrev(stance: String) -> String:
+	match stance:
+		"honor":     return "HON"
+		"duty":      return "DUT"
+		"lightning": return "LTG"
+		"serene":    return "SRN"
+		"thunder":   return "THN"
+		_:           return stance.left(3).to_upper()
 
 # ── Ability slot pane ─────────────────────────────────────────────────────────
 func _build_slot_pane() -> Control:
@@ -344,13 +453,13 @@ func _build_target_pane() -> Control:
 	_target_class.add_theme_color_override("font_color", C_DIM)
 	hdr.add_child(_target_class)
 
-	_target_hp = _make_bar(C_ENEMY)
+	_target_hp = _make_hp_bar(C_ENEMY)
 	vbox.add_child(_bar_row("HP ", _target_hp, C_ENEMY))
 
 	return vbox
 
 # ── Shared widget builders ────────────────────────────────────────────────────
-func _bar_row(lbl_text: String, bar: ProgressBar, color: Color) -> Control:
+func _bar_row(lbl_text: String, bar: Control, color: Color) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 4)
 	var lbl := Label.new()
@@ -361,6 +470,13 @@ func _bar_row(lbl_text: String, bar: ProgressBar, color: Color) -> Control:
 	row.add_child(lbl)
 	row.add_child(bar)
 	return row
+
+func _make_hp_bar(color: Color) -> _ProvisionalBar:
+	var bar := _ProvisionalBar.new()
+	bar.fill_color = color
+	bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar.custom_minimum_size.y = 12
+	return bar
 
 func _make_bar(color: Color) -> ProgressBar:
 	var bar := ProgressBar.new()
@@ -393,6 +509,34 @@ func _process(_delta: float) -> void:
 	_update_player(player)
 	_update_slots(player)
 	_update_target(player)
+	_update_stance(player)
+
+func _update_stance(player: Node) -> void:
+	if _stance_row == null:
+		return
+	var rec = MatchState.players.get(player.player_id)
+	var class_id: String = rec.class_id if rec != null else ""
+	var has_stances: bool = class_id in ["warden", "uberblitzer"]
+	_stance_row.visible = has_stances
+	if not has_stances:
+		return
+
+	if class_id != _last_stance_class:
+		_last_stance_class = class_id
+		_rebuild_stance_buttons(class_id)
+
+	var cur: String = player.get("stance")
+	for i in _stance_btns.size():
+		var is_active := _stance_btn_ids[i] == cur
+		var col := _stance_color(_stance_btn_ids[i])
+		if is_active:
+			_stance_btn_sboxes[i].bg_color    = col.darkened(0.5)
+			_stance_btn_sboxes[i].border_color = col
+			_stance_btn_lbls[i].add_theme_color_override("font_color", col)
+		else:
+			_stance_btn_sboxes[i].bg_color    = Color(0.08, 0.08, 0.12)
+			_stance_btn_sboxes[i].border_color = Color.TRANSPARENT
+			_stance_btn_lbls[i].add_theme_color_override("font_color", C_DIM)
 
 func _update_player(player: Node) -> void:
 	var dot_color: Color = player.class_definition.body_color \
@@ -407,7 +551,10 @@ func _update_player(player: Node) -> void:
 
 	var buffs = player.get_node_or_null("PlayerBuffs")
 	if buffs and buffs.max_health > 0:
-		_hp_bar.value = buffs.health / buffs.max_health
+		_hp_bar.set_health(
+			buffs.health / buffs.max_health,
+			buffs.provisional_damage / buffs.max_health
+		)
 
 	var mana = player.get_node_or_null("PlayerMana")
 	if mana:
@@ -533,7 +680,7 @@ func _update_target(player: Node) -> void:
 		_target_name.text = "NO TARGET"
 		_target_name.add_theme_color_override("font_color", C_NONE)
 		_target_class.text = ""
-		_target_hp.value = 0.0
+		_target_hp.set_health(0.0, 0.0)
 		return
 
 	var target: Node = null
@@ -552,7 +699,10 @@ func _update_target(player: Node) -> void:
 		if target.class_definition else ""
 	var t_buffs = target.get_node_or_null("PlayerBuffs")
 	if t_buffs and t_buffs.max_health > 0:
-		_target_hp.value = t_buffs.health / t_buffs.max_health
+		_target_hp.set_health(
+			t_buffs.health / t_buffs.max_health,
+			t_buffs.provisional_damage / t_buffs.max_health
+		)
 
 func _ability_in_range(player: Node, ability: AbilityDefinition) -> bool:
 	if ability.range <= 0.0:

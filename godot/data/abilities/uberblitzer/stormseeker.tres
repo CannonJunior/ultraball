@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ubltz00000009"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" path="res://data/abilities/effects/StormseekerEffect.gd" id="2_storm"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_storm")
+duration = 12.0
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "stormseeker"
+display_name = "Stormseeker"
+description = "12s: −33% GCD · −33% cast times · freeze ultraball charge · +33% ultra regen"
+slot = 9
+cooldown = 60.0
+mana_cost = 50.0
+mana_type = 2
+range = 0.0
+target_mode = 2
+ability_type = 2
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

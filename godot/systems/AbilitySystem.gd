@@ -4,6 +4,9 @@ extends Node
 ## Replaces the 2000-line CombatSystem.
 ## Dispatches data-driven AbilityEffect arrays; communicates only via EventBus.
 
+const PlayerLookup    = preload("res://systems/PlayerLookup.gd")
+const _AoEHealEffect  = preload("res://data/abilities/effects/AoEHealEffect.gd")
+
 const MAX_QUEUE := 5
 const GCD_DURATION := 1.0
 
@@ -26,6 +29,8 @@ func _ready() -> void:
 	EventBus.ability_charge_released.connect(_on_ability_charge_released)
 	EventBus.buff_applied.connect(_on_buff_applied)
 	EventBus.player_subbed_in.connect(_on_player_subbed_in)
+	EventBus.stance_switch_requested.connect(_on_stance_switch_requested)
+	EventBus.stance_set_requested.connect(_on_stance_set_requested)
 
 func _physics_process(delta: float) -> void:
 	_tick_cooldowns(delta)
@@ -35,11 +40,15 @@ func _physics_process(delta: float) -> void:
 
 func _tick_cooldowns(delta: float) -> void:
 	for pid in _gcd:
-		_gcd[pid] = maxf(0.0, _gcd[pid] - delta)
+		var pn := _get_player_node(pid)
+		var gcd_rate := 1.33 if (pn != null and pn.get("buffs") != null and pn.buffs.stormseeker_remaining > 0.0) else 1.0
+		_gcd[pid] = maxf(0.0, _gcd[pid] - delta * gcd_rate)
 	for pid in _cooldowns:
+		var pn := _get_player_node(pid)
+		var cd_rate := 1.2 if (pn != null and pn.get("stance") == "thunder") else 1.0
 		var cds: PackedFloat32Array = _cooldowns[pid]
 		for i in cds.size():
-			cds[i] = maxf(0.0, cds[i] - delta)
+			cds[i] = maxf(0.0, cds[i] - delta * cd_rate)
 
 # ── Queue drain ────────────────────────────────────────────────────────────────
 
@@ -78,7 +87,7 @@ func _on_ability_queued(player_id: String, slot: int) -> void:
 					EventBus.ability_failed.emit(player_id, slot, "on_cd")
 					return
 				var player_node := _get_player_node(player_id)
-				if player_node == null or not player_node.mana.can_afford(def.mana_type, def.mana_cost):
+				if player_node == null or not player_node.mana.can_afford(def.mana_type, _effective_mana_cost(def, player_node)):
 					EventBus.ability_failed.emit(player_id, slot, "no_mana")
 					return
 				var saved_gcd: float = _gcd.get(player_id, 0.0)
@@ -98,7 +107,7 @@ func _on_ability_queued(player_id: String, slot: int) -> void:
 		var rec: MatchState.PlayerRecord = MatchState.players.get(player_id)
 		if player_node != null and rec != null:
 			var def: AbilityDefinition = GameRegistry.get_ability(rec.class_id, slot)
-			if def != null and not player_node.mana.can_afford(def.mana_type, def.mana_cost):
+			if def != null and not player_node.mana.can_afford(def.mana_type, _effective_mana_cost(def, player_node)):
 				EventBus.ability_failed.emit(player_id, slot, "no_mana")
 				return
 	queue.append(slot)
@@ -140,7 +149,7 @@ func _fire_ability(caster_id: String, slot: int, charge_t: float = 0.0) -> void:
 	if player_node == null: return
 
 	# Mana deduction (PlayerMana component handles actual mana values)
-	player_node.mana.deduct(definition.mana_type, definition.mana_cost)
+	player_node.mana.deduct(definition.mana_type, _effective_mana_cost(definition, player_node))
 
 	# Set cooldowns
 	_set_cooldown(caster_id, slot, definition.cooldown)
@@ -151,14 +160,20 @@ func _fire_ability(caster_id: String, slot: int, charge_t: float = 0.0) -> void:
 	var target_id: String = player_node.current_target_id
 	var aim_pos: Vector2 = player_node.aim_world_position
 
-	# Build context
-	var all_players := get_tree().get_nodes_in_group("players")
-	var ctx := AbilityContext.build(caster_id, target_id, aim_pos, all_players, player_node.global_rotation, charge_t)
+	# Build context — Stormseeker reduces cast times by 33%, so held time counts 1.5× faster
+	var effective_charge_t := charge_t
+	if player_node.get("buffs") != null and player_node.buffs.stormseeker_remaining > 0.0:
+		effective_charge_t = charge_t * 1.5
+	var all_players := PlayerLookup.get_all_nodes()
+	var ctx := AbilityContext.build(caster_id, target_id, aim_pos, all_players, player_node.global_rotation, effective_charge_t)
 
 	# Apply effects in order
+	var in_duty_stance: bool = player_node.get("stance") == "duty"
 	for effect in definition.effects:
 		var double_dur: bool = _duration_double.get(caster_id, false)
-		if double_dur:
+		if in_duty_stance and (effect is HealEffect or effect is _AoEHealEffect):
+			_apply_duty_heal(effect, ctx)
+		elif double_dur:
 			_apply_with_doubled_duration(effect, ctx)
 		else:
 			effect.apply(ctx)
@@ -167,6 +182,48 @@ func _fire_ability(caster_id: String, slot: int, charge_t: float = 0.0) -> void:
 		_duration_double[caster_id] = false
 
 	EventBus.ability_resolved.emit(caster_id, slot, ctx.hit_ids)
+
+func _on_stance_switch_requested(player_id: String) -> void:
+	if _gcd.get(player_id, 0.0) > 0.0:
+		return
+	var player_node := _get_player_node(player_id)
+	if player_node == null: return
+	var rec: MatchState.PlayerRecord = MatchState.players.get(player_id)
+	if rec == null: return
+	var cur: String = player_node.get("stance")
+	match rec.class_id:
+		"warden":
+			player_node.set("stance", "duty" if cur == "honor" else "honor")
+		"uberblitzer":
+			var stances := ["lightning", "serene", "thunder"]
+			var idx: int = stances.find(cur)
+			player_node.set("stance", stances[(idx + 1) % stances.size()])
+		_:
+			return
+	_gcd[player_id] = GCD_DURATION
+	EventBus.gcd_started.emit(player_id, GCD_DURATION)
+	EventBus.stance_changed.emit(player_id, player_node.get("stance"))
+
+func _on_stance_set_requested(player_id: String, new_stance: String) -> void:
+	if _gcd.get(player_id, 0.0) > 0.0: return
+	var player_node := _get_player_node(player_id)
+	if player_node == null: return
+	if player_node.get("stance") == new_stance: return
+	player_node.set("stance", new_stance)
+	_gcd[player_id] = GCD_DURATION
+	EventBus.gcd_started.emit(player_id, GCD_DURATION)
+	EventBus.stance_changed.emit(player_id, new_stance)
+
+func _apply_duty_heal(effect: AbilityEffect, ctx: AbilityContext) -> void:
+	const DUTY_MULT := 1.25
+	var patches: Dictionary = {}
+	for prop in ["amount", "auto_ally_range", "radius"]:
+		if prop in effect:
+			patches[prop] = effect.get(prop)
+			effect.set(prop, effect.get(prop) * DUTY_MULT)
+	effect.apply(ctx)
+	for prop in patches:
+		effect.set(prop, patches[prop])
 
 func _apply_with_doubled_duration(effect: AbilityEffect, ctx: AbilityContext) -> void:
 	# Temporarily patch duration properties via duck-typing before applying.
@@ -196,7 +253,7 @@ func _failure_reason(pid: String, slot: int) -> String:
 	if _rec == null: return "no_player"
 	var definition: AbilityDefinition = GameRegistry.get_ability(_rec.class_id, slot)
 	if definition == null: return "no_definition"
-	if not player_node.mana.can_afford(definition.mana_type, definition.mana_cost):
+	if not player_node.mana.can_afford(definition.mana_type, _effective_mana_cost(definition, player_node)):
 		return "no_mana"
 	if not _in_range(player_node, definition):
 		return "out_of_range"
@@ -241,10 +298,7 @@ func _on_player_subbed_in(player_id: String, _replaced: String, _team: int) -> v
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 func _get_player_node(pid: String) -> Node:
-	for node in get_tree().get_nodes_in_group("players"):
-		if node.player_id == pid:
-			return node
-	return null
+	return PlayerLookup.get_node(pid)
 
 func _in_range(caster: Node, definition: AbilityDefinition) -> bool:
 	if definition.range <= 0.0:
@@ -252,18 +306,26 @@ func _in_range(caster: Node, definition: AbilityDefinition) -> bool:
 	# Self(2), Global(3), AoEAroundSelf(5), AimedPoint(7), Cone(8) don't need a target in range
 	if definition.target_mode in [2, 3, 5, 7, 8]:
 		return true
+	var effective_range := definition.range
+	if caster.get("stance") == "lightning":
+		effective_range *= 1.2
 	var target_id: String = caster.current_target_id
 	if target_id.is_empty():
 		return false
 	if target_id == "creature":
 		var creature := _get_creature_node()
 		if creature == null or not creature.get("is_alive"): return false
-		return caster.global_position.distance_to(creature.global_position) <= definition.range
+		return caster.global_position.distance_to(creature.global_position) <= effective_range
 	var target := _get_player_node(target_id)
 	if target == null or not target.is_alive or not target.is_on_field:
 		return false
-	return caster.global_position.distance_to(target.global_position) <= definition.range
+	return caster.global_position.distance_to(target.global_position) <= effective_range
 
 func _get_creature_node() -> Node:
 	var creatures := get_tree().get_nodes_in_group("creatures")
 	return creatures[0] if not creatures.is_empty() else null
+
+func _effective_mana_cost(definition: AbilityDefinition, player_node: Node) -> float:
+	if player_node != null and player_node.get("stance") == "serene":
+		return definition.mana_cost * 0.8
+	return definition.mana_cost

@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="ClassDefinition" format=3 uid="uid://ublitz001c001"]
+
+[ext_resource type="Script" uid="uid://5f1jo2xhiwb3" path="res://data/classes/ClassDefinition.gd" id="1_cdef"]
+
+[resource]
+script = ExtResource("1_cdef")
+class_id = "uberblitzer"
+display_name = "UBERBLITZER"
+description = "Ranged lightning specialist with three stances. Lightning for mobility and range, Thunder for raw power, Serene for sustained casting."
+base_speed = 8.5
+max_health = 85.0
+primary_mana = 1
+red_regen = 2.0
+blue_regen = 5.0
+yellow_regen = 3.0
+body_color = Color(0.35, 0.75, 1.0, 1.0)
+helmet_color = Color(0.20, 0.50, 0.85, 1.0)
+jersey_color = Color(0.07, 0.15, 0.30, 1.0)
+metadata/_custom_type_script = "uid://5f1jo2xhiwb3"

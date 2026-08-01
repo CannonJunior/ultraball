@@ -4,8 +4,6 @@ extends Control
 ## Draws one team's match portrait for the end-of-match display.
 ## All rendering is done via _draw(); no child nodes.
 
-const C_HOME   := Color(1.000, 0.231, 0.325)
-const C_AWAY   := Color(0.184, 0.514, 1.000)
 const C_GOLD   := Color(1.000, 0.796, 0.239)
 const C_DIM    := Color(1.0, 1.0, 1.0, 0.32)
 const C_SUBTLE := Color(1.0, 1.0, 1.0, 0.06)
@@ -20,7 +18,7 @@ const PAD      := 14.0
 # ── Public data ────────────────────────────────────────────────────────────────
 
 var team_id:     int    = 0
-var team_color:  Color  = C_HOME
+var team_color:  Color  = Color(0.94, 0.16, 0.22)
 var team_name:   String = ""
 var final_score: int    = 0
 var opp_score:   int    = 0
@@ -45,7 +43,7 @@ func setup(tid: int, tname: String, score: int, opp: int,
 	team_name   = tname
 	final_score = score
 	opp_score   = opp
-	team_color  = C_HOME if tid == 0 else (C_AWAY if tid == 1 else Color(0.2, 0.9, 0.3))
+	team_color  = MatchState.team_color(tid)
 	hex_vals    = h_vals
 	_collect_data()
 	queue_redraw()
@@ -56,7 +54,7 @@ func setup_from_saved(report: Dictionary, tid: int, tname: String,
 	team_name   = tname
 	final_score = score
 	opp_score   = opp
-	team_color  = C_HOME if tid == 0 else (C_AWAY if tid == 1 else Color(0.2, 0.9, 0.3))
+	team_color  = MatchState.team_color(tid)
 	hex_vals    = h_vals
 	_load_from_report(report)
 	queue_redraw()

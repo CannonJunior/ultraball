@@ -5,6 +5,8 @@ extends Node
 ## Updates at 10 Hz (not every physics frame) to reduce CPU cost.
 ## AI submits actions through player.apply_input() — it never calls AbilitySystem directly.
 
+const PlayerLookup = preload("res://systems/PlayerLookup.gd")
+
 @export var team_id: int = 1
 @export var strategy_resource: Resource    # AiStrategy subclass .tres
 @export var tactics_resource: Resource     # AiTactics subclass .tres
@@ -16,6 +18,9 @@ const TICK_RATE: float = 0.1   # 10 Hz
 
 ## Policy parameters learned over matches (loaded from user://ai_policies.json)
 var _policy: Dictionary = {}
+
+## Reused across ticks; avoids per-tick AiView/PlayerView allocation.
+var _cached_view: AiView = null
 
 func _ready() -> void:
 	_strategy = strategy_resource as AiStrategy
@@ -30,7 +35,11 @@ func _physics_process(delta: float) -> void:
 	_update_ai()
 
 func _update_ai() -> void:
-	var view := AiView.build(team_id)
+	if _cached_view == null:
+		_cached_view = AiView.build(team_id)
+	else:
+		_cached_view.update(team_id)
+	var view := _cached_view
 	for agent_pv in view.allies():
 		var player_node := _find_player(agent_pv.player_id)
 		if player_node == null: continue
@@ -53,7 +62,7 @@ func _simple_move_toward(agent_pv: AiView.PlayerView, target: Vector2) -> InputS
 	var input := InputState.new()
 	var dir := (target - agent_pv.position)
 	if dir.length() > 0.5:
-		input.move_direction = dir.normalized()
+		input.move_direction = dir.normalized().rotated(-agent_pv.facing)
 	return input
 
 # ── Policy persistence ────────────────────────────────────────────────────────
@@ -83,6 +92,4 @@ func save_policy() -> void:
 # ── Helper ─────────────────────────────────────────────────────────────────────
 
 func _find_player(pid: String) -> Node:
-	for n in get_tree().get_nodes_in_group("players"):
-		if n.player_id == pid: return n
-	return null
+	return PlayerLookup.get_node(pid)

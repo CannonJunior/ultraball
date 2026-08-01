@@ -21,7 +21,6 @@ const _Creature          = preload("res://scenes/entities/creature/Creature.tscn
 @onready var creature_system: CreatureSystem = $Systems/CreatureSystem
 
 @onready var player_spawner: MultiplayerSpawner = $PlayerSpawner
-@onready var hud: CanvasLayer = $HUD
 
 var _tick: int = 0
 ## Tracks how many non-server client teams have been assigned so far.
@@ -31,6 +30,7 @@ func _ready() -> void:
 	if match_config == null:
 		push_error("GameScene: no MatchConfig assigned")
 		return
+	MatchState.reset_for_new_match()
 	MatchState.config = match_config
 	MatchState.is_three_team = match_config.match_mode == MatchConfig.MatchMode.THREE_TEAM
 	MatchState.is_paused = false
@@ -39,8 +39,7 @@ func _ready() -> void:
 	_spawn_creatures()
 	_start_match()
 	# HUD
-	var hud_control: Control = _HUD.new()
-	hud.add_child(hud_control)
+	get_node("HUD").add_child(_HUD.new())
 
 	# Ability VFX layer — world-space one-shot effects (self-disables in 3D modes)
 	var vfx_layer := preload("res://systems/AbilityVfxLayer.gd").new()
@@ -56,12 +55,16 @@ func _ready() -> void:
 		$Field.visible    = false
 		$Entities.visible = false
 		$Camera2D.enabled = false
+
+	if MatchState.is_three_team:
+		_setup_3team_camera()
 	# Network: add ClientPredictor for this instance if it is a client
 	if NetworkManager.mode != NetworkManager.NetMode.OFFLINE and not NetworkManager.is_server():
 		var predictor := ClientPredictor.new()
 		predictor.name = "ClientPredictor"
 		add_child(predictor)
 	EventBus.force_field_spawned.connect(_on_force_field_spawned)
+	EventBus.positions_reset.connect(_on_positions_reset)
 	# Server: handle future peer connections (assign player authority)
 	EventBus.peer_connected.connect(_on_peer_connected)
 	# Handle peers that connected before GameScene was instantiated (normal lobby flow)
@@ -190,6 +193,30 @@ func _spawn_ai_directors() -> void:
 		add_child(director)
 
 # ── Network: assign arriving clients to player slots ──────────────────────────
+
+func _setup_3team_camera() -> void:
+	var cam: Camera2D = $Camera2D
+	if not cam.enabled:
+		return
+	cam.zoom = Vector2(8.0, 8.0)
+	var local_id := NetworkManager.local_player_id
+	var player := get_player_node(local_id) if not local_id.is_empty() else null
+	if player:
+		cam.reparent(player)
+		cam.position = Vector2.ZERO
+	else:
+		cam.global_position = Vector2(MatchState.FIELD3_CX, MatchState.FIELD3_CY)
+
+func _on_positions_reset() -> void:
+	for n in get_tree().get_nodes_in_group("players"):
+		if not n.is_alive or not n.is_on_field: continue
+		var rec: MatchState.PlayerRecord = MatchState.players.get(n.player_id)
+		if rec == null: continue
+		n.global_position = _team_spawn_position(rec.team_id, rec.deploy_slot)
+		n.global_rotation = _team_spawn_rotation(rec.team_id)
+		n.velocity = Vector2.ZERO
+		n.z_height = 0.0
+		n.z_velocity = 0.0
 
 func _on_force_field_spawned(caster_id: String, caster_team_id: int, caster_position: Vector2) -> void:
 	var ff := _ForceField.new()

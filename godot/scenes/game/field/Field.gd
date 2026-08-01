@@ -28,9 +28,14 @@ func _ready() -> void:
 	EventBus.pit_opened.connect(_on_pit_opened)
 	EventBus.terrain_reset.connect(_on_terrain_reset)
 	_build_phase_lines()
-	_fill_base_tiles()
 	if MatchState.is_three_team:
+		base_tilemap.visible    = false
+		hazard_tilemap.visible  = false
+		elevation_mesh.visible  = false
+		endzone_markers.visible = false
 		queue_redraw()
+	else:
+		_fill_base_tiles()
 
 # ── Initial tile fill ─────────────────────────────────────────────────────────
 
@@ -58,33 +63,59 @@ func _build_phase_lines() -> void:
 func _draw() -> void:
 	if not MatchState.is_three_team: return
 	var center := Vector2(MatchState.FIELD3_CX, MatchState.FIELD3_CY)
-	var fill_colors := [
-		Color(0.3,  0.5,  1.0, 0.12),
-		Color(1.0,  0.35, 0.35, 0.12),
-		Color(0.35, 0.9,  0.35, 0.12),
-	]
-	var line_colors := [
-		Color(0.4, 0.6, 1.0, 0.55),
-		Color(1.0, 0.4, 0.4, 0.55),
-		Color(0.4, 1.0, 0.4, 0.55),
-	]
+	var ir   := MatchState.FIELD3_INRADIUS
+	var end  := MatchState.FIELD3_ARM_END
+	var hw   := MatchState.FIELD3_ARM_HALF_W
+	var hw_c := hw + 10.0
+	var end_c := end + 10.0
 	for t in 3:
+		var tc: Color = MatchState.team_color(t)
+		var fill_col := Color(tc.r, tc.g, tc.b, 0.12)
+		var line_col := Color(tc.r, tc.g, tc.b, 0.55)
+		var chan_col := Color(tc.r, tc.g, tc.b, 0.07)
+		var chan_line_col := Color(tc.r, tc.g, tc.b, 0.30)
 		var norm: Vector2 = MatchState.TEAM3_NORMALS[t]
 		var perp := Vector2(-norm.y, norm.x)
-		var ir  := MatchState.FIELD3_INRADIUS
-		var end := MatchState.FIELD3_ARM_END
-		var hw  := MatchState.FIELD3_ARM_HALF_W
-		var corners := PackedVector2Array([
+		# Arm fill
+		draw_colored_polygon(PackedVector2Array([
 			center + norm * ir  - perp * hw,
 			center + norm * ir  + perp * hw,
 			center + norm * end + perp * hw,
 			center + norm * end - perp * hw,
-		])
-		draw_colored_polygon(corners, fill_colors[t])
-		draw_polyline(
-			PackedVector2Array([corners[0], corners[1], corners[2], corners[3], corners[0]]),
-			line_colors[t], 0.15
-		)
+		]), fill_col)
+		draw_polyline(PackedVector2Array([
+			center + norm * ir  - perp * hw,
+			center + norm * ir  + perp * hw,
+			center + norm * end + perp * hw,
+			center + norm * end - perp * hw,
+			center + norm * ir  - perp * hw,
+		]), line_col, 0.15)
+		# Creature channel: three convex rectangles forming a U around the arm
+		draw_colored_polygon(PackedVector2Array([
+			center + norm * ir  + perp * hw,
+			center + norm * ir  + perp * hw_c,
+			center + norm * end + perp * hw_c,
+			center + norm * end + perp * hw,
+		]), chan_col)
+		draw_colored_polygon(PackedVector2Array([
+			center + norm * ir  - perp * hw_c,
+			center + norm * ir  - perp * hw,
+			center + norm * end - perp * hw,
+			center + norm * end - perp * hw_c,
+		]), chan_col)
+		draw_colored_polygon(PackedVector2Array([
+			center + norm * end  - perp * hw_c,
+			center + norm * end  + perp * hw_c,
+			center + norm * end_c + perp * hw_c,
+			center + norm * end_c - perp * hw_c,
+		]), chan_col)
+		# Outer boundary of creature channel (3-sided U outline)
+		draw_polyline(PackedVector2Array([
+			center + norm * ir    + perp * hw_c,
+			center + norm * end_c + perp * hw_c,
+			center + norm * end_c - perp * hw_c,
+			center + norm * ir    - perp * hw_c,
+		]), chan_line_col, 0.15)
 		# Phase lines within arm
 		for d in MatchState.FIELD3_PHASE_DISTS:
 			var lp: Vector2 = center + norm * d

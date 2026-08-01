@@ -32,7 +32,22 @@ func _physics_process(delta: float) -> void:
 			EventBus.ability_charge_released.emit(player.player_id, _charging_slot, charge_t)
 			_charging_slot = 0
 			_charge_timer  = 0.0
+		var turn_delta := Input.get_axis("move_left", "move_right")
+		if MatchState.config != null and MatchState.config.view_mode != MatchConfig.ViewMode.FLAT_2D:
+			turn_delta = -turn_delta
+		if absf(turn_delta) > 0.01:
+			var turn_state := InputState.new()
+			turn_state.turn_delta = turn_delta
+			player.apply_input(turn_state)
 		return  # don't process normal input while charging
+
+	# "Pass to me" — F just pressed while a teammate holds the ball.
+	if Input.is_action_just_pressed("throw_ball"):
+		var ball := MatchState.ball
+		if not ball.holder_id.is_empty() and ball.holder_id != player.player_id:
+			if MatchState.team_for_player(ball.holder_id) == player.team_id:
+				EventBus.pass_to_player_requested.emit(ball.holder_id, player.player_id)
+				return
 
 	var state := InputState.new()
 	state.move_direction = Vector2(

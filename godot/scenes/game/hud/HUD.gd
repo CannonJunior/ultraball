@@ -13,13 +13,14 @@ func _ready() -> void:
 
 	# Highlight panels flank the scoreboard — added after so they render on top.
 	var _hp_script := load("res://scenes/game/hud/HighlightPanel.gd")
-	var _lp: Control = _hp_script.new(); _lp.set("is_left", true);  _lp.set("team_color", Color(1.000, 0.231, 0.325)); _lp.set("team_id", 0); add_child(_lp)
-	var _rp: Control = _hp_script.new(); _rp.set("is_left", false); _rp.set("team_color", Color(0.184, 0.514, 1.000)); _rp.set("team_id", 1); add_child(_rp)
+	var _lp: Control = _hp_script.new(); _lp.set("is_left", true);  _lp.set("team_color", MatchState.team_color(0)); _lp.set("team_id", 0); add_child(_lp)
+	var _rp: Control = _hp_script.new(); _rp.set("is_left", false); _rp.set("team_color", MatchState.team_color(1)); _rp.set("team_id", 1); add_child(_rp)
 
 	for path in [
 		"res://scenes/game/hud/CharacterPanel.gd",
 		"res://scenes/game/hud/BuffDisplay.gd",
 		"res://scenes/game/hud/ThrowChargeBar.gd",
+		"res://scenes/game/hud/AbilityCastBar.gd",
 	]:
 		add_child(load(path).new())
 	for late_path in [

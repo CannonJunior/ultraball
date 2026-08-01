@@ -21,6 +21,8 @@ func _capture(winner_id: int, fh: int, fa: int) -> Dictionary:
 		"winner_id":       winner_id,
 		"home_team_name":  cfg.home_team_name  if cfg else "HOME",
 		"away_team_name":  cfg.away_team_name  if cfg else "AWAY",
+		"home_team_index": cfg.home_team_idx   if cfg else 0,
+		"away_team_index": cfg.away_team_idx   if cfg else 1,
 		"final_home_score": fh,
 		"final_away_score": fa,
 		"match_mode":      cfg.match_mode if cfg else 0,

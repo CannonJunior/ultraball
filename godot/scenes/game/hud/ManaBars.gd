@@ -1,5 +1,7 @@
 extends Control
 
+const __ProvisionalBar := preload("res://scenes/game/hud/_ProvisionalBar.gd")
+
 const MANA_COLORS := [
 	Color(0.92, 0.22, 0.22),  # Red
 	Color(0.25, 0.45, 1.00),  # Blue
@@ -9,7 +11,7 @@ const MANA_COLORS := [
 const MANA_NAMES  := ["RED", "BLU", "YEL", "ULT"]
 const MANA_MAXES  := [100.0, 100.0, 100.0, 10.0]
 
-var _health_bar: ProgressBar
+var _health_bar: _ProvisionalBar
 var _mana_bars: Array[ProgressBar] = []
 
 func _ready() -> void:
@@ -41,9 +43,25 @@ func _build() -> void:
 	vbox.add_theme_constant_override("separation", 3)
 	margin.add_child(vbox)
 
-	_health_bar = _add_row(vbox, "HP", Color(0.2, 0.85, 0.2))
+	_health_bar = _add_hp_row(vbox, "HP", Color(0.2, 0.85, 0.2))
 	for i in 4:
 		_mana_bars.append(_add_row(vbox, MANA_NAMES[i], MANA_COLORS[i]))
+
+func _add_hp_row(parent: VBoxContainer, label_text: String, color: Color) -> _ProvisionalBar:
+	var row := HBoxContainer.new()
+	parent.add_child(row)
+	var lbl := Label.new()
+	lbl.text = label_text
+	lbl.custom_minimum_size.x = 28
+	lbl.add_theme_color_override("font_color", color)
+	lbl.add_theme_font_size_override("font_size", 11)
+	row.add_child(lbl)
+	var bar := _ProvisionalBar.new()
+	bar.fill_color = color
+	bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar.custom_minimum_size.y = 14
+	row.add_child(bar)
+	return bar
 
 func _add_row(parent: VBoxContainer, label_text: String, color: Color) -> ProgressBar:
 	var row := HBoxContainer.new()
@@ -79,7 +97,10 @@ func _process(_delta: float) -> void:
 	if player == null: return
 	var buffs: Node = player.get_node_or_null("PlayerBuffs")
 	if buffs and buffs.max_health > 0:
-		_health_bar.value = buffs.health / buffs.max_health
+		_health_bar.set_health(
+			buffs.health / buffs.max_health,
+			buffs.provisional_damage / buffs.max_health
+		)
 	var mana: Node = player.get_node_or_null("PlayerMana")
 	if mana:
 		_mana_bars[0].value = mana.red / 100.0

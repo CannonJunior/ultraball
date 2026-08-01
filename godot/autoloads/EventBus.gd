@@ -28,6 +28,8 @@ signal ball_picked_up(player_id: String)
 signal ball_dropped(position: Vector2, cause: String)
 ## Player requests a throw — BallSystem validates and executes.
 signal throw_requested(thrower_id: String, direction: Vector2, is_charged: bool)
+## Human player pressed F while a teammate holds the ball — request an immediate pass.
+signal pass_to_player_requested(holder_id: String, target_id: String)
 signal ball_thrown(thrower_id: String, target_position: Vector2, is_charged: bool)
 signal ball_caught(catcher_id: String)
 signal ball_phase_line_crossed(team_id: int, line_index: int)
@@ -88,6 +90,12 @@ signal peer_disconnected(peer_id: int)
 signal lobby_created(lobby_id: int)
 signal lobby_joined(lobby_id: int)
 signal match_starting(config: Resource)
+
+# ── Stance ─────────────────────────────────────────────────────────────────────
+signal stance_switch_requested(player_id: String)
+## Emitted when the human selects a specific stance from the stance picker.
+signal stance_set_requested(player_id: String, new_stance: String)
+signal stance_changed(player_id: String, new_stance: String)
 
 # ── Game Flow ──────────────────────────────────────────────────────────────────
 signal game_paused(is_paused: bool)

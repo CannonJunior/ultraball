@@ -3,8 +3,6 @@ extends Control
 ## Mirrors Flutter's HighlightClipList / _ClipListPanel.
 
 const C_GOLD := Color(1.000, 0.796, 0.239)
-const C_HOME := Color(1.000, 0.231, 0.325)
-const C_AWAY := Color(0.184, 0.514, 1.000)
 const C_BG   := Color(0.016, 0.020, 0.039, 0.93)
 const C_DIM  := Color(1, 1, 1, 0.40)
 
@@ -116,7 +114,7 @@ func _rebuild_list() -> void:
 
 func _make_row(clip: Dictionary) -> Control:
 	var team_id : int   = clip["team_id"]
-	var tc      : Color = C_HOME if team_id == 0 else C_AWAY
+	var tc      : Color = MatchState.team_color(team_id)
 
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)

@@ -1,8 +1,8 @@
 class_name PickAndScreenTactics
 extends "res://systems/ai/tactics/BalancedTactics.gd"
 
-## Some players screen between the holder and nearest defender;
-## others run ahead as passing options.
+## Two-thirds of players screen between holder and nearest defender;
+## the rest run as pass options using the strategy goal.
 
 func _mover_input(
 	agent: AiView.PlayerView,
@@ -21,12 +21,13 @@ func _mover_input(
 		# Screen: position between holder and nearest threat
 		var nearest := view.nearest_enemy(holder.position)
 		if nearest != null:
-			target = (holder.position + nearest.position) / 2.0
+			target = (holder.position + nearest.position) * 0.5
 		else:
-			var tid := view.requesting_team_id
-			target = holder.position + (Vector2(5.0, 0.0) if tid == 0 else Vector2(-5.0, 0.0))
+			# No visible threat — drift 5 m ahead of holder along scoring direction
+			var norm := AiStrategy.team_advance_dir(view.requesting_team_id)
+			target = holder.position + norm * 5.0
 	else:
-		# Run: use strategy goal as the pass-option route
+		# Run the strategy route as a pass option
 		target = goal
 
 	input.move_direction = navigate_toward(agent, target, view)

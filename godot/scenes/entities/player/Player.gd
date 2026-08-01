@@ -5,6 +5,9 @@ extends CharacterBody2D
 ## Movement, input application, and field clamping only.
 ## Buff/debuff timers → PlayerBuffs; mana → PlayerMana; cooldowns → PlayerAbilities.
 
+const ElevationQuery  = preload("res://systems/ElevationQuery.gd")
+const PlayerLookup    = preload("res://systems/PlayerLookup.gd")
+
 @export var player_id: String = ""
 @export var team_id: int = 0
 @export var class_definition: ClassDefinition
@@ -23,6 +26,9 @@ var _explicit_target_id: String = ""
 
 var is_alive: bool = true
 var is_on_field: bool = false
+
+## Active stance for classes that have stances (empty string = no stances).
+var stance: String = ""
 
 ## Input state applied this frame (set by InputManager or AI)
 var _current_input: InputState = InputState.new()
@@ -45,6 +51,11 @@ var field_max: Vector2 = Vector2(140.0, 50.0)
 
 func _ready() -> void:
 	add_to_group("players")
+	if class_definition:
+		if class_definition.class_id == "warden":
+			stance = "honor"
+		elif class_definition.class_id == "uberblitzer":
+			stance = "lightning"
 	if MatchState.is_three_team:
 		field_min = Vector2(0.0, 0.0)
 		field_max = Vector2(MatchState.FIELD3_SIZE, MatchState.FIELD3_SIZE)
@@ -106,6 +117,8 @@ func _apply_movement(delta: float) -> void:
 
 	if _impulse_timer > 0.0:
 		_impulse_timer -= delta
+		if _impulse_timer <= 0.0:
+			velocity = Vector2.ZERO
 		return
 
 	var speed := _effective_speed()
@@ -157,15 +170,7 @@ func _terrain_speed_mult() -> float:
 	return grid_mult * elev_mult
 
 func _elevation_at(pos: Vector2) -> float:
-	const ELEV_COLS := 168
-	const ELEV_ROWS := 48
-	const ELEV_CELL_W := 140.0 / ELEV_COLS
-	const ELEV_CELL_H :=  40.0 / ELEV_ROWS
-	var elev := MatchState.terrain.elevation_heights
-	if elev.size() < ELEV_COLS * ELEV_ROWS: return 0.0
-	var col := clampi(int(pos.x / ELEV_CELL_W), 0, ELEV_COLS - 1)
-	var row := clampi(int(pos.y / ELEV_CELL_H), 0, ELEV_ROWS - 1)
-	return elev[row * ELEV_COLS + col]
+	return ElevationQuery.at(pos)
 
 func _update_z(delta: float) -> void:
 	if z_height > 0.0 or z_velocity > 0.0:
@@ -184,18 +189,34 @@ func _block_steep_terrain() -> void:
 # ── Field clamping ────────────────────────────────────────────────────────────
 
 func _clamp_to_field() -> void:
-	global_position.x = clampf(global_position.x, field_min.x, field_max.x)
 	if MatchState.is_three_team:
-		global_position.y = clampf(global_position.y, field_min.y, field_max.y)
+		_clamp_to_field_3t()
 		return
-	var has_ball    := MatchState.ball != null and MatchState.ball.holder_id == player_id
-	var in_endzone  := global_position.x < 20.0 or global_position.x > 120.0
+	global_position.x = clampf(global_position.x, field_min.x, field_max.x)
+	var has_ball   := MatchState.ball != null and MatchState.ball.holder_id == player_id
+	var in_endzone := global_position.x < 20.0 or global_position.x > 120.0
 	if has_ball or in_endzone:
-		# Ball carriers and endzone units cannot enter the side creature channels.
 		global_position.y = clampf(global_position.y, 0.0, 40.0)
 	else:
-		# Non-carriers in the inner field/end-channels can access side creature channels.
 		global_position.y = clampf(global_position.y, field_min.y, field_max.y)
+
+func _clamp_to_field_3t() -> void:
+	var center := Vector2(MatchState.FIELD3_CX, MatchState.FIELD3_CY)
+	var has_ball := MatchState.ball != null and MatchState.ball.holder_id == player_id
+	var channel := 0.0 if has_ball else 10.0
+	var best_arm := 0
+	var best_dot := -INF
+	for i in 3:
+		var d: float = (global_position - center).dot(MatchState.TEAM3_NORMALS[i])
+		if d > best_dot:
+			best_dot = d
+			best_arm = i
+	var norm: Vector2 = MatchState.TEAM3_NORMALS[best_arm]
+	var perp := Vector2(-norm.y, norm.x)
+	var rel  := global_position - center
+	var along := clampf(rel.dot(norm), -MatchState.FIELD3_INRADIUS, MatchState.FIELD3_ARM_END + channel)
+	var side  := clampf(rel.dot(perp), -(MatchState.FIELD3_ARM_HALF_W + channel), MatchState.FIELD3_ARM_HALF_W + channel)
+	global_position = center + norm * along + perp * side
 
 # ── State capture for network ─────────────────────────────────────────────────
 
@@ -244,7 +265,7 @@ func set_explicit_target(pid: String) -> void:
 ## Cycle explicit target through living enemies, sorted by current distance.
 func cycle_target() -> void:
 	var enemies: Array = []
-	for node in get_tree().get_nodes_in_group("players"):
+	for node in PlayerLookup.get_all_nodes():
 		if not node.is_alive or not node.is_on_field: continue
 		if node.team_id == team_id: continue
 		enemies.append(node)
@@ -252,7 +273,7 @@ func cycle_target() -> void:
 		_explicit_target_id = ""
 		return
 	enemies.sort_custom(func(a, b):
-		return global_position.distance_to(a.global_position) < global_position.distance_to(b.global_position))
+		return global_position.distance_squared_to(a.global_position) < global_position.distance_squared_to(b.global_position))
 	var cur_idx := -1
 	for i in enemies.size():
 		if enemies[i].player_id == _explicit_target_id:
@@ -270,10 +291,8 @@ func _update_auto_target() -> void:
 					still_valid = true
 					break
 		else:
-			for node in get_tree().get_nodes_in_group("players"):
-				if node.player_id == _explicit_target_id and node.is_alive and node.is_on_field:
-					still_valid = true
-					break
+			var n := PlayerLookup.get_node(_explicit_target_id)
+			still_valid = n != null and n.is_alive and n.is_on_field
 		if not still_valid:
 			_explicit_target_id = ""
 
@@ -282,13 +301,13 @@ func _update_auto_target() -> void:
 		return
 
 	# Fallback: nearest enemy within 15 units.
-	var best_dist := 15.0
+	var best_dist_sq := 225.0   # 15^2
 	var best_id := ""
-	for node in get_tree().get_nodes_in_group("players"):
+	for node in PlayerLookup.get_all_nodes():
 		if not node.is_alive: continue
 		if node.team_id == team_id: continue
-		var d := global_position.distance_to(node.global_position)
-		if d < best_dist:
-			best_dist = d
+		var d_sq := global_position.distance_squared_to(node.global_position)
+		if d_sq < best_dist_sq:
+			best_dist_sq = d_sq
 			best_id = node.player_id
 	current_target_id = best_id

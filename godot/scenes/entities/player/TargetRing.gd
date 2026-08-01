@@ -5,6 +5,8 @@ extends Node2D
 ## player's explicit target. Visual mirrors the Flutter field_painter design:
 ## soft glow aura → crisp main ring → thin outer ring → four NESW triangles.
 
+const PlayerLookup = preload("res://systems/PlayerLookup.gd")
+
 const BODY_R  := 0.40  # matches PlayerVisual.BODY_RADIUS
 const RING1_R := 0.57  # main crisp ring
 const RING2_R := 0.67  # outer thin ring
@@ -46,17 +48,15 @@ func _is_targeted() -> bool:
 	var pid := NetworkManager.local_player_id
 	if pid.is_empty():
 		return false
-	for node in get_tree().get_nodes_in_group("players"):
-		if node.get("player_id") == pid:
-			return node.get("_explicit_target_id") == get_parent().get("player_id")
-	return false
+	var node := PlayerLookup.get_node(pid)
+	return node != null and node.get("_explicit_target_id") == get_parent().get("player_id")
 
 func _ring_color() -> Color:
 	var parent := get_parent()
 	var pid := NetworkManager.local_player_id
-	for node in get_tree().get_nodes_in_group("players"):
-		if node.get("player_id") == pid:
-			if parent.get("team_id") == node.get("team_id"):
-				return Color(0.20, 0.93, 0.40)  # ally green (shouldn't normally target allies)
-			return Color(1.00, 0.42, 0.42)      # enemy coral red
+	var node := PlayerLookup.get_node(pid)
+	if node != null:
+		if parent.get("team_id") == node.get("team_id"):
+			return Color(0.20, 0.93, 0.40)  # ally green (shouldn't normally target allies)
+		return Color(1.00, 0.42, 0.42)      # enemy coral red
 	return Color(1.00, 0.42, 0.42)

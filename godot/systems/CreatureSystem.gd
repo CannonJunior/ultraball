@@ -4,7 +4,10 @@ extends Node
 ## Creature kill detection and goading.
 ## Creature movement logic lives in Creature.gd / ChaosCreature.gd (entity layer).
 
-const KILL_RADIUS := 4.0   # metres — creature contact radius (matches visual capsule radius)
+const PlayerLookup = preload("res://systems/PlayerLookup.gd")
+
+const KILL_RADIUS    := 4.0
+const _KILL_RADIUS_SQ := KILL_RADIUS * KILL_RADIUS
 
 ## Goading: temporarily override patrol target toward a player.
 var _goad_target_id: String = ""
@@ -28,14 +31,15 @@ func _tick_goad(delta: float) -> void:
 				creature.clear_goad_target()
 
 func _check_kills() -> void:
-	var creatures := get_tree().get_nodes_in_group("creatures")
-	for creature in creatures:
+	var players := PlayerLookup.get_all_nodes()
+	for creature in get_tree().get_nodes_in_group("creatures"):
 		if not creature.get("is_alive"): continue
 		var kill_r: float = creature.get("body_radius")
 		if kill_r <= 0.0: kill_r = KILL_RADIUS
-		for player in get_tree().get_nodes_in_group("players"):
+		var kill_r_sq := kill_r * kill_r
+		for player in players:
 			if not player.is_alive or not player.is_on_field: continue
-			if creature.global_position.distance_to(player.global_position) <= kill_r:
+			if creature.global_position.distance_squared_to(player.global_position) <= kill_r_sq:
 				EventBus.creature_killed_player.emit(player.player_id, player.team_id)
 				EventBus.player_died.emit(player.player_id, "creature", "")
 
@@ -57,6 +61,4 @@ func get_goad_target_position() -> Vector2:
 	return node.global_position if node else Vector2.ZERO
 
 func _get_player_node(pid: String) -> Node:
-	for n in get_tree().get_nodes_in_group("players"):
-		if n.player_id == pid: return n
-	return null
+	return PlayerLookup.get_node(pid)

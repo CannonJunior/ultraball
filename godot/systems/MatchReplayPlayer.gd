@@ -7,8 +7,8 @@ extends Control
 ## Call setup(report) with a MatchReportSaver Dictionary to initialise.
 
 # ── Palette ───────────────────────────────────────────────────────────────────
-const C_HOME  := Color(1.000, 0.231, 0.325)
-const C_AWAY  := Color(0.184, 0.514, 1.000)
+var _c_home: Color = Color(0.94, 0.16, 0.22)
+var _c_away: Color = Color(0.14, 0.88, 0.28)
 const C_BALL  := Color(1.000, 0.820, 0.100)
 const C_SKY   := Color(0.016, 0.022, 0.047)
 const C_GOLD  := Color(1.000, 0.796, 0.239)
@@ -122,6 +122,10 @@ func setup(report: Dictionary) -> void:
 # ─────────────────────────────────────────────────────────────────────────────
 
 func _load_data() -> void:
+	var hi := int(_report.get("home_team_index", 0))
+	var ai := int(_report.get("away_team_index", 1))
+	_c_home = MatchState.TEAM_COLOR_PALETTE[clampi(hi, 0, MatchState.TEAM_COLOR_PALETTE.size() - 1)]
+	_c_away = MatchState.TEAM_COLOR_PALETTE[clampi(ai, 0, MatchState.TEAM_COLOR_PALETTE.size() - 1)]
 	_ball_path.clear()
 	for b in _report.get("ball_path", []):
 		_ball_path.append({
@@ -274,7 +278,7 @@ func _build_ui() -> void:
 	_home_lbl = Label.new()
 	_home_lbl.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_home_lbl.position = Vector2(10, 8)
-	_home_lbl.add_theme_color_override("font_color", C_HOME)
+	_home_lbl.add_theme_color_override("font_color", _c_home)
 	_home_lbl.add_theme_font_size_override("font_size", 15)
 	add_child(_home_lbl)
 
@@ -285,7 +289,7 @@ func _build_ui() -> void:
 	_away_lbl.offset_left  = -200.0
 	_away_lbl.position.y   = 8.0
 	_away_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_away_lbl.add_theme_color_override("font_color", C_AWAY)
+	_away_lbl.add_theme_color_override("font_color", _c_away)
 	_away_lbl.add_theme_font_size_override("font_size", 15)
 	add_child(_away_lbl)
 
@@ -620,7 +624,7 @@ func _vertex_color(col_f: float) -> Color:
 	var sd: float   = col_f - seam   # signed distance in grid columns from seam
 	# Colour blend: −2 = pure home, +2 = pure away
 	var blend: float = clampf(sd * 0.5 + 0.5, 0.0, 1.0)
-	var base: Color = C_HOME.lerp(C_AWAY, blend)
+	var base: Color = _c_home.lerp(_c_away, blend)
 	# Bright seam highlight within ±0.7 columns
 	var seam_t: float = maxf(0.0, 1.0 - absf(sd) / 0.70)
 	return base.lerp(Color(1.0, 1.0, 1.0), seam_t * 0.55)
@@ -692,7 +696,7 @@ func _draw_momentum_on(s: Control) -> void:
 		var px: float = (t / dur) * sw
 		var m:  float = _momentum[i]
 		if absf(m) > 0.01:
-			var col: Color = C_HOME if m > 0.0 else C_AWAY
+			var col: Color = _c_home if m > 0.0 else _c_away
 			s.draw_line(Vector2(px, cy), Vector2(px, cy - m * sh * 0.44),
 						Color(col.r, col.g, col.b, 0.55), 2.0)
 		run = lerpf(run, m, 0.20)
@@ -710,7 +714,7 @@ func _draw_momentum_on(s: Control) -> void:
 		var t: float = float(ev["tick"])
 		if t > mt + 0.5: break
 		var ex:  float = (t / dur) * sw
-		var col: Color = C_HOME if int(ev["team_id"]) == 0 else C_AWAY
+		var col: Color = _c_home if int(ev["team_id"]) == 0 else _c_away
 		s.draw_line(Vector2(ex, 0), Vector2(ex, sh * 0.35), Color(col.r, col.g, col.b, 0.90), 2.0)
 		s.draw_circle(Vector2(ex, sh * 0.35), 3.5, col)
 

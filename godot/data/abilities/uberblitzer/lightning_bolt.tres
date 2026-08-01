@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ubltz00000002"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://dcv418at6fbvp" path="res://data/abilities/effects/DamageEffect.gd" id="2_dmg"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_dmg")
+damage = 20.0
+knockback_distance = 1.5
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "lightning_bolt"
+display_name = "Lightning Bolt"
+description = "Channel 1.5s: 20 dmg · 1.5m knockback (12m)"
+slot = 2
+cooldown = 1.5
+charge_max = 1.5
+mana_cost = 30.0
+mana_type = 2
+range = 30.0
+target_mode = 0
+ability_type = 0
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

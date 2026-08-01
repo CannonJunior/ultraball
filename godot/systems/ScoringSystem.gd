@@ -4,6 +4,8 @@ extends Node
 ## Single owner of all scoring logic and act timer.
 ## Fixes the current BallSystem↔ActSystem bidirectional coupling.
 
+const PlayerLookup = preload("res://systems/PlayerLookup.gd")
+
 const ULTRA_POINTS := 7
 const META_POINTS := 3
 const KILLA_POINTS := 1
@@ -12,6 +14,7 @@ const ULTRA_MANA_PER_ULTRA_SCORE := 2.0
 
 var _last_holder_id          : String = ""
 var _holder_was_in_endzone   : bool   = false
+var _last_timer_second       : int    = -1
 
 func _ready() -> void:
 	EventBus.ball_phase_line_crossed.connect(_on_phase_line_crossed)
@@ -28,7 +31,10 @@ func _physics_process(delta: float) -> void:
 		_holder_was_in_endzone = false
 		return
 	MatchState.act_timer -= delta
-	EventBus.act_timer_changed.emit(MatchState.act_timer)
+	var cur_sec := int(MatchState.act_timer)
+	if cur_sec != _last_timer_second:
+		_last_timer_second = cur_sec
+		EventBus.act_timer_changed.emit(MatchState.act_timer)
 
 	if MatchState.act_timer <= 0.0:
 		_end_current_act()
@@ -91,18 +97,14 @@ func _is_in_endzone(player_id: String) -> bool:
 	var pos := _get_player_position(player_id)
 	var team := MatchState.team_for_player(player_id)
 	if MatchState.is_three_team:
-		return _is_in_endzone_3t(pos, team)
+		if team < 0 or team >= MatchState.TEAM3_NORMALS.size(): return false
+		var center := Vector2(MatchState.FIELD3_CX, MatchState.FIELD3_CY)
+		var norm: Vector2 = MatchState.TEAM3_NORMALS[team]
+		if (pos - center).dot(norm) < MatchState.FIELD3_CHAN_OUTER: return false
+		return absf((pos - center).dot(Vector2(-norm.y, norm.x))) <= MatchState.FIELD3_ARM_HALF_W
 	if team == 0: return pos.x <= 20.0    # HOME scores by returning ball to their own (left) endzone
 	if team == 1: return pos.x >= 120.0   # AWAY scores by returning ball to their own (right) endzone
 	return false
-
-func _is_in_endzone_3t(pos: Vector2, team: int) -> bool:
-	if team < 0 or team >= MatchState.TEAM3_NORMALS.size(): return false
-	var center := Vector2(MatchState.FIELD3_CX, MatchState.FIELD3_CY)
-	var norm: Vector2 = MatchState.TEAM3_NORMALS[team]
-	if (pos - center).dot(norm) < MatchState.FIELD3_CHAN_OUTER: return false
-	var perp := Vector2(-norm.y, norm.x)
-	return absf((pos - center).dot(perp)) <= MatchState.FIELD3_ARM_HALF_W
 
 # ── Player death → Killa scoring ──────────────────────────────────────────────
 
@@ -168,7 +170,4 @@ func _on_act_transition_complete(_next_act: int) -> void:
 # ── Helper ─────────────────────────────────────────────────────────────────────
 
 func _get_player_position(pid: String) -> Vector2:
-	for node in get_tree().get_nodes_in_group("players"):
-		if node.player_id == pid:
-			return node.global_position
-	return Vector2.ZERO
+	return PlayerLookup.get_position(pid)

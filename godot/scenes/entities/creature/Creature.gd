@@ -3,6 +3,8 @@ extends CharacterBody2D
 
 ## Creature patrol entity. Movement lives here; kill detection is in CreatureSystem.
 
+const PlayerLookup = preload("res://systems/PlayerLookup.gd")
+
 const WAYPOINT_REACH  := 2.0   # metres — snap to next waypoint
 
 # Per-type stats applied in _ready()
@@ -19,9 +21,10 @@ var _creature_type:   int = 0
 const CREATURE_ID  := "creature"
 const MAX_HP       := 1000.0
 const REGEN_RATE   := 50.0   # HP/s
-const SLAM_DAMAGE  := 100.0
-const SLAM_CD      := 1.5
-const SLAM_RADIUS  := 5.0   # must exceed physics contact distance (~4.35 m)
+const SLAM_DAMAGE     := 100.0
+const SLAM_CD         := 1.5
+const SLAM_RADIUS     := 5.0   # must exceed physics contact distance (~4.35 m)
+const _SLAM_RADIUS_SQ := SLAM_RADIUS * SLAM_RADIUS
 
 var hp:              float = MAX_HP
 var is_alive:        bool  = true
@@ -31,23 +34,28 @@ var _respawn_timer:  float = 0.0
 ## Which team owns this creature (set by GameScene at spawn time).
 var team_id: int = 0
 
-## Outer-perimeter patrol path (2-team): all four sides of the creature channels.
+## Outer-perimeter patrol path (2-team): corners sit inside the endzones so the
+## vertical transitions never cross the main playing field (x 20–120, y 0–40).
 const WAYPOINTS_2T: Array = [
-	Vector2( 25.0, -5.0),
-	Vector2(115.0, -5.0),
-	Vector2(115.0, 45.0),
-	Vector2( 25.0, 45.0),
+	Vector2( 10.0, -5.0),
+	Vector2(130.0, -5.0),
+	Vector2(130.0, 45.0),
+	Vector2( 10.0, 45.0),
 ]
 
-## Per-team patrol paths (3-team): split the star perimeter into thirds.
+## Per-team patrol paths (3-team): U-shaped perimeter around each arm.
+## center=(110,110), INRADIUS=11.547, ARM_END=81.547, ARM_HALF_W=20, buffer=5
 const WAYPOINTS_3T_0: Array = [
-	Vector2(135.0, 121.5), Vector2(135.0, 166.5), Vector2( 85.0, 166.5),
+	Vector2(135.0, 121.5), Vector2(135.0, 196.5), Vector2(110.0, 196.5),
+	Vector2( 85.0, 196.5), Vector2( 85.0, 121.5),
 ]
 const WAYPOINTS_3T_1: Array = [
-	Vector2( 87.5, 125.9), Vector2( 48.5, 103.4), Vector2( 73.5,  60.1),
+	Vector2(107.5,  82.6), Vector2(172.5,  45.1), Vector2(185.0,  66.7),
+	Vector2(197.5,  88.4), Vector2(132.5, 125.9),
 ]
 const WAYPOINTS_3T_2: Array = [
-	Vector2(107.5,  82.6), Vector2(146.5,  60.1), Vector2(171.5, 103.4),
+	Vector2( 87.5, 125.9), Vector2( 22.5,  88.4), Vector2( 35.0,  66.7),
+	Vector2( 47.5,  45.1), Vector2(112.5,  82.6),
 ]
 
 var _waypoints: Array = WAYPOINTS_2T
@@ -108,8 +116,9 @@ func _physics_process(delta: float) -> void:
 	var to_target: Vector2 = move_target - global_position
 	velocity = to_target.normalized() * patrol_speed * _speed_mult
 	move_and_slide()
+	_clamp_to_channel()
 
-	if not _goaded and not _hunting and to_target.length() < WAYPOINT_REACH:
+	if not _goaded and not _hunting and to_target.length_squared() < WAYPOINT_REACH * WAYPOINT_REACH:
 		_wp_index = (_wp_index + _dir + _waypoints.size()) % _waypoints.size()
 
 # ── Per-type behaviour ticks ──────────────────────────────────────────────────
@@ -118,18 +127,18 @@ func _tick_hellhound(delta: float) -> void:
 	_behaviour_timer -= delta
 	if _hunting:
 		# Check if we've reached the hunt target or timed out
-		if global_position.distance_to(_hunt_pos) < 3.0 or _behaviour_timer <= 0.0:
+		if global_position.distance_squared_to(_hunt_pos) < 9.0 or _behaviour_timer <= 0.0:
 			_hunting = false
 			_behaviour_timer = randf_range(3.0, 7.0)
 	elif _behaviour_timer <= 0.0:
 		# Look for the nearest player to chase
 		var nearest: Node = null
-		var best_d := 20.0
-		for p in get_tree().get_nodes_in_group("players"):
+		var best_d_sq := 400.0   # 20^2
+		for p in PlayerLookup.get_all_nodes():
 			if not p.is_alive or not p.is_on_field: continue
-			var d := global_position.distance_to(p.global_position)
-			if d < best_d:
-				best_d = d
+			var d_sq := global_position.distance_squared_to(p.global_position)
+			if d_sq < best_d_sq:
+				best_d_sq = d_sq
 				nearest = p
 		if nearest != null:
 			_hunt_pos = nearest.global_position
@@ -169,17 +178,17 @@ func _tick_chaos(delta: float) -> void:
 # ── Slam ──────────────────────────────────────────────────────────────────────
 
 func _try_slam() -> void:
-	for player in get_tree().get_nodes_in_group("players"):
+	for player in PlayerLookup.get_all_nodes():
 		if not player.is_alive or not player.is_on_field: continue
-		if global_position.distance_to(player.global_position) <= SLAM_RADIUS:
+		if global_position.distance_squared_to(player.global_position) <= _SLAM_RADIUS_SQ:
 			_do_slam()
 			return
 
 func _do_slam() -> void:
 	_slam_cd = SLAM_CD
-	for player in get_tree().get_nodes_in_group("players"):
+	for player in PlayerLookup.get_all_nodes():
 		if not player.is_alive or not player.is_on_field: continue
-		if global_position.distance_to(player.global_position) <= SLAM_RADIUS:
+		if global_position.distance_squared_to(player.global_position) <= _SLAM_RADIUS_SQ:
 			EventBus.damage_requested.emit({
 				"attacker_id": CREATURE_ID,
 				"target_id":   player.player_id,
@@ -187,6 +196,17 @@ func _do_slam() -> void:
 				"knockback_distance": 0.0,
 				"facing":      0.0,
 			})
+
+# ── Channel confinement ───────────────────────────────────────────────────────
+
+func _clamp_to_channel() -> void:
+	if MatchState.is_three_team:
+		return
+	var x := global_position.x
+	var y := global_position.y
+	# Only enforce when in the main-field x-range; endzones allow free y movement.
+	if x >= 20.0 and x <= 120.0 and y > 0.0 and y < 40.0:
+		global_position.y = 0.0 if y < 20.0 else 40.0
 
 # ── Type init ────────────────────────────────────────────────────────────────
 

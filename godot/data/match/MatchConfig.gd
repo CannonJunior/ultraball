@@ -4,6 +4,7 @@ extends Resource
 enum MatchMode { TWO_TEAM, THREE_TEAM }
 enum ViewMode  { FLAT_2D = 0, THREE_QUARTER = 1, FULL_3D = 2 }
 
+
 @export_enum("TwoTeam", "ThreeTeam") var match_mode: int = 0
 @export var fast_mode: bool = false
 @export var test_mode: bool = false
@@ -12,6 +13,10 @@ enum ViewMode  { FLAT_2D = 0, THREE_QUARTER = 1, FULL_3D = 2 }
 @export var home_team_name: String = "HOME"
 @export var away_team_name: String = "AWAY"
 @export var third_team_name: String = "THIRD"
+
+@export var home_team_idx: int = 0
+@export var away_team_idx: int = 1
+@export var third_team_idx: int = 2
 
 ## 15 player names per team
 @export var home_player_names: PackedStringArray
@@ -45,6 +50,8 @@ func to_dict() -> Dictionary:
 		"players_per_side": players_per_side,
 		"home_team_name": home_team_name, "away_team_name": away_team_name,
 		"third_team_name": third_team_name,
+		"home_team_idx": home_team_idx, "away_team_idx": away_team_idx,
+		"third_team_idx": third_team_idx,
 		"home_player_names": Array(home_player_names),
 		"away_player_names": Array(away_player_names),
 		"third_player_names": Array(third_player_names),
@@ -64,6 +71,9 @@ static func from_dict(d: Dictionary) -> MatchConfig:
 	cfg.home_team_name         = d.get("home_team_name", "HOME")
 	cfg.away_team_name         = d.get("away_team_name", "AWAY")
 	cfg.third_team_name        = d.get("third_team_name", "THIRD")
+	cfg.home_team_idx          = d.get("home_team_idx", 0)
+	cfg.away_team_idx          = d.get("away_team_idx", 1)
+	cfg.third_team_idx         = d.get("third_team_idx", 2)
 	cfg.home_player_names      = PackedStringArray(d.get("home_player_names", []))
 	cfg.away_player_names      = PackedStringArray(d.get("away_player_names", []))
 	cfg.third_player_names     = PackedStringArray(d.get("third_player_names", []))

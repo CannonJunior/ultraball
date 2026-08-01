@@ -2,16 +2,15 @@ extends Control
 
 const _TeamPortrait := preload("res://scenes/game/hud/TeamPortrait.gd")
 
-const C_HOME  := Color(1.000, 0.231, 0.325)
-const C_AWAY  := Color(0.184, 0.514, 1.000)
 const C_GOLD  := Color(1.000, 0.796, 0.239)
 const C_CYAN  := Color(0.098, 0.890, 0.890)
 const C_BG    := Color(0.039, 0.047, 0.078)
 const C_ROW   := Color(0.024, 0.027, 0.051)
 const C_HEAL  := Color(0.431, 0.906, 0.718)
+const C_TAKEN := Color(1.000, 0.557, 0.196)
 const C_DIM   := Color(1.0, 1.0, 1.0, 0.40)
 
-const CARD_W := 892.0
+const CARD_W := 960.0
 
 var _winner_id:   int = -1
 var _home_score:  int = 0
@@ -65,7 +64,7 @@ func _rebuild_stats() -> void:
 		cfg.third_team_name if cfg else "THIRD",
 	]
 	var winner_name: String = team_names[clampi(_winner_id, 0, 2)]
-	var winner_col := C_HOME if _winner_id == 0 else (C_AWAY if _winner_id == 1 else Color(0.2, 0.9, 0.3))
+	var winner_col := MatchState.team_color(_winner_id)
 
 	# Fixed-height sections: tab(36) + hdr(80) + strip(56) + colhdr(34) + legend(36) + exit(68)
 	var fixed_h := 36 + 80 + 56 + 34 + 36 + 68
@@ -84,8 +83,9 @@ func _rebuild_stats() -> void:
 	vbox.add_child(_make_tab_strip())
 
 	# Victory header
+	var wc := MatchState.team_color(_winner_id)
 	var hdr := ColorRect.new()
-	hdr.color = Color(C_HOME.r, C_HOME.g, C_HOME.b, 0.10) if _winner_id == 0 else Color(C_AWAY.r, C_AWAY.g, C_AWAY.b, 0.10)
+	hdr.color = Color(wc.r, wc.g, wc.b, 0.10)
 	hdr.custom_minimum_size.y = 80
 	vbox.add_child(hdr)
 
@@ -130,9 +130,11 @@ func _rebuild_stats() -> void:
 
 	var max_dmg := 1.0
 	var max_heal := 1.0
+	var max_taken := 1.0
 	for r in rows:
 		if r.dmg > max_dmg: max_dmg = r.dmg
 		if r.heal > max_heal: max_heal = r.heal
+		if r.taken > max_taken: max_taken = r.taken
 
 	var scroll := ScrollContainer.new()
 	scroll.custom_minimum_size = Vector2(0, scroll_h)
@@ -144,7 +146,7 @@ func _rebuild_stats() -> void:
 	scroll.add_child(rows_vbox)
 
 	for i in rows.size():
-		rows_vbox.add_child(_make_stat_row(i + 1, rows[i], max_dmg, max_heal, i == 0))
+		rows_vbox.add_child(_make_stat_row(i + 1, rows[i], max_dmg, max_heal, max_taken, i == 0))
 
 	vbox.add_child(_make_legend())
 	vbox.add_child(_make_exit_btn())
@@ -184,7 +186,7 @@ func _rebuild_portraits() -> void:
 		cfg.home_team_name if cfg else "HOME",
 		cfg.away_team_name if cfg else "AWAY",
 	]
-	var winner_col := C_HOME if _winner_id == 0 else (C_AWAY if _winner_id == 1 else Color(0.2, 0.9, 0.3))
+	var winner_col := MatchState.team_color(_winner_id)
 	var winner_name: String = team_names[clampi(_winner_id, 0, 1)]
 
 	var banner := ColorRect.new()
@@ -362,30 +364,29 @@ func _make_col_header() -> Control:
 
 	hbox.add_child(_col_cell("#", 30, C_DIM, HORIZONTAL_ALIGNMENT_LEFT, 9))
 	hbox.add_child(_col_cell("PLAYER", 200, C_DIM, HORIZONTAL_ALIGNMENT_LEFT, 9))
-	hbox.add_child(_col_cell("DAMAGE DONE", 150, C_DIM, HORIZONTAL_ALIGNMENT_LEFT, 9))
-	hbox.add_child(_col_cell("HEALING DONE", 150, C_DIM, HORIZONTAL_ALIGNMENT_LEFT, 9))
+	hbox.add_child(_col_cell("DAMAGE DONE", 140, C_DIM, HORIZONTAL_ALIGNMENT_LEFT, 9))
+	hbox.add_child(_col_cell("HEALING DONE", 140, C_DIM, HORIZONTAL_ALIGNMENT_LEFT, 9))
+	hbox.add_child(_col_cell("DAMAGE TAKEN", 140, C_DIM, HORIZONTAL_ALIGNMENT_LEFT, 9))
 	hbox.add_child(_col_cell("POINTS SCORED", 180, C_DIM, HORIZONTAL_ALIGNMENT_CENTER, 9))
-	hbox.add_child(_col_cell("FORCED FUMBLES", 96, C_DIM, HORIZONTAL_ALIGNMENT_CENTER, 9))
+	hbox.add_child(_col_cell("FORCED FUMBLES", 90, C_DIM, HORIZONTAL_ALIGNMENT_CENTER, 9))
 
 	return row
 
-func _make_stat_row(rank: int, r: Dictionary, max_dmg: float, max_heal: float, is_leader: bool) -> Control:
+func _make_stat_row(rank: int, r: Dictionary, max_dmg: float, max_heal: float, max_taken: float, is_leader: bool) -> Control:
 	var row := _col_row()
 	row.custom_minimum_size.y = 48
 
 	var local_pid := NetworkManager.local_player_id
 	var is_local: bool = not local_pid.is_empty() and r.get("pid", "") == local_pid
 
-	var team_col: Color = C_HOME if r.team == 0 else (C_AWAY if r.team == 1 else Color(0.2, 0.9, 0.3))
+	var team_col := MatchState.team_color(r.team)
 	var row_bg: Color
 	if is_leader and is_local:
 		row_bg = Color(C_GOLD.r, C_GOLD.g, C_GOLD.b, 0.12)
 	elif is_leader or is_local:
 		row_bg = Color(C_GOLD.r, C_GOLD.g, C_GOLD.b, 0.07)
-	elif r.team == 0:
-		row_bg = Color(C_HOME.r, C_HOME.g, C_HOME.b, 0.05)
 	else:
-		row_bg = Color(C_AWAY.r, C_AWAY.g, C_AWAY.b, 0.05)
+		row_bg = Color(team_col.r, team_col.g, team_col.b, 0.05)
 
 	var bg := ColorRect.new()
 	bg.color = row_bg
@@ -441,12 +442,17 @@ func _make_stat_row(rank: int, r: Dictionary, max_dmg: float, max_heal: float, i
 	nv.add_child(_lbl(r.name, Color.WHITE, 12))
 	nv.add_child(_lbl(r.cls, C_DIM, 9))
 
-	hbox.add_child(_stat_bar_cell(r.dmg_fmt, r.dmg / max_dmg, team_col, 150))
+	hbox.add_child(_stat_bar_cell(r.dmg_fmt, r.dmg / max_dmg, team_col, 140))
 
-	var heal_cell := _stat_bar_cell(r.heal_fmt, r.heal / max_heal if r.heal > 0 else 0.0, C_HEAL, 150)
+	var heal_cell := _stat_bar_cell(r.heal_fmt, r.heal / max_heal if r.heal > 0 else 0.0, C_HEAL, 140)
 	if r.heal <= 0:
 		(heal_cell.get_child(0).get_child(0) as Label).add_theme_color_override("font_color", C_DIM)
 	hbox.add_child(heal_cell)
+
+	var taken_cell := _stat_bar_cell(r.taken_fmt, r.taken / max_taken if r.taken > 0 else 0.0, C_TAKEN, 140)
+	if r.taken <= 0:
+		(taken_cell.get_child(0).get_child(0) as Label).add_theme_color_override("font_color", C_DIM)
+	hbox.add_child(taken_cell)
 
 	var pts_cell := Control.new()
 	pts_cell.custom_minimum_size = Vector2(180, 0)
@@ -471,7 +477,7 @@ func _make_stat_row(rank: int, r: Dictionary, max_dmg: float, max_heal: float, i
 	icons_hbox.add_child(_icon_label("○ %d" % r.ca, C_CYAN, 9))
 	icons_hbox.add_child(_icon_label("◆ %d" % r.kills, Color(1, 0.4, 0.4), 9))
 
-	hbox.add_child(_col_cell(str(r.ff), 96, C_CYAN, HORIZONTAL_ALIGNMENT_CENTER, 18))
+	hbox.add_child(_col_cell(str(r.ff), 90, C_CYAN, HORIZONTAL_ALIGNMENT_CENTER, 18))
 
 	return row
 
@@ -488,6 +494,7 @@ func _collect_rows() -> Array:
 			"points": st.points,
 			"dmg_fmt": _fmt(st.dmg),
 			"heal_fmt": _fmt(st.heal) if st.heal > 0 else "—",
+			"taken_fmt": _fmt(st.taken) if st.taken > 0 else "—",
 		})
 	return rows
 

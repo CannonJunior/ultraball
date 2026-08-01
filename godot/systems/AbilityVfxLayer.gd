@@ -1,6 +1,8 @@
 class_name AbilityVfxLayer
 extends Node2D
 
+const PlayerLookup = preload("res://systems/PlayerLookup.gd")
+
 ## One-shot world-space VFX for ability casts, impacts, damage, and deaths.
 ## Draw-call based — no scene nodes, no particles. Consistent with the rest of
 ## the 2D world. Added to GameScene as a sibling of $Entities (z_index 10).
@@ -14,12 +16,14 @@ const C_BLUE   := Color(0.25,  0.50,  1.0)
 const C_YELLOW := Color(1.0,   0.85,  0.15)
 const C_GOLD   := Color(1.0,   0.82,  0.10)
 const C_GREEN  := Color(0.20,  0.90,  0.35)
-const C_DMG    := Color(1.0,   0.40,  0.10)
-const C_HOME   := Color(1.0,   0.231, 0.325)
-const C_AWAY   := Color(0.184, 0.514, 1.0)
+const C_DMG       := Color(1.0,   0.40,  0.10)
+const C_LIGHTNING := Color(0.55,  0.85,  1.00)
 
 const TERRAIN_PREVIEW_DUR := 1.5
 const TERRAIN_EXPIRY_DUR  := 1.5
+const BOLT_TRAVEL_DUR     := 0.22
+const BOLT_IMPACT_DUR     := 0.40
+const CHAIN_INTERVAL      := 0.12
 
 var _active: Array = []
 
@@ -70,8 +74,13 @@ func _on_ability_resolved(caster_id: String, slot: int, hit_ids: Array) -> void:
 	var col  := _mana_color(definition.mana_type)
 	var cpos := _player_pos(caster_id)
 	_spawn("cast_ring", cpos, col, 0.35, {})
+
+	# Bolt VFX for ranged projectile abilities — suppress impact_flash on covered targets.
+	var bolt_targets: Array = _try_spawn_bolt_vfx(rec.class_id, slot, cpos, hit_ids)
+
 	for hit_id in hit_ids:
-		_spawn("impact_flash", _player_pos(hit_id), col, 0.20, {})
+		if not bolt_targets.has(hit_id):
+			_spawn("impact_flash", _player_pos(hit_id), col, 0.20, {})
 	if definition.is_aoe and definition.aoe_radius > 0.0:
 		var center := _centroid(hit_ids) if not hit_ids.is_empty() else cpos
 		_spawn("aoe_burst", center, col, 0.45, {"radius": definition.aoe_radius})
@@ -88,12 +97,8 @@ func _on_player_died(player_id: String, _cause: String, _killer_id: String) -> v
 	var col: Color
 	if rec == null:
 		col = Color(0.7, 0.7, 0.7)
-	elif rec.team_id == 0:
-		col = C_HOME
-	elif rec.team_id == 1:
-		col = C_AWAY
 	else:
-		col = Color(0.20, 0.90, 0.30)
+		col = MatchState.team_color(rec.team_id)
 	_spawn("death_burst", _player_pos(player_id), col, 0.50, {})
 
 func _on_ultra_scored(_team_id: int, scorer_id: String) -> void:
@@ -121,6 +126,37 @@ func _on_ability_charge_released(_pid: String, _slot: int, _charge_t: float) -> 
 	_charge_elapsed     = 0.0
 	_charge_max         = 0.0
 
+# ── Bolt VFX helpers ───────────────────────────────────────────────────────────
+
+func _try_spawn_bolt_vfx(class_id: String, slot: int, cpos: Vector2, hit_ids: Array) -> Array:
+	if class_id != "uberblitzer" or hit_ids.is_empty():
+		return []
+	match slot:
+		2:  # Lightning Bolt — single arc caster → target
+			_spawn_bolt(cpos, _player_pos(hit_ids[0]), C_LIGHTNING, 0.0)
+			return [hit_ids[0]]
+		3:  # Chain Lightning — sequential arcs
+			var from := cpos
+			for i in hit_ids.size():
+				var delay := i * (BOLT_TRAVEL_DUR + CHAIN_INTERVAL)
+				_spawn_bolt(from, _player_pos(hit_ids[i]), C_LIGHTNING, delay)
+				from = _player_pos(hit_ids[i])
+			return hit_ids.duplicate()
+	return []
+
+func _spawn_bolt(from: Vector2, to: Vector2, col: Color, delay: float) -> void:
+	var travel_end := delay + BOLT_TRAVEL_DUR
+	_active.append({
+		"type": "bolt_travel", "t": 0.0, "dur": travel_end,
+		"pos": from, "color": col,
+		"data": {"from": from, "to": to, "delay": delay}
+	})
+	_active.append({
+		"type": "bolt_impact", "t": 0.0, "dur": travel_end + BOLT_IMPACT_DUR,
+		"pos": to, "color": col,
+		"data": {"delay": travel_end}
+	})
+
 # ── Spawn ──────────────────────────────────────────────────────────────────────
 
 func _spawn(type: String, pos: Vector2, color: Color, dur: float, data: Dictionary) -> void:
@@ -143,6 +179,8 @@ func _draw() -> void:
 			"ff_shatter":     _draw_ff_shatter(v, p)
 			"terrain_preview": _draw_terrain_preview(v, p)
 			"terrain_expiry":  _draw_terrain_expiry(v, p)
+			"bolt_travel":     _draw_bolt_travel(v, p)
+			"bolt_impact":     _draw_bolt_impact(v, p)
 	if not _charging_player_id.is_empty() and _charge_max > 0.0:
 		_draw_ability_charge_bar(_player_pos(_charging_player_id), _charge_elapsed / _charge_max)
 
@@ -275,6 +313,77 @@ func _draw_ability_charge_bar(pos: Vector2, pct: float) -> void:
 				  Color(fill_col.r, fill_col.g, fill_col.b, 0.95))
 	draw_rect(Rect2(left, Vector2(bar_w, bar_h)), Color(1.0, 1.0, 1.0, 0.28), false, 0.03)
 
+func _draw_bolt_travel(v: Dictionary, _p: float) -> void:
+	var delay: float = v.data.get("delay", 0.0)
+	if v.t < delay:
+		return
+	var lp   := clampf((v.t - delay) / BOLT_TRAVEL_DUR, 0.0, 1.0)
+	var from : Vector2 = v.data.get("from", v.pos)
+	var to   : Vector2 = v.data.get("to",   v.pos)
+	var tip  := from.lerp(to, lp)
+	var col: Color = v.color
+
+	# Jagged bolt trail from origin to current tip
+	if lp > 0.02:
+		_draw_lightning_segment(from, tip, col, lerpf(0.85, 0.45, lp), v.t)
+		_draw_lightning_segment(from, tip, Color(1.0, 1.0, 1.0, 0.25), lerpf(0.45, 0.10, lp), v.t + 0.07)
+
+	# Bright glowing head at the tip
+	var head_a := lerpf(1.0, 0.0, lp * lp)
+	draw_circle(tip, 0.30, Color(1.0, 1.0, 1.0, head_a * 0.88))
+	draw_circle(tip, 0.17, Color(col.r, col.g, col.b, head_a))
+
+func _draw_bolt_impact(v: Dictionary, _p: float) -> void:
+	var delay: float = v.data.get("delay", 0.0)
+	if v.t < delay:
+		return
+	var lp  := clampf((v.t - delay) / BOLT_IMPACT_DUR, 0.0, 1.0)
+	var ep  := _ease_out(lp)
+	var col: Color = v.color
+
+	# White flash that fades quickly
+	var flash_a := clampf(lerpf(1.0, 0.0, lp * 3.0), 0.0, 1.0)
+	draw_circle(v.pos, lerpf(0.0, 0.80, ep), Color(1.0, 1.0, 1.0, flash_a))
+	draw_circle(v.pos, lerpf(0.0, 0.48, ep), Color(col.r, col.g, col.b, flash_a * 0.70))
+
+	# Expanding electric ring
+	var ring_a := lerpf(0.85, 0.0, lp)
+	draw_arc(v.pos, lerpf(0.0, 1.9, ep), 0.0, TAU, 48,
+		Color(col.r, col.g, col.b, ring_a), 0.055)
+
+	# Radiating jagged spark lines
+	var spark_a := lerpf(0.90, 0.0, lp)
+	for i in 8:
+		var angle := i * TAU / 8.0 + lp * 0.5
+		var dir   := Vector2(cos(angle), sin(angle))
+		var perp  := Vector2(-dir.y, dir.x)
+		var r0    := lerpf(0.0, 0.28, ep)
+		var r1    := lerpf(0.0, 1.15, ep)
+		var jitter := sin(float(i) * 1.7 + v.t * 38.0) * 0.18 * ep
+		var mid: Vector2 = v.pos + dir * lerpf(r0, r1, 0.5) + perp * jitter
+		draw_line(v.pos + dir * r0, mid,
+			Color(1.0, 1.0, 1.0, spark_a * 0.65), 0.055)
+		draw_line(mid, v.pos + dir * r1,
+			Color(col.r, col.g, col.b, spark_a), 0.040)
+
+func _draw_lightning_segment(from: Vector2, to: Vector2, col: Color, alpha: float, t: float) -> void:
+	var d := to - from
+	if d.length_squared() < 0.05:
+		return
+	var perp := Vector2(-d.y, d.x).normalized()
+	const N := 7
+	var pts: PackedVector2Array = []
+	pts.append(from)
+	for i in range(1, N):
+		var frac   := float(i) / float(N)
+		var base   := from + d * frac
+		var jitter := sin(frac * PI * 5.0 + t * 55.0) * d.length() * 0.09
+		pts.append(base + perp * jitter)
+	pts.append(to)
+	for i in range(pts.size() - 1):
+		draw_line(pts[i], pts[i + 1], Color(col.r, col.g, col.b, alpha * 0.55), 0.07)
+		draw_line(pts[i], pts[i + 1], Color(1.0, 1.0, 1.0, alpha * 0.85), 0.03)
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 func _ease_out(t: float) -> float:
@@ -289,10 +398,7 @@ func _mana_color(mana_type: int) -> Color:
 	return Color(0.88, 0.88, 0.88)
 
 func _player_pos(pid: String) -> Vector2:
-	for node in get_tree().get_nodes_in_group("players"):
-		if node.player_id == pid:
-			return node.global_position
-	return Vector2.ZERO
+	return PlayerLookup.get_position(pid)
 
 func _terrain_color(event_type: String) -> Color:
 	match event_type:

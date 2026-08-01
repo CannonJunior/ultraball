@@ -6,12 +6,26 @@ extends Node2D
 const BALL_RADIUS  := 0.25
 const CHARGE_MAX   := 7.0   # mirrors BallSystem.MAX_CHARGE
 
+var _prev_pos: Vector2      = Vector2.INF
+var _prev_flight: bool      = false
+var _prev_holder: String    = ""
+var _prev_charge: float     = -1.0
+
 func _ready() -> void:
 	add_to_group("ball")
 
 func _process(_delta: float) -> void:
-	global_position = MatchState.ball.position
-	queue_redraw()
+	var ball := MatchState.ball
+	global_position = ball.position
+	if ball.position     != _prev_pos    or \
+	   ball.is_in_flight != _prev_flight or \
+	   ball.holder_id    != _prev_holder or \
+	   ball.charge_timer != _prev_charge:
+		_prev_pos    = ball.position
+		_prev_flight = ball.is_in_flight
+		_prev_holder = ball.holder_id
+		_prev_charge = ball.charge_timer
+		queue_redraw()
 
 func _draw() -> void:
 	var ball := MatchState.ball

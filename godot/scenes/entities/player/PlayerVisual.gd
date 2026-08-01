@@ -8,6 +8,7 @@ extends Node2D
 const BODY_RADIUS := 0.4
 const DOT_RADIUS  := 0.1
 
+
 # Effect ring radii (metres, local space)
 const R_INNER := 0.60   # stun stars / confused ring
 const R_OUTER := 0.72   # shield / hex / power / speed aura
@@ -24,7 +25,10 @@ const C_HEX     := Color(0.65, 0.20, 0.90)
 const C_MARK    := Color(1.00, 0.18, 0.18)
 const C_CONFUSE := Color(0.90, 0.60, 0.10)
 
+var _class_color: Color = Color.WHITE
+var _team_color: Color = Color.WHITE
 var _body_color: Color = Color.WHITE
+var _is_controlled: bool = false
 
 # Persistent effect timers. Values are seconds remaining.
 var _buffs:   Dictionary = {}
@@ -36,12 +40,24 @@ var _phase: float = 0.0
 func _ready() -> void:
 	var player := get_parent()
 	if player and player.class_definition:
-		_body_color = player.class_definition.body_color
+		_class_color = player.class_definition.body_color
+	if player:
+		_team_color = MatchState.team_color(player.team_id)
+	_body_color = _team_color
 	EventBus.buff_applied.connect(_on_buff_applied)
 	EventBus.debuff_applied.connect(_on_debuff_applied)
 	queue_redraw()
 
 func _process(delta: float) -> void:
+	var player := get_parent()
+	var now_controlled: bool = player != null and \
+		player.get("player_id") == NetworkManager.local_player_id and \
+		not NetworkManager.local_player_id.is_empty()
+	if now_controlled != _is_controlled:
+		_is_controlled = now_controlled
+		_body_color = _class_color if _is_controlled else _team_color
+		queue_redraw()
+
 	var any := false
 	for key in _buffs.keys():
 		_buffs[key] -= delta

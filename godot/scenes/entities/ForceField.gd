@@ -1,6 +1,8 @@
 class_name ForceField
 extends Node2D
 
+const PlayerLookup = preload("res://systems/PlayerLookup.gd")
+
 const RADIUS     := 5.0
 const MAX_HP     := 200.0
 const DRAIN_RATE := 1.0    # Ultra mana/s while following
@@ -60,23 +62,23 @@ func _on_caster_died(pid: String, _cause: String, _killer: String) -> void:
 	if pid == caster_id:
 		_anchor()
 
+const _RADIUS_SQ := RADIUS * RADIUS
+
 func _push_enemies() -> void:
-	for player in get_tree().get_nodes_in_group("players"):
+	for player in PlayerLookup.get_all_nodes():
 		if not player.is_alive or not player.is_on_field: continue
 		if player.team_id == caster_team_id: continue
 		var diff: Vector2 = player.global_position - global_position
-		var dist: float = diff.length()
-		if dist < RADIUS:
-			if dist > 0.001:
-				player.global_position = global_position + diff.normalized() * RADIUS
-			else:
-				player.global_position = global_position + Vector2(RADIUS, 0.0)
+		var dist_sq := diff.length_squared()
+		if dist_sq >= _RADIUS_SQ:
+			continue
+		if dist_sq > 0.000001:
+			player.global_position = global_position + diff.normalized() * RADIUS
+		else:
+			player.global_position = global_position + Vector2(RADIUS, 0.0)
 
 func _find_caster() -> Node:
-	for p in get_tree().get_nodes_in_group("players"):
-		if p.player_id == caster_id:
-			return p
-	return null
+	return PlayerLookup.get_node(caster_id)
 
 func _draw() -> void:
 	var life_frac := 1.0 - (_timer / LIFETIME)

@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" format=3 uid="uid://ubltz00000007"]
+
+[ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
+[ext_resource type="Script" path="res://data/abilities/effects/SpeedBoostEffect.gd" id="2_spd"]
+
+[sub_resource type="Resource" id="E1"]
+script = ExtResource("2_spd")
+speed_multiplier = 1.5
+duration = 4.0
+targets_self = true
+
+[resource]
+script = ExtResource("1_def")
+ability_id = "galvanize"
+display_name = "Galvanize"
+description = "+50% SPD · 4s"
+slot = 7
+cooldown = 30.0
+mana_cost = 20.0
+mana_type = 2
+range = 0.0
+target_mode = 2
+ability_type = 2
+effects = [SubResource("E1")]
+metadata/_custom_type_script = "uid://b38bten5wru66"

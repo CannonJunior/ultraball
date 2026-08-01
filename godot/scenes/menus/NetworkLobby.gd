@@ -12,6 +12,7 @@ const _StratNumericalEdge := preload("res://systems/ai/strategies/NumericalEdgeS
 const _StratAggressive    := preload("res://systems/ai/strategies/AggressiveStrategy.gd")
 const _StratFloodEndzone  := preload("res://systems/ai/strategies/FloodEndzoneStrategy.gd")
 const _StratPossessionBleed := preload("res://systems/ai/strategies/PossessionBleedStrategy.gd")
+const _StratSafePass      := preload("res://systems/ai/strategies/SafePassStrategy.gd")
 const _TactFocusFire      := preload("res://systems/ai/tactics/FocusFireTactics.gd")
 const _TactPickAndScreen  := preload("res://systems/ai/tactics/PickAndScreenTactics.gd")
 const _TactQuickRelease   := preload("res://systems/ai/tactics/QuickReleaseTactics.gd")
@@ -19,6 +20,7 @@ const _TactCreatureFlank  := preload("res://systems/ai/tactics/CreatureFlankTact
 const _TactWedgeRun       := preload("res://systems/ai/tactics/WedgeRunTactics.gd")
 const _TactHeroBall       := preload("res://systems/ai/tactics/HeroBallTactics.gd")
 const _TactBalanced       := preload("res://systems/ai/tactics/BalancedTactics.gd")
+const _TactSafePass       := preload("res://systems/ai/tactics/SafePassTactics.gd")
 
 # ── Palette ──────────────────────────────────────────────────────────────────
 const C_BG     := Color(0.016, 0.020, 0.039)   # #04050A
@@ -40,6 +42,7 @@ var _view_mode         : int  = 0   # 0=FLAT 1=THREE_QUARTER 2=FULL_3D
 var _creature          : int  = 4   # neutral creature (defaults to Chaos)
 var _home_team         : int  = 0   # index into TEAMS
 var _away_team         : int  = 1   # index into TEAMS
+var _third_team        : int  = 2   # index into TEAMS (3-team mode only)
 var _site              : int  = 0   # 0=Home 1=Away 2=Neutral
 var _players_per_side  : int  = 7
 var _home_strat  : int  = 0
@@ -57,6 +60,8 @@ var _creature_auto_lbl   : Label   = null # shown when site=Home/Away
 var _neutral_crea_vbox   : VBoxContainer = null # shown when site=Neutral
 var _home_team_ob        : OptionButton  = null
 var _away_team_ob        : OptionButton  = null
+var _third_team_ob       : OptionButton  = null
+var _third_row           : HBoxContainer = null
 var _hs_radios   : Array = []   # home strategy radio rows
 var _ht_radios   : Array = []   # home tactics radio rows
 var _os_radios   : Array = []   # opp strategy radio rows
@@ -105,6 +110,7 @@ const STRATEGIES := [
 	["💥", "AGGRESSIVE",     "3 defenders press the carrier on defense; tighter support spacing on offense"],
 	["🌊", "FLOOD THE ZONE", "Flood 3–4 players into the endzone; defense can't cover everyone"],
 	["🩸", "BLEED OUT",      "Never surrender the ball; drain the clock; only score when safe"],
+	["🎽", "SAFE PASS",      "Stagger receivers at relay distances; one rusher on defense; possession first"],
 ]
 
 const TACTICS := [
@@ -114,6 +120,7 @@ const TACTICS := [
 	["👹", "CREATURE FLANK", "Herd the opponent toward the creature from the opposite side"],
 	["🔺", "WEDGE RUN",      "Three players form a tight triangle around the carrier; move as one"],
 	["⭐", "HERO BALL",      "All units rally around the star player; pass the ball to them"],
+	["🤝", "SAFE PASS",      "Throw to the nearest open receiver; sidestep into space when pressured"],
 ]
 
 const CREATURES := [
@@ -216,7 +223,7 @@ const RULES := [
 
 const CLASS_NAMES := [
 	"SPECTRE", "CORSAIR", "GEOMANCER", "ARCHON", "WARDEN", "TRICKSTER", "WRECKER", "VITALIST",
-	"CHRONOKINESIST"
+	"CHRONOKINESIST", "UBERBLITZER"
 ]
 const CLASS_DESCS := [
 	"Ghost phase — evasion and burst speed",
@@ -228,6 +235,7 @@ const CLASS_DESCS := [
 	"Berserker — brutal knockback and brute force",
 	"Healer — team sustain and revival support",
 	"Time-manipulating ranged attacker. Speeds allies, slows enemies, extends or collapses terrain effects, and bends the act clock itself.",
+	"Storm mage — lightning bolts, chain damage, and three stances: Lightning, Thunder, and Serene.",
 ]
 const CLASS_COLORS := [
 	Color(0.267, 1.000, 0.800),   # Spectre         #44FFCC
@@ -239,6 +247,7 @@ const CLASS_COLORS := [
 	Color(1.000, 0.467, 0.000),   # Wrecker         #FF7700
 	Color(0.267, 0.867, 0.533),   # Vitalist        #44DD88
 	Color(0.550, 0.120, 0.880),   # Chronokinesist  #8C1FE0
+	Color(0.400, 0.800, 1.000),   # Uberblitzer     #66CCFF
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -439,6 +448,21 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 	_away_team_ob.item_selected.connect(_set_away_team)
 	away_row.add_child(_away_team_ob)
 
+	_third_row = HBoxContainer.new()
+	_third_row.add_theme_constant_override("separation", 8)
+	_third_row.visible = (_match_mode == 1)
+	teams_vbox.add_child(_third_row)
+	var third_lbl := Label.new()
+	third_lbl.text = "THIRD"
+	third_lbl.add_theme_font_size_override("font_size", 11)
+	third_lbl.add_theme_color_override("font_color", C_DIM)
+	third_lbl.custom_minimum_size = Vector2(48, 0)
+	third_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_third_row.add_child(third_lbl)
+	_third_team_ob = _make_team_option_button(_third_team)
+	_third_team_ob.item_selected.connect(_set_third_team)
+	_third_row.add_child(_third_team_ob)
+
 	inner.add_child(_make_spacer(8))
 
 	# ── Game Site + Creature ──────────────────────────────────────────────────────
@@ -556,11 +580,13 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 	btn_test_off.pressed.connect(func() -> void:
 		_test_mode = false
 		_update_speed_btn(btn_test_off, true)
-		_update_speed_btn(btn_test_on,  false))
+		_update_speed_btn(btn_test_on,  false)
+		_save_lobby_state())
 	btn_test_on.pressed.connect(func() -> void:
 		_test_mode = true
 		_update_speed_btn(btn_test_off, false)
-		_update_speed_btn(btn_test_on,  true))
+		_update_speed_btn(btn_test_on,  true)
+		_save_lobby_state())
 
 	# ── Units Per Side ────────────────────────────────────────────────────────
 	var units_card := _make_card()
@@ -783,6 +809,8 @@ func _set_match_mode(mode: int) -> void:
 	for i in _mode_btns.size():
 		_update_speed_btn(_mode_btns[i], _match_mode == i)
 	var is_three := (_match_mode == 1)
+	if is_instance_valid(_third_row):
+		_third_row.visible = is_three
 	for i in _view_btns.size():
 		var disabled := is_three and i > 0
 		_view_btns[i].disabled = disabled
@@ -816,6 +844,7 @@ func _strategy_for(idx: int) -> Resource:
 		2: return _StratAggressive.new()
 		3: return _StratFloodEndzone.new()
 		4: return _StratPossessionBleed.new()
+		5: return _StratSafePass.new()
 	return _StratBalanced.new()
 
 func _tactics_for(idx: int) -> Resource:
@@ -826,6 +855,7 @@ func _tactics_for(idx: int) -> Resource:
 		3: return _TactCreatureFlank.new()
 		4: return _TactWedgeRun.new()
 		5: return _TactHeroBall.new()
+		6: return _TactSafePass.new()
 	return _TactBalanced.new()
 
 func _set_home_strat(idx: int) -> void:
@@ -870,6 +900,10 @@ func _set_away_team(idx: int) -> void:
 	_refresh_creature_display()
 	_save_lobby_state()
 
+func _set_third_team(idx: int) -> void:
+	_third_team = idx
+	_save_lobby_state()
+
 func _set_site(idx: int) -> void:
 	_site = idx
 	for i in _site_btns.size():
@@ -910,6 +944,7 @@ func _save_lobby_state() -> void:
 	var f := ConfigFile.new()
 	f.set_value("lobby", "home_team",       _home_team)
 	f.set_value("lobby", "away_team",       _away_team)
+	f.set_value("lobby", "third_team",      _third_team)
 	f.set_value("lobby", "site",            _site)
 	f.set_value("lobby", "creature",        _creature)
 	f.set_value("lobby", "match_mode",      _match_mode)
@@ -938,6 +973,9 @@ func _load_lobby_state() -> void:
 	if roster.size() == 15:
 		_home_roster = roster
 	_inactive_classes= f.get_value("lobby", "inactive_classes", _inactive_classes)
+	_third_team      = f.get_value("lobby", "third_team",       _third_team)
+	if is_instance_valid(_third_team_ob):
+		_third_team_ob.select(_third_team)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Start match
@@ -950,12 +988,16 @@ func _build_config() -> MatchConfig:
 	cfg.creature_type     = _effective_creature_type()
 	cfg.home_team_name    = TEAMS[_home_team][1]
 	cfg.away_team_name    = TEAMS[_away_team][1]
-	cfg.third_team_name   = "THIRD"
+	cfg.third_team_name   = TEAMS[_third_team][1]
+	cfg.home_team_idx     = _home_team
+	cfg.away_team_idx     = _away_team
+	cfg.third_team_idx    = _third_team
 	var home_names: Array[String] = []
 	for idx in _home_roster:
 		home_names.append(TEAMS[_home_team][3][idx])
 	cfg.home_player_names  = PackedStringArray(home_names)
 	cfg.away_player_names  = PackedStringArray(TEAMS[_away_team][3])
+	cfg.third_player_names = PackedStringArray(TEAMS[_third_team][3])
 	cfg.home_class_indices = PackedInt32Array(_home_roster)
 	var away_default: Array[int] = []
 	for i in 15: away_default.append(i)
@@ -2285,7 +2327,8 @@ func _build_class_ability_section(class_idx: int, cls_color: Color, inactive: bo
 			mana_str = "FREE"
 		else:
 			mana_str = "%d %s" % [int(ability.mana_cost), MANA_LABELS[mtype]]
-		var cd_str := "%.0fs" % ability.cooldown if ability.cooldown > 0.0 else "—"
+		var cd_str    := "%.0fs" % ability.cooldown if ability.cooldown > 0.0 else "—"
+		var range_str := "%.0fm" % ability.range   if ability.range    > 0.0 else "—"
 
 		var row := VBoxContainer.new()
 		row.add_theme_constant_override("separation", 0)
@@ -2318,6 +2361,14 @@ func _build_class_ability_section(class_idx: int, cls_color: Color, inactive: bo
 		mana_lbl.add_theme_color_override("font_color",
 			MANA_COLORS[mtype].darkened(0.35) if inactive else MANA_COLORS[mtype])
 		top_row.add_child(mana_lbl)
+
+		var range_lbl := Label.new()
+		range_lbl.text = range_str
+		range_lbl.custom_minimum_size.x = 28
+		range_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		range_lbl.add_theme_font_size_override("font_size", 9)
+		range_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.28))
+		top_row.add_child(range_lbl)
 
 		var cd_lbl := Label.new()
 		cd_lbl.text = cd_str

@@ -2,8 +2,6 @@ extends Control
 
 const _TeamPortrait := preload("res://scenes/game/hud/TeamPortrait.gd")
 
-const C_HOME  := Color(1.000, 0.231, 0.325)
-const C_AWAY  := Color(0.184, 0.514, 1.000)
 const C_GOLD  := Color(1.000, 0.796, 0.239)
 const C_CYAN  := Color(0.098, 0.890, 0.890)
 const C_BG    := Color(0.039, 0.047, 0.078)
@@ -175,9 +173,9 @@ func _rebuild_portraits() -> void:
 	score_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	score_hbox.add_theme_constant_override("separation", 8)
 	banner_hbox.add_child(score_hbox)
-	score_hbox.add_child(_lbl(home_name, C_HOME, 14))
+	score_hbox.add_child(_lbl(home_name, MatchState.team_color(0), 14))
 	score_hbox.add_child(_lbl("%d  –  %d" % [_home_score, _away_score], Color.WHITE, 28))
-	score_hbox.add_child(_lbl(away_name, C_AWAY, 14))
+	score_hbox.add_child(_lbl(away_name, MatchState.team_color(1), 14))
 
 	outer_vbox.add_child(banner)
 
@@ -316,9 +314,9 @@ func _make_header_row(title: String, sub: String, home: String, h_score: int, aw
 	score_hbox.add_theme_constant_override("separation", 8)
 	inner.add_child(score_hbox)
 
-	score_hbox.add_child(_lbl(home, C_HOME, 14))
+	score_hbox.add_child(_lbl(home, MatchState.team_color(0), 14))
 	score_hbox.add_child(_lbl("%d  –  %d" % [h_score, a_score], Color.WHITE, 28))
-	score_hbox.add_child(_lbl(away, C_AWAY, 14))
+	score_hbox.add_child(_lbl(away, MatchState.team_color(1), 14))
 
 	return c
 
@@ -356,16 +354,15 @@ func _make_stat_row(rank: int, r: Dictionary, max_dmg: float, max_heal: float, i
 	var local_pid := NetworkManager.local_player_id
 	var is_local: bool = not local_pid.is_empty() and r.get("pid", "") == local_pid
 
-	var team_col: Color = C_HOME if r.team == 0 else (C_AWAY if r.team == 1 else Color(0.2, 0.9, 0.3))
+	var team_col: Color = MatchState.team_color(r.team)
 	var row_bg: Color
 	if is_leader and is_local:
 		row_bg = Color(C_GOLD.r, C_GOLD.g, C_GOLD.b, 0.12)
 	elif is_leader or is_local:
 		row_bg = Color(C_GOLD.r, C_GOLD.g, C_GOLD.b, 0.07)
-	elif r.team == 0:
-		row_bg = Color(C_HOME.r, C_HOME.g, C_HOME.b, 0.05)
 	else:
-		row_bg = Color(C_AWAY.r, C_AWAY.g, C_AWAY.b, 0.05)
+		var rc := MatchState.team_color(r.team)
+		row_bg = Color(rc.r, rc.g, rc.b, 0.05)
 
 	var bg := ColorRect.new()
 	bg.color = row_bg
