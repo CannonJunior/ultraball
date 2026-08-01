@@ -16,6 +16,7 @@ var _act: int = 1
 var _next_act: int = 2
 var _home_score: int = 0
 var _away_score: int = 0
+var _third_score: int = 0
 var _current_tab: int = 0
 var _show_all: bool = false
 
@@ -27,13 +28,14 @@ func _ready() -> void:
 	visible = false
 	EventBus.act_ended.connect(_on_act_ended)
 
-func _on_act_ended(act: int, home: int, away: int, _third: int) -> void:
+func _on_act_ended(act: int, home: int, away: int, third: int) -> void:
 	if act >= 5:
 		return  # game_over fires next; FinalReport handles end-of-match
 	_act = act
 	_next_act = act + 1
 	_home_score = home
 	_away_score = away
+	_third_score = third
 	_current_tab = 0
 	_show_all = false
 	_rebuild()
@@ -65,6 +67,7 @@ func _rebuild_stats() -> void:
 	var cfg := MatchState.config
 	var home_name: String = cfg.home_team_name if cfg else "HOME"
 	var away_name: String = cfg.away_team_name if cfg else "AWAY"
+	var third_name: String = cfg.third_team_name if (cfg and MatchState.is_three_team) else "THIRD"
 
 	# Fixed-height sections: tab(34) + header(60) + colhdr(34) + toggle(34) + legend(36) + continue(68)
 	var fixed_h := 34 + 60 + 34 + 34 + 36 + 68
@@ -84,7 +87,7 @@ func _rebuild_stats() -> void:
 	vbox.add_child(_make_header_row(
 		"ACT %d — INTERMISSION" % _act,
 		"LIVE STANDINGS",
-		home_name, _home_score, away_name, _away_score
+		home_name, _home_score, away_name, _away_score, third_name, _third_score
 	))
 
 	vbox.add_child(_make_col_header())
@@ -143,6 +146,7 @@ func _rebuild_portraits() -> void:
 	var cfg := MatchState.config
 	var home_name: String = cfg.home_team_name if cfg else "HOME"
 	var away_name: String = cfg.away_team_name if cfg else "AWAY"
+	var third_name: String = cfg.third_team_name if (cfg and MatchState.is_three_team) else "THIRD"
 
 	var outer_vbox := VBoxContainer.new()
 	outer_vbox.add_theme_constant_override("separation", 0)
@@ -173,9 +177,19 @@ func _rebuild_portraits() -> void:
 	score_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	score_hbox.add_theme_constant_override("separation", 8)
 	banner_hbox.add_child(score_hbox)
-	score_hbox.add_child(_lbl(home_name, MatchState.team_color(0), 14))
-	score_hbox.add_child(_lbl("%d  –  %d" % [_home_score, _away_score], Color.WHITE, 28))
-	score_hbox.add_child(_lbl(away_name, MatchState.team_color(1), 14))
+	if MatchState.is_three_team:
+		score_hbox.add_child(_lbl(home_name,  MatchState.team_color(0), 13))
+		score_hbox.add_child(_lbl(str(_home_score), Color.WHITE, 26))
+		score_hbox.add_child(_lbl("·", C_DIM, 18))
+		score_hbox.add_child(_lbl(away_name,  MatchState.team_color(1), 13))
+		score_hbox.add_child(_lbl(str(_away_score), Color.WHITE, 26))
+		score_hbox.add_child(_lbl("·", C_DIM, 18))
+		score_hbox.add_child(_lbl(third_name, MatchState.team_color(2), 13))
+		score_hbox.add_child(_lbl(str(_third_score), Color.WHITE, 26))
+	else:
+		score_hbox.add_child(_lbl(home_name, MatchState.team_color(0), 14))
+		score_hbox.add_child(_lbl("%d  –  %d" % [_home_score, _away_score], Color.WHITE, 28))
+		score_hbox.add_child(_lbl(away_name, MatchState.team_color(1), 14))
 
 	outer_vbox.add_child(banner)
 
@@ -193,19 +207,22 @@ func _rebuild_portraits() -> void:
 
 	var raw: Array = _collect_team_hex_raw()
 	var keys := ["kills", "dmg", "heal", "ball_time", "ball_carries", "points"]
-	for tid in [0, 1]:
+	var tnames: Array = [home_name, away_name, third_name]
+	var tscores: Array = [_home_score, _away_score, _third_score]
+	var team_count := 3 if MatchState.is_three_team else 2
+	for tid in team_count:
 		var h_vals := PackedFloat32Array()
 		for key in keys:
-			var mx: float = max(float(raw[0].get(key, 0.0)), float(raw[1].get(key, 0.0)))
-			h_vals.append(float(raw[tid].get(key, 0.0)) / max(1.0, mx))
-		var tname: String = home_name if tid == 0 else away_name
-		var tscore: int = _home_score if tid == 0 else _away_score
-		var opp: int = _away_score if tid == 0 else _home_score
+			var mx: float = 0.0
+			for j in team_count:
+				mx = maxf(mx, float(raw[j].get(key, 0.0)))
+			h_vals.append(float(raw[tid].get(key, 0.0)) / maxf(1.0, mx))
+		var opp: int = tscores[1 - tid] if team_count == 2 else 0
 		var portrait := _TeamPortrait.new()
 		portrait.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		portrait.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		port_hbox.add_child(portrait)
-		portrait.setup(tid, tname, tscore, opp, h_vals)
+		portrait.setup(tid, tnames[tid], tscores[tid], opp, h_vals)
 
 	outer_vbox.add_child(_make_continue_btn())
 
@@ -271,10 +288,13 @@ func _make_toggle_row() -> Control:
 	return row
 
 func _collect_team_hex_raw() -> Array:
-	var raw: Array = [{}, {}]
+	var team_count := 3 if MatchState.is_three_team else 2
+	var raw: Array = []
+	for _i in team_count:
+		raw.append({})
 	for pid in MatchState.players:
 		var rec: MatchState.PlayerRecord = MatchState.players[pid]
-		if rec.team_id < 0 or rec.team_id > 1:
+		if rec.team_id < 0 or rec.team_id >= team_count:
 			continue
 		var st: MatchState.PlayerStatRecord = MatchState.stat(pid)
 		var d: Dictionary = raw[rec.team_id]
@@ -286,7 +306,7 @@ func _collect_team_hex_raw() -> Array:
 		d["points"]       = d.get("points", 0)        + st.points
 	return raw
 
-func _make_header_row(title: String, sub: String, home: String, h_score: int, away: String, a_score: int) -> Control:
+func _make_header_row(title: String, sub: String, home: String, h_score: int, away: String, a_score: int, third: String = "", t_score: int = 0) -> Control:
 	var c := ColorRect.new()
 	c.color = Color(C_GOLD.r, C_GOLD.g, C_GOLD.b, 0.08)
 	c.custom_minimum_size.y = 60
@@ -314,9 +334,19 @@ func _make_header_row(title: String, sub: String, home: String, h_score: int, aw
 	score_hbox.add_theme_constant_override("separation", 8)
 	inner.add_child(score_hbox)
 
-	score_hbox.add_child(_lbl(home, MatchState.team_color(0), 14))
-	score_hbox.add_child(_lbl("%d  –  %d" % [h_score, a_score], Color.WHITE, 28))
-	score_hbox.add_child(_lbl(away, MatchState.team_color(1), 14))
+	if MatchState.is_three_team:
+		score_hbox.add_child(_lbl(home,  MatchState.team_color(0), 13))
+		score_hbox.add_child(_lbl(str(h_score), Color.WHITE, 26))
+		score_hbox.add_child(_lbl("·", C_DIM, 18))
+		score_hbox.add_child(_lbl(away,  MatchState.team_color(1), 13))
+		score_hbox.add_child(_lbl(str(a_score), Color.WHITE, 26))
+		score_hbox.add_child(_lbl("·", C_DIM, 18))
+		score_hbox.add_child(_lbl(third, MatchState.team_color(2), 13))
+		score_hbox.add_child(_lbl(str(t_score), Color.WHITE, 26))
+	else:
+		score_hbox.add_child(_lbl(home, MatchState.team_color(0), 14))
+		score_hbox.add_child(_lbl("%d  –  %d" % [h_score, a_score], Color.WHITE, 28))
+		score_hbox.add_child(_lbl(away, MatchState.team_color(1), 14))
 
 	return c
 

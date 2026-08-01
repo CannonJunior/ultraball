@@ -49,10 +49,6 @@ var is_paused: bool = false
 var scores: Array[int] = [0, 0, 0]     # indexed by Team enum
 var kills: Array[int] = [0, 0, 0]
 
-# Act 5 overtime
-var act5_leading_team: int = -1
-var act5_ultra_target: int = 3
-
 # Player roster data (populated by NetworkManager / GameScene on match start)
 # key: player_id (String), value: PlayerRecord
 var players: Dictionary = {}
@@ -126,8 +122,6 @@ func reset_for_new_match() -> void:
 	is_paused = false
 	scores = [0, 0, 0]
 	kills = [0, 0, 0]
-	act5_leading_team = -1
-	act5_ultra_target = 3
 	players = {}
 	ball = BallStateRecord.new()
 	terrain = TerrainStateRecord.new()

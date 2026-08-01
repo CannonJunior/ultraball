@@ -47,6 +47,11 @@ var _scorer    : Label
 var _score     : Label
 var _info      : VBoxContainer
 
+var _clip_frames : Array = []   # Array[ImageTexture]
+var _frame_idx   : int   = 0
+var _frame_timer : float = 0.0
+const PLAYBACK_FPS := 10.0
+
 func _ready() -> void:
 	mouse_filter  = Control.MOUSE_FILTER_IGNORE
 	anchor_top    = 0.0
@@ -172,13 +177,32 @@ func _set_open(v: float) -> void:
 	_open_pct = v
 	_update_layout()
 
+# ── Frame playback ────────────────────────────────────────────────────────────
+func _process(delta: float) -> void:
+	if _clip_frames.size() < 2: return
+	_frame_timer += delta
+	if _frame_timer >= 1.0 / PLAYBACK_FPS:
+		_frame_timer -= 1.0 / PLAYBACK_FPS
+		_frame_idx = (_frame_idx + 1) % _clip_frames.size()
+		_thumb.texture = _clip_frames[_frame_idx]
+
 # ── Clip handling ─────────────────────────────────────────────────────────────
 func _on_clip_added(clip: Dictionary) -> void:
 	if clip["team_id"] != team_id:
 		return
-	if clip["texture"] != null:
-		_thumb.texture = clip["texture"]
-		_thumb.visible = true
+	var frames: Array = clip.get("frames", [])
+	if not frames.is_empty():
+		_clip_frames = frames
+		_frame_idx   = 0
+		_frame_timer = 0.0
+		_thumb.texture   = _clip_frames[0]
+		_thumb.visible   = true
+		_stripes.visible = false
+		_ph_label.visible = false
+	elif clip["texture"] != null:
+		_clip_frames = []
+		_thumb.texture   = clip["texture"]
+		_thumb.visible   = true
 		_stripes.visible = false
 		_ph_label.visible = false
 	_scorer.text  = (clip["scorer_name"] as String).to_upper()

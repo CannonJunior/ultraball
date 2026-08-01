@@ -73,11 +73,11 @@ func _rebuild_stats() -> void:
 
 	var card := _make_panel(C_BG)
 	card.custom_minimum_size = Vector2(CARD_W, 0)
+	card.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	center.add_child(card)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 0)
-	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	card.add_child(vbox)
 
 	vbox.add_child(_make_tab_strip())
@@ -171,11 +171,11 @@ func _rebuild_portraits() -> void:
 	const PH := 646.0
 	var card := _make_panel(C_BG)
 	card.custom_minimum_size = Vector2(CARD_W, PH)
+	card.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	center.add_child(card)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 0)
-	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	card.add_child(vbox)
 
 	vbox.add_child(_make_tab_strip())

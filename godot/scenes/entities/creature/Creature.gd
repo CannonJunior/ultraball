@@ -43,19 +43,20 @@ const WAYPOINTS_2T: Array = [
 	Vector2( 10.0, 45.0),
 ]
 
-## Per-team patrol paths (3-team): U-shaped perimeter around each arm.
-## center=(110,110), INRADIUS=11.547, ARM_END=81.547, ARM_HALF_W=20, buffer=5
+## Per-team patrol paths (3-team): rectangular path around each arm's side channels,
+## crossing through the arm at the CHAN_INNER/CHAN_OUTER boundary.
+## center=(110,110), INRADIUS=11.547, CHAN_OUTER=61.547, ARM_HALF_W=20, buf=5 (walk at ±25)
 const WAYPOINTS_3T_0: Array = [
-	Vector2(135.0, 121.5), Vector2(135.0, 196.5), Vector2(110.0, 196.5),
-	Vector2( 85.0, 196.5), Vector2( 85.0, 121.5),
+	Vector2(135.0, 121.5), Vector2(135.0, 171.5),
+	Vector2( 85.0, 171.5), Vector2( 85.0, 121.5),
 ]
 const WAYPOINTS_3T_1: Array = [
-	Vector2(107.5,  82.6), Vector2(172.5,  45.1), Vector2(185.0,  66.7),
-	Vector2(197.5,  88.4), Vector2(132.5, 125.9),
+	Vector2(107.5,  82.6), Vector2(150.8,  57.6),
+	Vector2(175.8, 100.9), Vector2(132.5, 125.9),
 ]
 const WAYPOINTS_3T_2: Array = [
-	Vector2( 87.5, 125.9), Vector2( 22.5,  88.4), Vector2( 35.0,  66.7),
-	Vector2( 47.5,  45.1), Vector2(112.5,  82.6),
+	Vector2( 87.5, 125.9), Vector2( 44.2, 100.9),
+	Vector2( 69.2,  57.6), Vector2(112.5,  82.6),
 ]
 
 var _waypoints: Array = WAYPOINTS_2T

@@ -221,48 +221,10 @@ func _build_world() -> void:
 	fill.light_color      = Color(0.55, 0.65, 0.90)
 	_viewport.add_child(fill)
 
-	# Field surface: terrain mesh replaces the flat surface for x∈[0,140] y∈[0,40].
-	# Zone colours (endzone, channel, field) are encoded in the terrain mesh vertex colours.
-
-	# Side creature channels (outside terrain mesh, y∈[−10,0] and y∈[40,50], x∈[20,120])
-	_add_box(Vector3(70.0, 0.010,   5.0), Vector3(100.0, 0.04, 10.0), C_CHANNEL)  # top
-	_add_box(Vector3(70.0, 0.010, -45.0), Vector3(100.0, 0.04, 10.0), C_CHANNEL)  # bottom
-
-	# Phase lines at x = 50, 70, 90 spanning full inner field height
-	for xm: float in [50.0, 70.0, 90.0]:
-		_add_box(Vector3(xm, 0.06, -20.0), Vector3(0.18, 0.12, 40.0), C_LINE)
-
-	# Goalline at x=20 and x=120: spans endzone height only (Z=40 = y∈[0,40])
-	_add_box(Vector3( 20.0, 0.06, -20.0), Vector3(0.25, 0.12, 40.0), C_ENDLINE)
-	_add_box(Vector3(120.0, 0.06, -20.0), Vector3(0.25, 0.12, 40.0), C_ENDLINE)
-
-	# Endzone top/bottom borders (y=0 and y=40) for home x∈[0,20] and away x∈[120,140]
-	_add_box(Vector3( 10.0, 0.06,   0.0), Vector3(20.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
-	_add_box(Vector3( 10.0, 0.06, -40.0), Vector3(20.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
-	_add_box(Vector3(130.0, 0.06,   0.0), Vector3(20.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
-	_add_box(Vector3(130.0, 0.06, -40.0), Vector3(20.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
-
-	# End-channel inner walls (inner field / channel boundary) at x=30 and x=110
-	_add_box(Vector3( 30.0, 0.06, -20.0), Vector3(0.20, 0.12, 40.0), C_LINE)
-	_add_box(Vector3(110.0, 0.06, -20.0), Vector3(0.20, 0.12, 40.0), C_LINE)
-
-	# Side-channel inner edge at y=0 and y=40: inner field only x∈[30,110]
-	_add_box(Vector3(70.0, 0.06,   0.0), Vector3(80.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
-	_add_box(Vector3(70.0, 0.06, -40.0), Vector3(80.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
-
-	# Side-channel end caps at x=20 and x=120, side portions only y∈[-10,0] and y∈[40,50]
-	_add_box(Vector3( 20.0, 0.06,   5.0), Vector3(0.20, 0.12, 10.0), Color(1, 1, 1, 0.5))
-	_add_box(Vector3( 20.0, 0.06, -45.0), Vector3(0.20, 0.12, 10.0), Color(1, 1, 1, 0.5))
-	_add_box(Vector3(120.0, 0.06,   5.0), Vector3(0.20, 0.12, 10.0), Color(1, 1, 1, 0.5))
-	_add_box(Vector3(120.0, 0.06, -45.0), Vector3(0.20, 0.12, 10.0), Color(1, 1, 1, 0.5))
-
-	# Side-channel outer edge at y=−10 (Z=10) and y=50 (Z=−50), spanning x∈[20,120]
-	_add_box(Vector3(70.0, 0.06,  10.0), Vector3(100.0, 0.12, 0.20), Color(1, 1, 1, 0.3))
-	_add_box(Vector3(70.0, 0.06, -50.0), Vector3(100.0, 0.12, 0.20), Color(1, 1, 1, 0.3))
-
-	# End walls at x=0 and x=140
-	_add_box(Vector3(  0.0, 0.06, -20.0), Vector3(0.20, 0.12, 42.0), Color(1, 1, 1, 0.3))
-	_add_box(Vector3(140.0, 0.06, -20.0), Vector3(0.20, 0.12, 42.0), Color(1, 1, 1, 0.3))
+	if MatchState.is_three_team:
+		_build_field_3team()
+	else:
+		_build_field_2team()
 
 	# Terrain height mesh — IS the field surface (replaces flat zone boxes).
 	# Rebuilt whenever elevation or pit data changes; also built once on startup.
@@ -285,8 +247,125 @@ func _build_world() -> void:
 	_viewport.add_child(_camera)
 	_reset_camera()
 
+func _build_field_2team() -> void:
+	# Side creature channels (outside terrain mesh, y∈[−10,0] and y∈[40,50], x∈[20,120])
+	_add_box(Vector3(70.0, 0.010,   5.0), Vector3(100.0, 0.04, 10.0), C_CHANNEL)  # top
+	_add_box(Vector3(70.0, 0.010, -45.0), Vector3(100.0, 0.04, 10.0), C_CHANNEL)  # bottom
+
+	# Phase lines at x = 50, 70, 90 spanning full inner field height
+	for xm: float in [50.0, 70.0, 90.0]:
+		_add_box(Vector3(xm, 0.06, -20.0), Vector3(0.18, 0.12, 40.0), C_LINE)
+
+	# Goalline at x=20 and x=120
+	_add_box(Vector3( 20.0, 0.06, -20.0), Vector3(0.25, 0.12, 40.0), C_ENDLINE)
+	_add_box(Vector3(120.0, 0.06, -20.0), Vector3(0.25, 0.12, 40.0), C_ENDLINE)
+
+	# Endzone top/bottom borders
+	_add_box(Vector3( 10.0, 0.06,   0.0), Vector3(20.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
+	_add_box(Vector3( 10.0, 0.06, -40.0), Vector3(20.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
+	_add_box(Vector3(130.0, 0.06,   0.0), Vector3(20.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
+	_add_box(Vector3(130.0, 0.06, -40.0), Vector3(20.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
+
+	# End-channel inner walls at x=30 and x=110
+	_add_box(Vector3( 30.0, 0.06, -20.0), Vector3(0.20, 0.12, 40.0), C_LINE)
+	_add_box(Vector3(110.0, 0.06, -20.0), Vector3(0.20, 0.12, 40.0), C_LINE)
+
+	# Side-channel inner edge at y=0 and y=40
+	_add_box(Vector3(70.0, 0.06,   0.0), Vector3(80.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
+	_add_box(Vector3(70.0, 0.06, -40.0), Vector3(80.0, 0.12, 0.20), Color(1, 1, 1, 0.5))
+
+	# Side-channel end caps
+	_add_box(Vector3( 20.0, 0.06,   5.0), Vector3(0.20, 0.12, 10.0), Color(1, 1, 1, 0.5))
+	_add_box(Vector3( 20.0, 0.06, -45.0), Vector3(0.20, 0.12, 10.0), Color(1, 1, 1, 0.5))
+	_add_box(Vector3(120.0, 0.06,   5.0), Vector3(0.20, 0.12, 10.0), Color(1, 1, 1, 0.5))
+	_add_box(Vector3(120.0, 0.06, -45.0), Vector3(0.20, 0.12, 10.0), Color(1, 1, 1, 0.5))
+
+	# Side-channel outer edges
+	_add_box(Vector3(70.0, 0.06,  10.0), Vector3(100.0, 0.12, 0.20), Color(1, 1, 1, 0.3))
+	_add_box(Vector3(70.0, 0.06, -50.0), Vector3(100.0, 0.12, 0.20), Color(1, 1, 1, 0.3))
+
+	# End walls at x=0 and x=140
+	_add_box(Vector3(  0.0, 0.06, -20.0), Vector3(0.20, 0.12, 42.0), Color(1, 1, 1, 0.3))
+	_add_box(Vector3(140.0, 0.06, -20.0), Vector3(0.20, 0.12, 42.0), Color(1, 1, 1, 0.3))
+
+func _build_field_3team() -> void:
+	var cx    := MatchState.FIELD3_CX
+	var cy    := MatchState.FIELD3_CY
+	var inner := MatchState.FIELD3_INRADIUS
+	var ch_in := MatchState.FIELD3_CHAN_INNER
+	var ch_out:= MatchState.FIELD3_CHAN_OUTER
+	var arm_e := MatchState.FIELD3_ARM_END
+	var hw2   := MatchState.FIELD3_ARM_HALF_W * 2.0  # full arm width
+
+	# Central hub box covers the junction of all three arms
+	_add_box(Vector3(cx, 0.01, -cy), Vector3(hw2, 0.04, hw2), C_FIELD)
+
+	for tid in 3:
+		var n2d: Vector2  = MatchState.TEAM3_NORMALS[tid]
+		var dir3 := Vector3(n2d.x, 0.0, -n2d.y)
+		var rot_y := atan2(dir3.x, dir3.z)
+		var ez_color := MatchState.team_color(tid)
+
+		# Playing field zone (inner → ch_in)
+		var f_dist := (inner + ch_in) * 0.5
+		var f_p    := Vector2(cx, cy) + n2d * f_dist
+		_add_oriented_box(Vector3(f_p.x, 0.01, -f_p.y), Vector3(hw2, 0.04, ch_in - inner), rot_y, C_FIELD)
+
+		# Channel zone (ch_in → ch_out)
+		var c_dist := (ch_in + ch_out) * 0.5
+		var c_p    := Vector2(cx, cy) + n2d * c_dist
+		_add_oriented_box(Vector3(c_p.x, 0.01, -c_p.y), Vector3(hw2, 0.04, ch_out - ch_in), rot_y, C_CHANNEL)
+
+		# Endzone (ch_out → arm_e)
+		var e_dist := (ch_out + arm_e) * 0.5
+		var e_p    := Vector2(cx, cy) + n2d * e_dist
+		_add_oriented_box(Vector3(e_p.x, 0.01, -e_p.y), Vector3(hw2, 0.04, arm_e - ch_out), rot_y, ez_color)
+
+		# Phase lines
+		for pd: float in MatchState.FIELD3_PHASE_DISTS:
+			var pl_p := Vector2(cx, cy) + n2d * pd
+			_add_oriented_box(Vector3(pl_p.x, 0.06, -pl_p.y), Vector3(hw2, 0.12, 0.18), rot_y, C_LINE)
+
+		# Goal line at ch_out
+		var gl_p := Vector2(cx, cy) + n2d * ch_out
+		_add_oriented_box(Vector3(gl_p.x, 0.06, -gl_p.y), Vector3(hw2, 0.12, 0.25), rot_y, C_ENDLINE)
+
+		# Arm end wall
+		var ew_p := Vector2(cx, cy) + n2d * arm_e
+		_add_oriented_box(Vector3(ew_p.x, 0.06, -ew_p.y), Vector3(hw2, 0.12, 0.20), rot_y, Color(1, 1, 1, 0.3))
+
+		# Arm side walls along full arm length (inner → arm_e)
+		var perp2d  := Vector2(-n2d.y, n2d.x)
+		var mid_dist := (inner + arm_e) * 0.5
+		var mid_p   := Vector2(cx, cy) + n2d * mid_dist
+		for side in [-1, 1]:
+			var sw_p := mid_p + perp2d * (MatchState.FIELD3_ARM_HALF_W * float(side))
+			_add_oriented_box(Vector3(sw_p.x, 0.06, -sw_p.y),
+				Vector3(0.20, 0.12, arm_e - inner), rot_y, Color(1, 1, 1, 0.35))
+
+		# Creature channel: two side strips beside the arm ending at ch_out.
+		# The cross-bar at ch_in → ch_out is already drawn by the channel-zone box above.
+		var strip_len := ch_out - inner
+		var strip_mid := (inner + ch_out) * 0.5
+		for side in [-1, 1]:
+			var ch_p := Vector2(cx, cy) + n2d * strip_mid \
+				+ perp2d * ((MatchState.FIELD3_ARM_HALF_W + 5.0) * float(side))
+			_add_oriented_box(Vector3(ch_p.x, 0.01, -ch_p.y),
+				Vector3(10.0, 0.04, strip_len), rot_y, C_CHANNEL)
+
 func _reset_camera() -> void:
-	if view_mode == MatchConfig.ViewMode.THREE_QUARTER:
+	if MatchState.is_three_team:
+		if view_mode == MatchConfig.ViewMode.THREE_QUARTER:
+			_camera.fov = 70.0
+			_camera.global_position = Vector3(110.0, 160.0, 50.0)
+			_camera.look_at(Vector3(110.0, 0.0, -120.0))
+		else:  # FULL_3D
+			_camera.fov = 65.0
+			_camera.global_position = Vector3(110.0, 130.0, 35.0)
+			_camera.look_at(Vector3(110.0, 0.0, -110.0))
+			_cam_pos  = _camera.global_position
+			_cam_look = Vector3(110.0, 0.0, -110.0)
+	elif view_mode == MatchConfig.ViewMode.THREE_QUARTER:
 		_camera.fov = 75.0
 		_camera.global_position = Vector3(70.0, 65.0, 90.0)
 		_camera.look_at(Vector3(70.0, 0.0, -20.0))
@@ -316,14 +395,23 @@ func _update_camera(delta: float) -> void:
 
 	match _camera_mode:
 		CameraMode.BROADCAST:
-			var cx := clampf(ball_x, 28.0, 112.0)
 			if _ball_cam:
 				# Steep overhead ball-cam: 50° pitch, ~28 units from ball
 				target_pos  = Vector3(ball_x, 22.0, ball_z + 16.0)
 				target_look = Vector3(ball_x, 0.4, ball_z)
 				target_fov  = 55.0
+			elif MatchState.is_three_team:
+				# Elevated broadcast panning 25% toward ball from field centre
+				var cx3 := MatchState.FIELD3_CX
+				var cz3 := -MatchState.FIELD3_CY
+				var tx  := lerpf(cx3, ball_x, 0.25)
+				var tz  := lerpf(cz3, ball_z, 0.25)
+				target_pos  = Vector3(tx, 130.0, tz + 50.0)
+				target_look = Vector3(tx, 0.0, tz - 15.0)
+				target_fov  = 65.0
 			else:
 				# Elevated broadcast, pans with ball along X
+				var cx := clampf(ball_x, 28.0, 112.0)
 				target_pos  = Vector3(cx, 52.0, 38.0)
 				target_look = Vector3(cx, 0.0, -14.0)
 				target_fov  = 58.0
@@ -438,7 +526,7 @@ func _make_target_bracket() -> Node3D:
 	const H: float = 1.20   # half-span (outside the 1.62m cube, half-face = 0.81)
 	const A: float = 0.55   # arm length along each edge
 	const T: float = 0.14   # arm depth (thin in the radial direction)
-	const Y: float = 2.20   # arm HEIGHT — tall so visible from 3/4 and broadcast angles
+	const Y: float = 0.55   # arm HEIGHT
 
 	for sx: int in [-1, 1]:
 		for sz: int in [-1, 1]:
@@ -626,6 +714,8 @@ func _sync_charge_ring() -> void:
 # ── Terrain height mesh ───────────────────────────────────────────────────────
 
 func _sync_terrain() -> void:
+	if MatchState.is_three_team:
+		return  # 3-team field uses flat geometry built in _build_field_3team
 	if not _terrain_dirty or _terrain_mesh_inst == null:
 		return
 	if MatchState.terrain == null:
@@ -712,6 +802,8 @@ func _terrain_zone_color(x: float) -> Color:
 	return C_FIELD
 
 func _terrain_sample_at(world_pos: Vector2) -> float:
+	if MatchState.is_three_team:
+		return 0.0
 	if MatchState.terrain == null:
 		return 0.0
 	var elev: PackedFloat32Array = MatchState.terrain.elevation_heights
@@ -780,6 +872,19 @@ func _add_box(center: Vector3, sz: Vector3, color: Color) -> MeshInstance3D:
 	mi.mesh = bm
 	mi.material_override = mat
 	mi.position = center
+	_viewport.add_child(mi)
+	return mi
+
+func _add_oriented_box(center: Vector3, sz: Vector3, rotation_y: float, color: Color) -> MeshInstance3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	var bm := BoxMesh.new()
+	bm.size = sz
+	var mi := MeshInstance3D.new()
+	mi.mesh = bm
+	mi.material_override = mat
+	mi.position = center
+	mi.rotation.y = rotation_y
 	_viewport.add_child(mi)
 	return mi
 

@@ -214,9 +214,8 @@ const RULES := [
 		"All 15 players dead = FORFEIT",
 	]],
 	["📋", "THE ACTS", [
-		"Acts 1–4: 3-minute countdown timer (1 min in Fast mode)",
-		"Act 5: Ends when the leading team scores an ULTRA...",
-		"...OR the trailing team comes back and scores an ULTRA",
+		"All 5 Acts: 3-minute countdown timer (1 min in Fast mode)",
+		"An act also ends if all opposing players are eliminated",
 		"Highest score at end of Act 5 wins the match!",
 	]],
 ]
@@ -627,7 +626,6 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 	view_vbox.add_theme_constant_override("separation", 10)
 	view_card.add_child(view_vbox)
 	view_vbox.add_child(_make_field_label("VIEW MODE"))
-	view_vbox.add_child(_make_hint("3/4 and 3D are available for 2-team matches only"))
 	var view_row := HBoxContainer.new()
 	view_row.add_theme_constant_override("separation", 8)
 	view_vbox.add_child(view_row)
@@ -636,11 +634,6 @@ func _build_settings_panel(vbox: VBoxContainer) -> void:
 	var btn3d := _make_speed_btn("3D",  "Broadcast",   _view_mode == 2)
 	for b: Button in [btn2d, btn3q, btn3d]:
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	btn3q.disabled = (_match_mode == 1)
-	btn3d.disabled = (_match_mode == 1)
-	if _match_mode == 1:
-		btn3q.modulate = Color(1, 1, 1, 0.4)
-		btn3d.modulate = Color(1, 1, 1, 0.4)
 	view_row.add_child(btn2d)
 	view_row.add_child(btn3q)
 	view_row.add_child(btn3d)
@@ -811,12 +804,6 @@ func _set_match_mode(mode: int) -> void:
 	var is_three := (_match_mode == 1)
 	if is_instance_valid(_third_row):
 		_third_row.visible = is_three
-	for i in _view_btns.size():
-		var disabled := is_three and i > 0
-		_view_btns[i].disabled = disabled
-		_view_btns[i].modulate = Color(1, 1, 1, 0.4 if disabled else 1.0)
-	if is_three and _view_mode != 0:
-		_set_view_mode(0)
 	_save_lobby_state()
 
 func _set_view_mode(idx: int) -> void:

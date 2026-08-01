@@ -38,8 +38,6 @@ func _physics_process(delta: float) -> void:
 
 	if MatchState.act_timer <= 0.0:
 		_end_current_act()
-	elif MatchState.current_act == 5 and _act5_overtime_trigger():
-		_end_current_act()
 
 	if not MatchState.is_three_team:
 		_check_endzone_entry_2t()
@@ -135,10 +133,6 @@ func _on_act_started(act_number: int) -> void:
 
 func _end_current_act() -> void:
 	MatchState.act_ended = true
-	if MatchState.current_act == 4:
-		var leading := _determine_winner()
-		MatchState.act5_leading_team = leading
-		MatchState.act5_ultra_target = MatchState.scores[leading] + 3 * ULTRA_POINTS
 	EventBus.act_ended.emit(
 		MatchState.current_act,
 		MatchState.scores[0], MatchState.scores[1], MatchState.scores[2]
@@ -158,11 +152,6 @@ func _determine_winner() -> int:
 		if MatchState.scores[i] > MatchState.scores[best]:
 			best = i
 	return best
-
-func _act5_overtime_trigger() -> bool:
-	var leading := MatchState.act5_leading_team
-	if leading < 0: return false
-	return MatchState.scores[leading] >= MatchState.act5_ultra_target
 
 func _on_act_transition_complete(_next_act: int) -> void:
 	EventBus.positions_reset.emit()

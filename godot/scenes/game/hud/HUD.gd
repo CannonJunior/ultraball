@@ -11,10 +11,12 @@ func _ready() -> void:
 	]:
 		add_child(load(path).new())
 
-	# Highlight panels flank the scoreboard — added after so they render on top.
-	var _hp_script := load("res://scenes/game/hud/HighlightPanel.gd")
-	var _lp: Control = _hp_script.new(); _lp.set("is_left", true);  _lp.set("team_color", MatchState.team_color(0)); _lp.set("team_id", 0); add_child(_lp)
-	var _rp: Control = _hp_script.new(); _rp.set("is_left", false); _rp.set("team_color", MatchState.team_color(1)); _rp.set("team_id", 1); add_child(_rp)
+	# Highlight panels flank the scoreboard in 2-team mode only.
+	# In 3-team mode they are embedded inline in the Scoreboard.
+	if not MatchState.is_three_team:
+		var _hp_script := load("res://scenes/game/hud/HighlightPanel.gd")
+		var _lp: Control = _hp_script.new(); _lp.set("is_left", true);  _lp.set("team_color", MatchState.team_color(0)); _lp.set("team_id", 0); add_child(_lp)
+		var _rp: Control = _hp_script.new(); _rp.set("is_left", false); _rp.set("team_color", MatchState.team_color(1)); _rp.set("team_id", 1); add_child(_rp)
 
 	for path in [
 		"res://scenes/game/hud/CharacterPanel.gd",

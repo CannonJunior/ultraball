@@ -65,6 +65,7 @@ func _ready() -> void:
 		add_child(predictor)
 	EventBus.force_field_spawned.connect(_on_force_field_spawned)
 	EventBus.positions_reset.connect(_on_positions_reset)
+	EventBus.player_subbed_in.connect(_on_player_subbed_in)
 	# Server: handle future peer connections (assign player authority)
 	EventBus.peer_connected.connect(_on_peer_connected)
 	# Handle peers that connected before GameScene was instantiated (normal lobby flow)
@@ -217,6 +218,29 @@ func _on_positions_reset() -> void:
 		n.velocity = Vector2.ZERO
 		n.z_height = 0.0
 		n.z_velocity = 0.0
+
+func _on_player_subbed_in(player_id: String, _replaced: String, _team: int) -> void:
+	# Existing nodes (players who died and are respawning) handle themselves via
+	# Player._on_player_subbed_in. Only act if this player has no node yet (bench reserve).
+	if get_player_node(player_id) != null:
+		return
+	var rec: MatchState.PlayerRecord = MatchState.players.get(player_id)
+	if rec == null: return
+	_spawn_player(rec)
+	# _spawn_player places the node at the field start position; move to endzone instead.
+	var node := get_player_node(player_id)
+	if node:
+		node.global_position = _endzone_spawn_position(rec.team_id)
+
+func _endzone_spawn_position(team_id: int) -> Vector2:
+	if MatchState.is_three_team:
+		var norm: Vector2 = MatchState.TEAM3_NORMALS[team_id]
+		var dist := MatchState.FIELD3_INRADIUS + 25.0
+		return Vector2(MatchState.FIELD3_CX + norm.x * dist, MatchState.FIELD3_CY + norm.y * dist)
+	match team_id:
+		0: return Vector2(10.0, 20.0)
+		1: return Vector2(130.0, 20.0)
+	return Vector2(70.0, 20.0)
 
 func _on_force_field_spawned(caster_id: String, caster_team_id: int, caster_position: Vector2) -> void:
 	var ff := _ForceField.new()

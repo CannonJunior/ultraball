@@ -257,10 +257,15 @@ func _on_throw_requested(thrower_id: String, direction: Vector2, is_charged: boo
 func _on_pass_to_player_requested(holder_id: String, target_id: String) -> void:
 	var ball := MatchState.ball
 	if ball.holder_id != holder_id: return
-	var direction := (_get_player_position(target_id) - _get_player_position(holder_id)).normalized()
-	throw_ball(holder_id, direction, PASS_SPEED, false)
+	var holder_pos := _get_player_position(holder_id)
+	var target_pos := _get_player_position(target_id)
+	var direction := (target_pos - holder_pos).normalized()
+	var dist := maxf(5.0, holder_pos.distance_to(target_pos))
+	throw_ball(holder_id, direction, PASS_SPEED, true, dist)
 
-func throw_ball(thrower_id: String, direction: Vector2, speed: float, is_charged: bool) -> void:
+## arc_dist: horizontal distance the ball should travel before landing.
+## Defaults to speed * 1.5 (the standard charged-throw range) when ≤ 0.
+func throw_ball(thrower_id: String, direction: Vector2, speed: float, is_charged: bool, arc_dist: float = -1.0) -> void:
 	var ball := MatchState.ball
 	if ball.holder_id != thrower_id: return
 	ball.charge_at_throw = ball.charge_timer
@@ -271,7 +276,7 @@ func throw_ball(thrower_id: String, direction: Vector2, speed: float, is_charged
 	ball.flight_age = 0.0
 	ball.velocity = direction.normalized() * speed
 	if is_charged:
-		var dist := speed * 1.5
+		var dist := arc_dist if arc_dist > 0.0 else speed * 1.5
 		var flight_time := dist / speed
 		ball.z_velocity = 0.5 * THROW_GRAVITY * flight_time
 		ball.z_height = 0.001

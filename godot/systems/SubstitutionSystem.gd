@@ -2,12 +2,19 @@ class_name SubstitutionSystem
 extends Node
 
 ## Single owner of the death → substitution flow.
-## Fixes: death logic previously scattered across CombatSystem, TerrainSystem,
-## CreatureSystem, and BallSystem.
+## Acts 1–4: each team may substitute once per act (first death only).
+## Act 5: unlimited substitutions until the roster is empty.
+
+## team_id → true once a sub has been used in the current act.
+var _subs_used: Dictionary = {}
 
 func _ready() -> void:
 	EventBus.player_died.connect(_on_player_died)
 	EventBus.act_ended.connect(_on_act_ended)
+	EventBus.act_started.connect(_on_act_started)
+
+func _on_act_started(_act: int) -> void:
+	_subs_used.clear()
 
 func _on_player_died(player_id: String, cause: String, killer_id: String) -> void:
 	var rec: MatchState.PlayerRecord = MatchState.players.get(player_id)
@@ -23,15 +30,23 @@ func _on_player_died(player_id: String, cause: String, killer_id: String) -> voi
 			_get_player_position(player_id), "death"
 		)
 
-	# Find next reserve for this team
+	if MatchState.act_ended: return
+
+	# Acts 1–4: only the first death per team triggers a sub.
+	# Act 5: every death triggers a sub until the roster is empty.
+	if MatchState.current_act < 5 and _subs_used.get(rec.team_id, false):
+		print("[DEATH] team %d already used sub this act" % rec.team_id)
+		return
+
 	var next := _next_reserve(rec.team_id)
 	if next == null:
 		print("[DEATH] team %d roster depleted — no sub available" % rec.team_id)
-		return  # roster depleted — no sub available
+		return
 
-	# Sub in immediately unless act has ended (act-end subs handled separately)
-	if not MatchState.act_ended:
-		_sub_in(next, player_id)
+	if MatchState.current_act < 5:
+		_subs_used[rec.team_id] = true
+
+	_sub_in(next, player_id)
 
 func _sub_in(reserve: MatchState.PlayerRecord, replaced_id: String) -> void:
 	reserve.is_alive = true

@@ -66,8 +66,9 @@ func _draw() -> void:
 	var ir   := MatchState.FIELD3_INRADIUS
 	var end  := MatchState.FIELD3_ARM_END
 	var hw   := MatchState.FIELD3_ARM_HALF_W
-	var hw_c := hw + 10.0
-	var end_c := end + 10.0
+	var hw_c       := hw + 10.0
+	var chan_inner := MatchState.FIELD3_CHAN_INNER
+	var chan_outer := MatchState.FIELD3_CHAN_OUTER
 	for t in 3:
 		var tc: Color = MatchState.team_color(t)
 		var fill_col := Color(tc.r, tc.g, tc.b, 0.12)
@@ -90,31 +91,32 @@ func _draw() -> void:
 			center + norm * end - perp * hw,
 			center + norm * ir  - perp * hw,
 		]), line_col, 0.15)
-		# Creature channel: three convex rectangles forming a U around the arm
+		# Creature channel: two side strips ending at chan_outer, plus a cross bar
+		# spanning the full width between chan_inner and chan_outer.
 		draw_colored_polygon(PackedVector2Array([
-			center + norm * ir  + perp * hw,
-			center + norm * ir  + perp * hw_c,
-			center + norm * end + perp * hw_c,
-			center + norm * end + perp * hw,
+			center + norm * ir         + perp * hw,
+			center + norm * ir         + perp * hw_c,
+			center + norm * chan_outer + perp * hw_c,
+			center + norm * chan_outer + perp * hw,
 		]), chan_col)
 		draw_colored_polygon(PackedVector2Array([
-			center + norm * ir  - perp * hw_c,
-			center + norm * ir  - perp * hw,
-			center + norm * end - perp * hw,
-			center + norm * end - perp * hw_c,
+			center + norm * ir         - perp * hw_c,
+			center + norm * ir         - perp * hw,
+			center + norm * chan_outer - perp * hw,
+			center + norm * chan_outer - perp * hw_c,
 		]), chan_col)
 		draw_colored_polygon(PackedVector2Array([
-			center + norm * end  - perp * hw_c,
-			center + norm * end  + perp * hw_c,
-			center + norm * end_c + perp * hw_c,
-			center + norm * end_c - perp * hw_c,
+			center + norm * chan_inner - perp * hw_c,
+			center + norm * chan_inner + perp * hw_c,
+			center + norm * chan_outer + perp * hw_c,
+			center + norm * chan_outer - perp * hw_c,
 		]), chan_col)
-		# Outer boundary of creature channel (3-sided U outline)
+		# Outer boundary: two sides + cross bar bottom
 		draw_polyline(PackedVector2Array([
-			center + norm * ir    + perp * hw_c,
-			center + norm * end_c + perp * hw_c,
-			center + norm * end_c - perp * hw_c,
-			center + norm * ir    - perp * hw_c,
+			center + norm * ir         + perp * hw_c,
+			center + norm * chan_outer + perp * hw_c,
+			center + norm * chan_outer - perp * hw_c,
+			center + norm * ir         - perp * hw_c,
 		]), chan_line_col, 0.15)
 		# Phase lines within arm
 		for d in MatchState.FIELD3_PHASE_DISTS:

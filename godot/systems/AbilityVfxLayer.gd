@@ -3,6 +3,29 @@ extends Node2D
 
 const PlayerLookup = preload("res://systems/PlayerLookup.gd")
 
+# Effect type preloads for VFX classification
+const _AoEDmg   := preload("res://data/abilities/effects/AoEDamageEffect.gd")
+const _AoEHeal  := preload("res://data/abilities/effects/AoEHealEffect.gd")
+const _AoESpeed := preload("res://data/abilities/effects/AoESpeedEffect.gd")
+const _ScalPull := preload("res://data/abilities/effects/ScaledAoEPullEffect.gd")
+const _StunFx   := preload("res://data/abilities/effects/StunEffect.gd")
+const _KnockFx  := preload("res://data/abilities/effects/KnockbackEffect.gd")
+const _ConfFx   := preload("res://data/abilities/effects/ConfusionEffect.gd")
+const _PullFx   := preload("res://data/abilities/effects/PullEffect.gd")
+const _SnapPull := preload("res://data/abilities/effects/SnapPullEffect.gd")
+const _SnareFx  := preload("res://data/abilities/effects/SnareEffect.gd")
+const _HexFx    := preload("res://data/abilities/effects/HexEffect.gd")
+const _MarkFx   := preload("res://data/abilities/effects/MarkEffect.gd")
+const _DashFx   := preload("res://data/abilities/effects/DashEffect.gd")
+const _TeleFx   := preload("res://data/abilities/effects/TeleportEffect.gd")
+const _SpeedFx  := preload("res://data/abilities/effects/SpeedBoostEffect.gd")
+const _DmgBstFx := preload("res://data/abilities/effects/DamageBoostEffect.gd")
+const _DmgRedFx := preload("res://data/abilities/effects/DamageReductionEffect.gd")
+const _InvulnFx := preload("res://data/abilities/effects/InvulnerabilityEffect.gd")
+const _StunImFx := preload("res://data/abilities/effects/StunImmuneEffect.gd")
+const _HoTFx    := preload("res://data/abilities/effects/HoTEffect.gd")
+const _PerHoTFx := preload("res://data/abilities/effects/PeriodicHoTEffect.gd")
+
 ## One-shot world-space VFX for ability casts, impacts, damage, and deaths.
 ## Draw-call based — no scene nodes, no particles. Consistent with the rest of
 ## the 2D world. Added to GameScene as a sibling of $Entities (z_index 10).
@@ -16,6 +39,7 @@ const C_BLUE   := Color(0.25,  0.50,  1.0)
 const C_YELLOW := Color(1.0,   0.85,  0.15)
 const C_GOLD   := Color(1.0,   0.82,  0.10)
 const C_GREEN  := Color(0.20,  0.90,  0.35)
+const C_PURPLE := Color(0.65,  0.15,  0.85)
 const C_DMG       := Color(1.0,   0.40,  0.10)
 const C_LIGHTNING := Color(0.55,  0.85,  1.00)
 
@@ -75,15 +99,59 @@ func _on_ability_resolved(caster_id: String, slot: int, hit_ids: Array) -> void:
 	var cpos := _player_pos(caster_id)
 	_spawn("cast_ring", cpos, col, 0.35, {})
 
+	# Classify effects to determine which specialized VFX to add
+	var has_aoe     := definition.is_aoe
+	var has_hard_cc := false
+	var has_soft_cc := false
+	var has_dash    := false
+	var has_buff    := false
+	var aoe_radius  := maxf(definition.aoe_radius, 2.5)
+	for e in definition.effects:
+		if e is _AoEDmg or e is _AoEHeal or e is _AoESpeed or e is _ScalPull:
+			has_aoe = true
+		if e is _StunFx or e is _KnockFx or e is _ConfFx or e is _PullFx or e is _SnapPull:
+			has_hard_cc = true
+		if e is _SnareFx or e is _HexFx or e is _MarkFx:
+			has_soft_cc = true
+		if e is _DashFx or e is _TeleFx:
+			has_dash = true
+		if e is _SpeedFx or e is _DmgBstFx or e is _DmgRedFx or e is _InvulnFx \
+				or e is _StunImFx or e is _HoTFx or e is _PerHoTFx:
+			has_buff = true
+
 	# Bolt VFX for ranged projectile abilities — suppress impact_flash on covered targets.
 	var bolt_targets: Array = _try_spawn_bolt_vfx(rec.class_id, slot, cpos, hit_ids)
 
+	# Impact flash on non-bolt targets
 	for hit_id in hit_ids:
 		if not bolt_targets.has(hit_id):
 			_spawn("impact_flash", _player_pos(hit_id), col, 0.20, {})
-	if definition.is_aoe and definition.aoe_radius > 0.0:
+
+	# AoE burst ring
+	if has_aoe and aoe_radius > 0.0:
 		var center := _centroid(hit_ids) if not hit_ids.is_empty() else cpos
-		_spawn("aoe_burst", center, col, 0.45, {"radius": definition.aoe_radius})
+		_spawn("aoe_burst", center, col, 0.45, {"radius": aoe_radius})
+
+	# Hard CC burst on targets (stun, knockback, confuse, pull)
+	if has_hard_cc:
+		for hit_id in hit_ids:
+			_spawn("cc_burst", _player_pos(hit_id), C_YELLOW, 0.55, {})
+
+	# Soft CC / debuff splash (snare, hex, mark)
+	if has_soft_cc:
+		for hit_id in hit_ids:
+			_spawn("debuff_splash", _player_pos(hit_id), C_PURPLE, 0.40, {})
+
+	# Dash/teleport afterglow at arrival point
+	if has_dash:
+		_spawn("dash_trail", cpos, col, 0.40, {})
+
+	# Buff pulse on targets (or caster if no targets)
+	if has_buff and not hit_ids.is_empty():
+		for hit_id in hit_ids:
+			_spawn("buff_pulse", _player_pos(hit_id), C_GREEN, 0.50, {})
+	elif has_buff:
+		_spawn("buff_pulse", cpos, C_GREEN, 0.50, {})
 
 func _on_damage_applied(_attacker_id: String, target_id: String, _amount: float, _is_kill: bool) -> void:
 	_spawn("hit_spark", _player_pos(target_id), C_DMG, 0.25, {})
@@ -132,6 +200,9 @@ func _try_spawn_bolt_vfx(class_id: String, slot: int, cpos: Vector2, hit_ids: Ar
 	if class_id != "uberblitzer" or hit_ids.is_empty():
 		return []
 	match slot:
+		1:  # Static Shock — short single arc
+			_spawn_bolt(cpos, _player_pos(hit_ids[0]), C_LIGHTNING, 0.0)
+			return [hit_ids[0]]
 		2:  # Lightning Bolt — single arc caster → target
 			_spawn_bolt(cpos, _player_pos(hit_ids[0]), C_LIGHTNING, 0.0)
 			return [hit_ids[0]]
@@ -181,6 +252,10 @@ func _draw() -> void:
 			"terrain_expiry":  _draw_terrain_expiry(v, p)
 			"bolt_travel":     _draw_bolt_travel(v, p)
 			"bolt_impact":     _draw_bolt_impact(v, p)
+			"cc_burst":        _draw_cc_burst(v, p)
+			"debuff_splash":   _draw_debuff_splash(v, p)
+			"buff_pulse":      _draw_buff_pulse(v, p)
+			"dash_trail":      _draw_dash_trail(v, p)
 	if not _charging_player_id.is_empty() and _charge_max > 0.0:
 		_draw_ability_charge_bar(_player_pos(_charging_player_id), _charge_elapsed / _charge_max)
 
@@ -383,6 +458,47 @@ func _draw_lightning_segment(from: Vector2, to: Vector2, col: Color, alpha: floa
 	for i in range(pts.size() - 1):
 		draw_line(pts[i], pts[i + 1], Color(col.r, col.g, col.b, alpha * 0.55), 0.07)
 		draw_line(pts[i], pts[i + 1], Color(1.0, 1.0, 1.0, alpha * 0.85), 0.03)
+
+func _draw_cc_burst(v: Dictionary, p: float) -> void:
+	var ep  := _ease_out(p)
+	var a   := lerpf(0.95, 0.0, p * p)
+	var col := Color(v.color.r, v.color.g, v.color.b, a)
+	draw_arc(v.pos, lerpf(0.0, 1.6, ep), 0.0, TAU, 48, col, lerpf(0.12, 0.03, p))
+	for i in 6:
+		var angle := i * TAU / 6.0 + p * PI * 1.5
+		var dir   := Vector2(cos(angle), sin(angle))
+		draw_circle(v.pos + dir * lerpf(0.08, 1.2, ep), lerpf(0.10, 0.03, p), col)
+
+func _draw_debuff_splash(v: Dictionary, p: float) -> void:
+	var ep  := _ease_out(p)
+	var a   := lerpf(0.80, 0.0, p * p)
+	var col := Color(v.color.r, v.color.g, v.color.b, a)
+	for i in 5:
+		var angle := i * TAU / 5.0 + p * 0.8
+		var dir   := Vector2(cos(angle), sin(angle))
+		draw_line(v.pos + dir * lerpf(0.08, 0.22, ep),
+				  v.pos + dir * lerpf(0.22, 0.85, ep), col, 0.05)
+	draw_circle(v.pos, lerpf(0.22, 0.0, p), Color(col.r, col.g, col.b, a * 0.45))
+
+func _draw_buff_pulse(v: Dictionary, p: float) -> void:
+	var ep  := _ease_out(p)
+	var a   := lerpf(0.75, 0.0, p * p)
+	var col := Color(v.color.r, v.color.g, v.color.b, a)
+	draw_arc(v.pos, lerpf(0.0, 1.1, ep), 0.0, TAU, 48, col, lerpf(0.09, 0.02, p))
+	for i in 4:
+		var angle := i * TAU / 4.0 + p * 0.4
+		var dir   := Vector2(cos(angle), sin(angle))
+		var r     := lerpf(0.15, 0.85, ep)
+		draw_circle(v.pos + dir * r + Vector2(0.0, -lerpf(0.0, 0.35, ep)), lerpf(0.07, 0.02, p), col)
+
+func _draw_dash_trail(v: Dictionary, p: float) -> void:
+	var ep  := _ease_out(p)
+	var a   := lerpf(0.65, 0.0, p)
+	var col := Color(v.color.r, v.color.g, v.color.b, a)
+	draw_arc(v.pos, lerpf(0.45, 0.80, p), 0.0, TAU, 32, col, lerpf(0.10, 0.02, p))
+	draw_line(v.pos - Vector2(lerpf(0.9, 0.0, ep), 0.0),
+			  v.pos + Vector2(lerpf(0.9, 0.0, ep), 0.0),
+			  Color(1.0, 1.0, 1.0, a * 0.45), lerpf(0.18, 0.04, p))
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 

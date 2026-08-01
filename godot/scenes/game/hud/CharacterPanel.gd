@@ -96,6 +96,28 @@ var _target_name  : Label
 var _target_class : Label
 var _target_hp    : _ProvisionalBar
 
+var _player_status_box   : HBoxContainer = null
+var _player_status_pills : Array[Label]  = []
+var _target_status_box   : HBoxContainer = null
+var _target_status_pills : Array[Label]  = []
+
+const _STATUS_BUFFS := [
+	["speed_mult_remaining",       "SPD",  Color(0.3, 0.9, 0.3)],
+	["damage_boost_remaining",     "ATK+", Color(0.9, 0.5, 0.2)],
+	["damage_reduction_remaining", "DEF+", Color(0.2, 0.6, 0.9)],
+	["stun_immune_remaining",      "IMM",  Color(0.7, 0.7, 0.3)],
+	["dodge_remaining",            "INVL", Color(0.4, 0.9, 0.7)],
+	["hot_remaining",              "REGEN",Color(0.3, 1.0, 0.3)],
+	["stormseeker_remaining",      "STRM", Color(0.4, 0.8, 1.0)],
+]
+const _STATUS_DEBUFFS := [
+	["stun_timer",      "STUN",  Color(0.9, 0.9, 0.1)],
+	["snare_remaining", "SNARE", Color(0.8, 0.3, 0.1)],
+	["confused_timer",  "CONF",  Color(0.8, 0.2, 0.8)],
+	["hex_timer",       "HEX",   Color(0.6, 0.1, 0.6)],
+	["marked_timer",    "MARK",  Color(0.9, 0.2, 0.2)],
+]
+
 class _UltraGradientBar extends Control:
 	var _grad_tex : GradientTexture1D
 	var _fill     : float = 0.0
@@ -222,6 +244,13 @@ func _build_player_pane() -> Control:
 	_stance_row = _build_stance_row()
 	_stance_row.visible = false
 	vbox.add_child(_stance_row)
+
+	_player_status_box = HBoxContainer.new()
+	_player_status_box.add_theme_constant_override("separation", 2)
+	_player_status_box.visible = false
+	_player_status_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_build_status_pills(_player_status_pills, _player_status_box)
+	vbox.add_child(_player_status_box)
 
 	return vbox
 
@@ -456,6 +485,13 @@ func _build_target_pane() -> Control:
 	_target_hp = _make_hp_bar(C_ENEMY)
 	vbox.add_child(_bar_row("HP ", _target_hp, C_ENEMY))
 
+	_target_status_box = HBoxContainer.new()
+	_target_status_box.add_theme_constant_override("separation", 2)
+	_target_status_box.visible = false
+	_target_status_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_build_status_pills(_target_status_pills, _target_status_box)
+	vbox.add_child(_target_status_box)
+
 	return vbox
 
 # ── Shared widget builders ────────────────────────────────────────────────────
@@ -562,6 +598,9 @@ func _update_player(player: Node) -> void:
 		_mana_bars[1].value = mana.blue   / 100.0
 		_mana_bars[2].value = mana.yellow / 100.0
 		(_ultra_bar as _UltraGradientBar).set_value(mana.ultra / 10.0)
+
+	if _player_status_box != null:
+		_update_status_pills(player.get_node_or_null("PlayerBuffs"), _player_status_pills, _player_status_box)
 
 func _update_slots(player: Node) -> void:
 	# Reset when controlled player changes
@@ -681,6 +720,9 @@ func _update_target(player: Node) -> void:
 		_target_name.add_theme_color_override("font_color", C_NONE)
 		_target_class.text = ""
 		_target_hp.set_health(0.0, 0.0)
+		if _target_status_box != null:
+			for lbl in _target_status_pills: lbl.visible = false
+			_target_status_box.visible = false
 		return
 
 	var target: Node = null
@@ -703,6 +745,8 @@ func _update_target(player: Node) -> void:
 			t_buffs.health / t_buffs.max_health,
 			t_buffs.provisional_damage / t_buffs.max_health
 		)
+	if _target_status_box != null:
+		_update_status_pills(t_buffs, _target_status_pills, _target_status_box)
 
 func _ability_in_range(player: Node, ability: AbilityDefinition) -> bool:
 	if ability.range <= 0.0:
@@ -800,6 +844,43 @@ func _classify_slot_style(ability: AbilityDefinition) -> Dictionary:
 		border = SLOT_BORDER_MANA
 
 	return {"bg": bg, "border": border}
+
+func _build_status_pills(pool: Array[Label], box: HBoxContainer) -> void:
+	pool.clear()
+	for _i in 12:
+		var lbl := Label.new()
+		lbl.add_theme_font_size_override("font_size", 7)
+		lbl.visible = false
+		lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var sbox := StyleBoxFlat.new()
+		sbox.bg_color = Color(0.14, 0.14, 0.18, 0.85)
+		sbox.corner_radius_top_left = 2; sbox.corner_radius_top_right = 2
+		sbox.corner_radius_bottom_left = 2; sbox.corner_radius_bottom_right = 2
+		sbox.content_margin_left = 3; sbox.content_margin_right = 3
+		sbox.content_margin_top = 0; sbox.content_margin_bottom = 0
+		lbl.add_theme_stylebox_override("normal", sbox)
+		box.add_child(lbl)
+		pool.append(lbl)
+
+func _update_status_pills(buffs: Node, pool: Array[Label], box: HBoxContainer) -> void:
+	var idx := 0
+	if buffs != null:
+		for entry in _STATUS_BUFFS:
+			if (buffs.get(entry[0]) as float) > 0.05 and idx < pool.size():
+				_show_status_pill(pool[idx], entry[1], entry[2])
+				idx += 1
+		for entry in _STATUS_DEBUFFS:
+			if (buffs.get(entry[0]) as float) > 0.05 and idx < pool.size():
+				_show_status_pill(pool[idx], entry[1], entry[2])
+				idx += 1
+	for i in range(idx, pool.size()):
+		pool[i].visible = false
+	box.visible = (idx > 0)
+
+func _show_status_pill(lbl: Label, text: String, col: Color) -> void:
+	lbl.text = text
+	lbl.add_theme_color_override("font_color", col)
+	lbl.visible = true
 
 func _local_player() -> Node:
 	var pid := NetworkManager.local_player_id

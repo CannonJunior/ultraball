@@ -105,9 +105,8 @@ const RULES_DATA: Array = [
 		"All 15 players dead = FORFEIT",
 	]],
 	["📋", "THE ACTS", [
-		"Acts 1–4: 3-minute countdown timer (1 min in Fast mode)",
-		"Act 5: Ends when the leading team scores an ULTRA...",
-		"...OR the trailing team comes back and scores an ULTRA",
+		"All 5 Acts: 3-minute countdown timer (1 min in Fast mode)",
+		"An act also ends if all opposing players are eliminated",
 		"Highest score at end of Act 5 wins the match!",
 	]],
 ]
