@@ -2,10 +2,31 @@
 
 [ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
 [ext_resource type="Script" uid="uid://c2nuieao5nh5y" path="res://data/abilities/effects/DurationDoubleNextEffect.gd" id="2_prolong"]
+[ext_resource type="Script" path="res://data/abilities/AbilityVfxConfig.gd" id="3_vfx"]
 
 [sub_resource type="Resource" id="E1"]
 script = ExtResource("2_prolong")
 range = 10.0
+
+[sub_resource type="Resource" id="VFX1"]
+script = ExtResource("3_vfx")
+cast_type = 5
+cast_color = Color(0.65, 0.2, 0.9, 1)
+cast_radius = 5.0
+cast_duration = 0.5
+traversal_type = 4
+traversal_color = Color(0.65, 0.2, 0.9, 1)
+traversal_duration = 0.6
+impact_type = 3
+impact_color = Color(0.65, 0.2, 0.9, 1)
+impact_radius = 10.0
+sustained_type = 1
+sustained_color = Color(0.65, 0.2, 0.9, 1)
+sustained_radius = 10.0
+sustained_duration = 15.0
+cast_flash_color = Color(0.65, 0.2, 0.9, 1)
+active_tint_color = Color(0.65, 0.2, 0.9, 0.2)
+active_tint_mode = 1
 
 [resource]
 script = ExtResource("1_def")
@@ -16,6 +37,7 @@ slot = 9
 cooldown = 20.0
 mana_cost = 35.0
 mana_type = 3
-range = 10.0
+range = 40.0
 effects = [SubResource("E1")]
+vfx_config = SubResource("VFX1")
 metadata/_custom_type_script = "uid://b38bten5wru66"

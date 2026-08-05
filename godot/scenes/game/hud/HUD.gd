@@ -32,6 +32,9 @@ func _ready() -> void:
 		"res://scenes/game/hud/EventMessageDisplay.gd",
 		"res://scenes/game/hud/HighlightClipList.gd",
 		"res://scenes/game/hud/PauseMenu.gd",
+		"res://scenes/game/hud/TacticalRadialMenu.gd",
+		"res://scenes/game/hud/StrategicRadialMenu.gd",
+		"res://scenes/game/hud/TargetOfTargetCard.gd",
 	]:
 		var s := load(late_path)
 		if s == null or not s.can_instantiate():

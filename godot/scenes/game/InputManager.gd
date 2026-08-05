@@ -41,8 +41,9 @@ func _physics_process(delta: float) -> void:
 			player.apply_input(turn_state)
 		return  # don't process normal input while charging
 
-	# "Pass to me" — F just pressed while a teammate holds the ball.
-	if Input.is_action_just_pressed("throw_ball"):
+	# "Pass to me" — C just pressed while a teammate holds the ball.
+	# Skipped when TRM is open (C is the Carrier role hotkey there).
+	if not TacticalRoleSystem.trm_is_open and Input.is_action_just_pressed("throw_ball"):
 		var ball := MatchState.ball
 		if not ball.holder_id.is_empty() and ball.holder_id != player.player_id:
 			if MatchState.team_for_player(ball.holder_id) == player.team_id:
@@ -61,8 +62,9 @@ func _physics_process(delta: float) -> void:
 		state.turn_delta       = -state.turn_delta
 		state.move_direction.x = -state.move_direction.x
 	state.jump_pressed  = Input.is_action_just_pressed("jump")
-	state.hold_throw    = Input.is_action_pressed("throw_ball")
-	state.release_throw = Input.is_action_just_released("throw_ball")
+	if not TacticalRoleSystem.trm_is_open:
+		state.hold_throw    = Input.is_action_pressed("throw_ball")
+		state.release_throw = Input.is_action_just_released("throw_ball")
 
 	# Ability slots 1–9, then ultra (slot 10)
 	for i in range(1, 10):
@@ -80,6 +82,12 @@ func _physics_process(delta: float) -> void:
 
 	state.hold_ultra    = Input.is_action_pressed("ability_ultra")
 	state.release_ultra = Input.is_action_just_released("ability_ultra")
+
+	# `: pop the last queued ability. Backspace: defense-fill the queue.
+	if Input.is_action_just_pressed("ability_cancel"):
+		EventBus.ability_queue_pop.emit(player.player_id)
+	if Input.is_action_just_pressed("ability_defense_fill"):
+		EventBus.ability_queue_defense_fill.emit(player.player_id)
 
 	# Only override AI input when the user is actively pressing something.
 	var has_input := state.move_direction.length_squared() > 0.01 \
@@ -115,10 +123,6 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		var p := _local_player()
 		if p:
 			p.cycle_target()
-	if event.is_action_pressed("ability_cancel"):
-		var p := _local_player()
-		if p:
-			EventBus.ability_queue_pop.emit(p.player_id)
 
 func _cycle_player() -> void:
 	var cur := NetworkManager.local_player_id
@@ -150,8 +154,17 @@ func _local_player() -> Node:
 	if not pid.is_empty():
 		for n in get_tree().get_nodes_in_group("players"):
 			if n.player_id == pid and n.is_alive and n.is_on_field:
+				_lost_control_logged = false
 				return n
-		# Found local_player_id but player is dead/off-field — log once per state change.
+		# In offline mode, auto-follow the substitute so the human stays in control.
+		if NetworkManager.mode == NetworkManager.NetMode.OFFLINE:
+			var my_team := int(pid.split("_")[0])
+			for n in get_tree().get_nodes_in_group("players"):
+				if n.team_id == my_team and n.is_alive and n.is_on_field:
+					NetworkManager.local_player_id = n.player_id
+					_lost_control_logged = false
+					return n
+		# Online: the player is dead/off-field — log once per state change.
 		if not _lost_control_logged:
 			_lost_control_logged = true
 			print("[INPUT] local_player_id=%s is dead or off-field — no controlled player" % pid)

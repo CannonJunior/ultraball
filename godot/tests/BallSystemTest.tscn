@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://ball_system_test"]
+
+[ext_resource type="Script" path="res://tests/BallSystemTest.gd" id="1_test"]
+
+[node name="BallSystemTest" type="Node"]
+script = ExtResource("1_test")

@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
 [ext_resource type="Script" uid="uid://dcv418at6fbvp" path="res://data/abilities/effects/DamageEffect.gd" id="2_dmg"]
 [ext_resource type="Script" uid="uid://k0u24hsmwfle" path="res://data/abilities/effects/HealEffect.gd" id="3_heal"]
+[ext_resource type="Script" path="res://data/abilities/AbilityVfxConfig.gd" id="4_vfx"]
 
 [sub_resource type="Resource" id="E1"]
 script = ExtResource("2_dmg")
@@ -15,6 +16,21 @@ amount = 5.0
 targets_self = true
 auto_ally_range = 0.0
 
+[sub_resource type="Resource" id="VFX1"]
+script = ExtResource("4_vfx")
+cast_type = 7
+cast_color = Color(1, 1, 1, 1)
+cast_radius = 5.0
+cast_duration = 0.2
+traversal_type = 2
+traversal_color = Color(1, 0.5, 0.1, 1)
+traversal_duration = 0.2
+traversal_lines = 1
+impact_type = 4
+impact_color = Color(1, 0.5, 0.1, 1)
+impact_radius = 6.0
+cast_flash_color = Color(1, 0.5, 0.1, 1)
+
 [resource]
 script = ExtResource("1_def")
 ability_id = "tap"
@@ -26,4 +42,5 @@ mana_cost = 0.0
 mana_type = 0
 range = 8.0
 effects = [SubResource("E1"), SubResource("E2")]
+vfx_config = SubResource("VFX1")
 metadata/_custom_type_script = "uid://b38bten5wru66"

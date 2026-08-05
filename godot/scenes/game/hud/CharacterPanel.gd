@@ -923,7 +923,13 @@ func _on_ability_resolved(caster_id: String, slot: int, _hit_ids: Array) -> void
 	var local_p := _local_player()
 	if local_p == null or local_p.player_id != caster_id:
 		return
-	_flash_slot(slot, Color(1.0, 0.95, 0.4, 0.85))
+	var flash := Color(1.0, 0.95, 0.4, 0.85)
+	var rec: MatchState.PlayerRecord = MatchState.players.get(caster_id)
+	if rec != null:
+		var def: AbilityDefinition = GameRegistry.get_ability(rec.class_id, slot)
+		if def != null and def.vfx_config != null and def.vfx_config.cast_flash_color.a > 0.01:
+			flash = def.vfx_config.cast_flash_color
+	_flash_slot(slot, flash)
 
 func _on_ability_failed(caster_id: String, slot: int, _reason: String) -> void:
 	var local_p := _local_player()

@@ -95,6 +95,10 @@ var _expiry_radius: float   = 0.0
 var _expiry_timer:  float   = 0.0
 var _expiry_color:  Color   = Color.WHITE
 
+# Ability VFX overlay — reads AbilityVfxLayer._active and draws in 3D
+var _vfx_imm:  ImmediateMesh      = null
+var _vfx_mesh: MeshInstance3D     = null
+
 # FULL_3D camera state
 var _camera_mode: int = CameraMode.BROADCAST
 var _ball_cam: bool = false
@@ -113,6 +117,7 @@ func _ready() -> void:
 	_charge_ring_segs = _make_charge_ring()
 	_ability_bar_segs = _make_ability_bar()
 	_build_terrain_indicators()
+	_build_vfx_overlay()
 	EventBus.terrain_preview_started.connect(_on_terrain_preview_started)
 	EventBus.terrain_expiry_warning.connect(_on_terrain_expiry_warning)
 	EventBus.ability_charge_started.connect(_on_ability_charge_started)
@@ -129,6 +134,7 @@ func _process(delta: float) -> void:
 	_sync_terrain_preview(delta)
 	_sync_terrain_expiry(delta)
 	_sync_ability_bar(delta)
+	_sync_vfx()
 	_update_camera(delta)
 
 func _input(event: InputEvent) -> void:
@@ -1078,3 +1084,422 @@ func _terrain_color_3d(event_type: String) -> Color:
 		"lava":   return Color(1.00, 0.35, 0.00)
 		"ice":    return Color(0.50, 0.90, 1.00)
 	return Color(0.80, 0.80, 0.80)
+
+# ── Ability VFX 3D overlay ────────────────────────────────────────────────────
+# Reads AbilityVfxLayer._active each frame and renders effects as 3D line geometry.
+# Coordinate mapping mirrors the rest of ViewLayer3D: 2D(x,y) → 3D(x, elev, -y).
+
+func _build_vfx_overlay() -> void:
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode               = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.blend_mode                 = BaseMaterial3D.BLEND_MODE_ADD
+	mat.transparency               = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.vertex_color_use_as_albedo = true
+	mat.no_depth_test              = true
+	mat.cull_mode                  = BaseMaterial3D.CULL_DISABLED
+	_vfx_imm  = ImmediateMesh.new()
+	_vfx_mesh = MeshInstance3D.new()
+	_vfx_mesh.mesh              = _vfx_imm
+	_vfx_mesh.material_override = mat
+	_viewport.add_child(_vfx_mesh)
+
+func _sync_vfx() -> void:
+	var vfx_layer := get_parent().get_node_or_null("AbilityVfxLayer")
+	_vfx_imm.clear_surfaces()
+	if vfx_layer == null or vfx_layer._active.is_empty():
+		return
+	for v in vfx_layer._active:
+		var p: float = float(v.t) / float(v.dur)
+		_draw_vfx_3d(v, p)
+
+func _draw_vfx_3d(v: Dictionary, p: float) -> void:
+	var c: Vector3 = _p3(v.pos)
+	var col: Color = v.color
+	match v.type:
+		"cast_ring":
+			var ep := _eo(p)
+			var max_r: float = v.data.get("radius", 1.40)
+			_vring(c, lerpf(max_r * 0.35, max_r, ep), _ca(col, lerpf(0.90, 0.0, p)))
+		"burst_ring":
+			var delay: float = v.data.get("delay", 0.0)
+			if v.t < delay: return
+			var lp := clampf((float(v.t) - delay) / maxf(v.dur - delay, 0.01), 0.0, 1.0)
+			var r: float = v.data.get("radius", 1.0)
+			_vring(c, lerpf(r * 0.2, r, _eo(lp)), _ca(col, lerpf(0.80, 0.0, lp * lp)))
+		"impact_flash":
+			_vring(c, lerpf(0.0, 0.5, _eo(p)), _ca(col, lerpf(0.85, 0.0, p * p)))
+		"aoe_burst":
+			var radius: float = v.data.get("radius", 2.0)
+			_vring(c, lerpf(0.0, radius, _eo(p)), _ca(col, lerpf(0.70, 0.0, p)))
+		"hit_spark":
+			_vspark(c, lerpf(0.10, 0.65, _eo(p)), _ca(col, lerpf(0.90, 0.0, p * p)), 6)
+		"heal_rise":
+			var delays: Array  = v.data.get("delays",  [0.0, 0.15, 0.10, 0.22])
+			var offsets: Array = v.data.get("offsets", [0.0, -0.15, 0.12, -0.07])
+			for i in mini(delays.size(), offsets.size()):
+				var dp := clampf((p - float(delays[i])) / (1.0 - float(delays[i])), 0.0, 1.0)
+				if dp <= 0.0: continue
+				var rise := lerpf(0.0, 0.8, _eo(dp))
+				_vdot(c + Vector3(float(offsets[i]), rise, 0), 0.07,
+					_ca(col, lerpf(0.80, 0.0, dp * dp)))
+		"death_burst":
+			_vspark(c, lerpf(0.0, 1.8, _eo(p)), _ca(col, lerpf(1.0, 0.0, p)), 10)
+		"ultra_burst":
+			var r := lerpf(0.0, 3.0, _eo(p))
+			_vring(c, r, _ca(col, lerpf(1.0, 0.0, p)))
+			_vspark(c, r * 0.85, _ca(Color.WHITE, lerpf(0.9, 0.0, p)), 12)
+		"pickup_pulse":
+			_vring(c, lerpf(0.30, 0.90, _eo(p)), _ca(col, lerpf(0.80, 0.0, p)))
+		"ff_shatter":
+			var radius: float = v.data.get("radius", 5.0)
+			_vring(c, lerpf(radius * 0.8, radius * 1.7, _eo(p)), _ca(col, lerpf(1.0, 0.0, p * p)))
+		"cc_burst":
+			_vring(c, lerpf(0.0, 1.6, _eo(p)), _ca(col, lerpf(0.95, 0.0, p * p)))
+		"debuff_splash":
+			_vspark(c, lerpf(0.08, 0.85, _eo(p)), _ca(col, lerpf(0.80, 0.0, p * p)), 5)
+		"buff_pulse":
+			_vring(c, lerpf(0.0, 1.1, _eo(p)), _ca(col, lerpf(0.75, 0.0, p * p)))
+		"dash_trail":
+			_vring(c, lerpf(0.45, 0.80, p), _ca(col, lerpf(0.65, 0.0, p)))
+		"double_ring":
+			var max_r: float = v.data.get("radius", 0.85)
+			var ip := clampf(p / 0.6, 0.0, 1.0)
+			_vring(c, lerpf(0.0, max_r * 0.55, _eo(ip)), _ca(col, lerpf(0.90, 0.0, ip)))
+			var op := clampf((p - 0.15) / 0.85, 0.0, 1.0)
+			if op > 0.0:
+				_vring(c, lerpf(0.0, max_r, _eo(op)), _ca(col, lerpf(0.70, 0.0, op)))
+		"petal_bloom":
+			var max_r: float = v.data.get("radius", 2.0)
+			var count: int   = v.data.get("count", 8)
+			_varcs(c, lerpf(0.1, max_r, _eo(p)), count, 0.0,
+				TAU / float(count) * 0.52, _ca(col, lerpf(0.85, 0.0, p * p)))
+		"compressed_rings":
+			var max_r: float = v.data.get("radius", 0.9)
+			if p < 0.5:
+				var cp := p * 2.0
+				_vring(c, lerpf(max_r, 0.0, cp * cp * cp), _ca(col, lerpf(0.70, 0.0, cp)))
+			else:
+				var bp := (p - 0.5) * 2.0
+				_vspark(c, lerpf(0.0, 0.80, _eo(bp)), _ca(col, lerpf(0.90, 0.0, bp * bp)), 4)
+		"spiral_cast":
+			var r: float = v.data.get("radius", 0.4)
+			for i in 6:
+				var angle := float(i) / 6.0 * TAU + p * TAU * 1.2
+				var mr := lerpf(r * 0.3, r, _eo(p))
+				_vdot(c + Vector3(cos(angle) * mr, 0.0, sin(angle) * mr), 0.06,
+					_ca(col, lerpf(0.90, 0.0, p)))
+		"cross_burst":
+			var arm: float = v.data.get("arm_len", 0.5)
+			var l := lerpf(0.0, arm, _eo(p))
+			var a := lerpf(0.90, 0.0, p * p)
+			_vline(c - Vector3(l, 0, 0), c + Vector3(l, 0, 0), _ca(col, a))
+			_vline(c - Vector3(0, 0, l), c + Vector3(0, 0, l), _ca(col, a))
+		"strike_flash":
+			var r: float = v.data.get("radius", 0.5)
+			_vring(c, lerpf(0.0, r, _eo(p)), _ca(col, lerpf(0.95, 0.0, p * p * 5.0)))
+		"mote_ribbon":
+			var from: Vector2  = v.data.get("from", v.pos)
+			var to: Vector2    = v.data.get("to",   v.pos)
+			var count: int     = v.data.get("count", 5)
+			var stagger: float = v.data.get("stagger", 0.08)
+			var f3 := _p3(from); var t3 := _p3(to)
+			var ctrl := (f3 + t3) * 0.5 + Vector3(0, f3.distance_to(t3) * 0.22, 0)
+			for i in count:
+				var mp0 := float(i) * stagger
+				if p < mp0: continue
+				var mp  := clampf((p - mp0) / maxf(1.0 - mp0, 0.01), 0.0, 1.0)
+				var ep  := _eo(mp)
+				var b0  := f3.lerp(ctrl, ep); var b1 := ctrl.lerp(t3, ep)
+				_vdot(b0.lerp(b1, ep), 0.07, _ca(col, lerpf(0.85, 0.0, mp * mp)))
+		"strike_line":
+			var from: Vector2 = v.data.get("from", v.pos)
+			var to: Vector2   = v.data.get("to",   v.pos)
+			var lines: int    = v.data.get("lines", 1)
+			var a := lerpf(0.90, 0.0, p * p * 6.0)
+			for i in lines:
+				var off := (float(i) - float(lines - 1) * 0.5) * 0.05
+				_vline(_p3(from) + Vector3(off, 0, 0), _p3(to) + Vector3(off, 0, 0), _ca(col, a))
+		"disc_projectile":
+			var from: Vector2 = v.data.get("from", v.pos)
+			var to: Vector2   = v.data.get("to",   v.pos)
+			var pos3 := _p3(from).lerp(_p3(to), _eo(p))
+			_vring(pos3, 0.30, _ca(col, lerpf(0.55, 0.0, p * p)))
+		"ring_projectile":
+			var from: Vector2 = v.data.get("from", v.pos)
+			var to: Vector2   = v.data.get("to",   v.pos)
+			var sr: float = v.data.get("start_radius", 0.80)
+			var er: float = v.data.get("end_radius",   0.25)
+			_vring(_p3(from).lerp(_p3(to), _eo(p)), lerpf(sr, er, p),
+				_ca(col, lerpf(0.75, 0.0, p * p)))
+		"shield_collapse":
+			var sr: float = v.data.get("start_radius", 1.0)
+			var count: int = v.data.get("count", 5)
+			_varcs(c, lerpf(sr, 0.0, p * p * p), count, p * 0.5,
+				TAU / float(count) * 0.60, _ca(col, lerpf(0.85, 0.0, p)))
+		"sustained_pulse":
+			var tid: String = v.data.get("target_id", "")
+			var pos3 := _p3(PlayerLookup.get_position(tid)) if not tid.is_empty() else c
+			var r: float = v.data.get("radius", 0.8)
+			var pulse := sin(float(v.t) * 0.5 * TAU) * 0.5 + 0.5
+			_vring(pos3, r, _ca(col, pulse * 0.25))
+		"rotating_arcs":
+			var tid: String = v.data.get("target_id", "")
+			var pos3 := _p3(PlayerLookup.get_position(tid)) if not tid.is_empty() else c
+			var r: float  = v.data.get("radius", 8.0)
+			var cnt: int  = v.data.get("count",  12)
+			var spd: float = v.data.get("speed", TAU / 3.0)
+			var fade := minf(
+				lerpf(0.0, 1.0, p / 0.05),
+				lerpf(1.0, 0.0, clampf((p - 0.85) / 0.15, 0.0, 1.0)))
+			_varcs(pos3, r, cnt, float(v.t) * spd, TAU / float(cnt) * 0.42,
+				_ca(col, 0.55 * fade))
+		"bolt_travel":
+			var delay: float = v.data.get("delay", 0.0)
+			if v.t < delay: return
+			var lp := clampf((float(v.t) - delay) / 0.22, 0.0, 1.0)
+			var from: Vector2 = v.data.get("from", v.pos)
+			var to: Vector2   = v.data.get("to",   v.pos)
+			# Bolt ribbon
+			var ba       := 1.0 - maxf(0.0, (lp - 0.75) / 0.25)
+			var zap_seed := Time.get_ticks_msec()
+			_vzap_bolt(_p3(from), _p3(to), _ca(col,         ba * 0.90), zap_seed, 12.0)
+			_vzap_bolt(_p3(from), _p3(to), _ca(Color.WHITE,  ba * 0.75), zap_seed,  4.0)
+		"bolt_impact":
+			var delay: float = v.data.get("delay", 0.0)
+			if v.t < delay: return
+			var lp := clampf((float(v.t) - delay) / 0.40, 0.0, 1.0)
+			var bi_ep := _eo(lp)
+			_vring(c, lerpf(0.0, 5.5, bi_ep), _ca(col, lerpf(0.85, 0.0, lp)))
+			_vring(c, lerpf(0.0, 3.0, _eo(minf(lp * 0.7, 1.0))), _ca(Color(1, 1, 1), lerpf(0.55, 0.0, lp)))
+			_vspark(c, lerpf(0.0, 3.5, bi_ep), _ca(col, lerpf(0.90, 0.0, lp)), 12)
+		"lightning_discharge":
+			var ld_r  : float   = v.data.get("radius", 5.0)
+			var ld_d2 : Vector2 = v.data.get("dir", Vector2.ZERO)
+			var ld_ep := _eo(p)
+			_vring(c, lerpf(0.0, ld_r, ld_ep), _ca(col, lerpf(0.90, 0.0, p * p)))
+			_vring(c, lerpf(0.0, ld_r * 0.6, _eo(minf(p * 1.5, 1.0))),
+				_ca(Color(1, 1, 1), lerpf(0.60, 0.0, p)))
+			if ld_d2.length_squared() > 0.01:
+				var la := lerpf(0.95, 0.0, p * p * 3.0)
+				for i in 4:
+					var ld_fan := ld_d2.rotated((float(i) - 1.5) * 0.25)
+					var ld_d3  := Vector3(ld_fan.x, 0.0, -ld_fan.y)
+					var b3 := c + ld_d3 * lerpf(0.1, 0.3, ld_ep)
+					var t3 := c + ld_d3 * lerpf(0.3, ld_r * 1.05, ld_ep)
+					_vline(b3, t3, _ca(col, la))
+		"chain_burst":
+			var cb_r  : float = v.data.get("radius", 6.5)
+			var cb_ep := _eo(p)
+			_vring(c, lerpf(0.0, cb_r, cb_ep), _ca(col, lerpf(0.90, 0.0, p * p)))
+			_vring(c, lerpf(0.0, cb_r * 0.5, _eo(minf(p * 1.4, 1.0))),
+				_ca(Color(1, 1, 1), lerpf(0.70, 0.0, p)))
+			var sa := lerpf(0.95, 0.0, p * p * 2.5)
+			for i in 8:
+				var cb_ang := float(i) * TAU / 8.0 + p * 0.3
+				var cb_d3  := Vector3(cos(cb_ang), 0.0, sin(cb_ang))
+				var b3 := c + cb_d3 * lerpf(0.1, 0.35, cb_ep)
+				var t3 := c + cb_d3 * lerpf(0.35, cb_r * 1.1, cb_ep)
+				_vline(b3, t3, _ca(col, sa))
+		"heal_spiral_cast":
+			# Sparks scatter and rise straight upward
+			for i in 16:
+				var phase := float(i) / 16.0 * 0.45
+				var dp := clampf((p - phase) / maxf(1.0 - phase, 0.01), 0.0, 1.0)
+				if dp <= 0.0: continue
+				var ep := _eo(dp)
+				var ga := float(i) * 2.399963
+				var sr := sqrt(float(i + 1) / 16.0) * 1.75
+				var rise := lerpf(0.0, 12.0, ep)
+				var spark_len := lerpf(2.8, 0.5, dp)
+				var base3 := c + Vector3(cos(ga) * sr, rise, sin(ga) * sr)
+				_vline(base3, base3 + Vector3(0.0, spark_len, 0.0),
+					_ca(Color(0.45, 1.0, 0.30), lerpf(0.92, 0.0, dp * dp)))
+		"heal_spiral_travel":
+			# Sparks arc parabolically from caster to target, peaking high
+			var hst_from: Vector2 = v.data.get("from", v.pos)
+			var hst_to: Vector2   = v.data.get("to",   v.pos)
+			var hst_f3 := _p3(hst_from); var hst_t3 := _p3(hst_to)
+			var hst_dist := hst_f3.distance_to(hst_t3)
+			var arc_h3 := minf(hst_dist * 0.55, 12.0)
+			for i in 14:
+				var phase := float(i) / 14.0 * 0.60
+				var dp := clampf((p - phase) / maxf(1.0 - phase, 0.01), 0.0, 1.0)
+				if dp <= 0.0: continue
+				var t3 := clampf(phase * 0.35 + dp * 0.75, 0.0, 1.0)
+				var pos3 := hst_f3.lerp(hst_t3, t3)
+				# Arc rises then descends in Y
+				pos3.y += arc_h3 * 4.0 * t3 * (1.0 - t3)
+				_vdot(pos3, lerpf(0.5, 0.2, dp),
+					_ca(Color(0.30, 1.0, 0.25), lerpf(0.88, 0.0, dp * dp)))
+		"blue_cloud_cast":
+			for i in 14:
+				var phase := float(i) / 14.0 * 0.08
+				var dp := clampf((p - phase) / maxf(1.0 - phase, 0.01), 0.0, 1.0)
+				if dp <= 0.0: continue
+				var angle := float(i) / 14.0 * TAU + dp * 0.5
+				var r := lerpf(0.5, 7.5, _eo(dp))
+				_vdot(c + Vector3(cos(angle) * r, lerpf(0.0, 2.8, _eo(dp)), sin(angle) * r),
+					lerpf(0.8, 0.3, dp), _ca(Color(0.30, 0.65, 1.0), lerpf(0.85, 0.0, dp)))
+		"blue_cloud_travel":
+			var bct_from: Vector2 = v.data.get("from", v.pos)
+			var bct_to: Vector2   = v.data.get("to",   v.pos)
+			var bct_f3 := _p3(bct_from); var bct_t3 := _p3(bct_to)
+			for i in 14:
+				var phase := float(i) / 14.0 * 0.6
+				var dp := clampf((p - phase) / maxf(1.0 - phase, 0.01), 0.0, 1.0)
+				if dp <= 0.0: continue
+				var travel_t := clampf(float(i) / 14.0 * 0.4 + dp * 0.65, 0.0, 1.0)
+				var pos3 := bct_f3.lerp(bct_t3, travel_t)
+				var wave := sin(float(i) * 2.1 + p * TAU * 2.0) * 2.2
+				pos3 += Vector3(wave, 0.0, 0.0)
+				_vdot(pos3, lerpf(0.8, 0.4, dp),
+					_ca(Color(0.30, 0.65, 1.0), lerpf(0.80, 0.0, dp * dp)))
+		"blue_cloud_impact":
+			for i in 14:
+				var phase := float(i) / 14.0 * 0.15
+				var dp := clampf((p - phase) / maxf(1.0 - phase, 0.01), 0.0, 1.0)
+				if dp <= 0.0: continue
+				var angle := float(i) / 14.0 * TAU + p * TAU * 1.5
+				var r := lerpf(7.2, 3.0, dp)
+				_vdot(c + Vector3(cos(angle) * r, lerpf(0.0, 5.5, dp * dp), sin(angle) * r),
+					lerpf(0.7, 0.2, dp), _ca(Color(0.30, 0.65, 1.0), lerpf(0.85, 0.0, dp * dp)))
+		"hot_sparkle":
+			for i in 6:
+				var phase := float(i) / 6.0 * 0.35
+				var dp := clampf((p - phase) / maxf(1.0 - phase, 0.01), 0.0, 1.0)
+				if dp <= 0.0: continue
+				var ep2 := _eo(dp)
+				var ga := float(i) * 2.399963
+				var sr := sqrt(float(i + 1) / 6.0) * 0.7
+				var fall := lerpf(12.0, 0.0, ep2)
+				var spark_len := lerpf(2.8, 0.5, dp)
+				var base3 := c + Vector3(cos(ga) * sr, fall, sin(ga) * sr)
+				_vline(base3, base3 + Vector3(0.0, -spark_len, 0.0),
+					_ca(Color(0.30, 1.0, 0.25), lerpf(0.90, 0.0, dp * dp)))
+
+# ── VFX primitive helpers (all use _vfx_imm) ──────────────────────────────────
+
+func _p3(pos2d: Vector2, y: float = 0.15) -> Vector3:
+	return Vector3(pos2d.x, y, -pos2d.y)
+
+func _eo(t: float) -> float:
+	return 1.0 - pow(1.0 - t, 3.0)
+
+func _ca(col: Color, alpha: float) -> Color:
+	return Color(col.r, col.g, col.b, clampf(alpha, 0.0, 1.0))
+
+func _vring(center: Vector3, radius: float, color: Color, segs: int = 24) -> void:
+	if radius < 0.01: return
+	_vfx_imm.surface_begin(Mesh.PRIMITIVE_LINES)
+	for i in segs:
+		var a0 := float(i)     / float(segs) * TAU
+		var a1 := float(i + 1) / float(segs) * TAU
+		_vfx_imm.surface_set_color(color)
+		_vfx_imm.surface_add_vertex(center + Vector3(cos(a0) * radius, 0.0, sin(a0) * radius))
+		_vfx_imm.surface_set_color(color)
+		_vfx_imm.surface_add_vertex(center + Vector3(cos(a1) * radius, 0.0, sin(a1) * radius))
+	_vfx_imm.surface_end()
+
+func _varcs(center: Vector3, radius: float, count: int, rot: float, span: float,
+		color: Color, segs: int = 8) -> void:
+	if radius < 0.01: return
+	_vfx_imm.surface_begin(Mesh.PRIMITIVE_LINES)
+	for i in count:
+		var base := float(i) / float(count) * TAU + rot
+		for j in segs:
+			var a0 := base + float(j)     / float(segs) * span
+			var a1 := base + float(j + 1) / float(segs) * span
+			_vfx_imm.surface_set_color(color)
+			_vfx_imm.surface_add_vertex(center + Vector3(cos(a0) * radius, 0.0, sin(a0) * radius))
+			_vfx_imm.surface_set_color(color)
+			_vfx_imm.surface_add_vertex(center + Vector3(cos(a1) * radius, 0.0, sin(a1) * radius))
+	_vfx_imm.surface_end()
+
+func _vdot(pos: Vector3, size: float, color: Color) -> void:
+	_vfx_imm.surface_begin(Mesh.PRIMITIVE_LINES)
+	_vfx_imm.surface_set_color(color)
+	_vfx_imm.surface_add_vertex(pos + Vector3(-size, 0,     0))
+	_vfx_imm.surface_set_color(color)
+	_vfx_imm.surface_add_vertex(pos + Vector3( size, 0,     0))
+	_vfx_imm.surface_set_color(color)
+	_vfx_imm.surface_add_vertex(pos + Vector3(0,     0, -size))
+	_vfx_imm.surface_set_color(color)
+	_vfx_imm.surface_add_vertex(pos + Vector3(0,     0,  size))
+	_vfx_imm.surface_end()
+
+## Zigzag lightning bolt rendered as a vertical ribbon — panels stand upright
+## from the ground so they're visible from any overhead camera angle.
+## bolt_h controls how tall (metres) each panel rises above its base point.
+func _vzap_bolt(from3: Vector3, to3: Vector3, col: Color, seed: int,
+		bolt_h: float = 8.0) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+
+	# Midpoint displacement in XZ — 3 levels → 9 points, 8 segments.
+	var pts: Array = [from3, to3]
+	var disp := from3.distance_to(to3) * 0.32
+
+	for _lvl in 3:
+		var next: Array = [pts[0]]
+		for i in range(pts.size() - 1):
+			var p0: Vector3 = pts[i]
+			var p1: Vector3 = pts[i + 1]
+			var mid := (p0 + p1) * 0.5
+			var seg_xz := Vector2(p1.x - p0.x, p1.z - p0.z)
+			var perp_xz := Vector2(-seg_xz.y, seg_xz.x).normalized()
+			var kick := (rng.randf() - 0.5) * 2.0 * disp
+			next.append(mid + Vector3(perp_xz.x * kick, 0.0, perp_xz.y * kick))
+			next.append(p1)
+		pts  = next
+		disp *= 0.5
+
+	# Vertical ribbon: each quad rises from the ground point up by bolt_h metres.
+	# Visible from any overhead angle because it faces upward.
+	var n := pts.size()
+	_vfx_imm.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in range(n - 1):
+		var p0: Vector3 = pts[i]
+		var p1: Vector3 = pts[i + 1]
+		# Taper: kink points flare the height; tip shrinks to 25%.
+		var t0 := float(i)     / float(n - 1)
+		var t1 := float(i + 1) / float(n - 1)
+		var h0 := bolt_h * lerpf(1.0, 0.25, t0)
+		var h1 := bolt_h * lerpf(1.0, 0.25, t1)
+		if i > 0:
+			var pp: Vector3 = pts[i - 1]
+			var kink := maxf(0.0, 1.0 - (p0 - pp).normalized().dot((p1 - p0).normalized()))
+			h0 *= (1.0 + kink * 2.0)
+		if i < n - 2:
+			var pn: Vector3 = pts[i + 2]
+			var kink := maxf(0.0, 1.0 - (p1 - p0).normalized().dot((pn - p1).normalized()))
+			h1 *= (1.0 + kink * 2.0)
+		var p0b := p0
+		var p0t := p0 + Vector3(0.0, h0, 0.0)
+		var p1b := p1
+		var p1t := p1 + Vector3(0.0, h1, 0.0)
+		_vfx_imm.surface_set_color(col); _vfx_imm.surface_add_vertex(p0b)
+		_vfx_imm.surface_set_color(col); _vfx_imm.surface_add_vertex(p0t)
+		_vfx_imm.surface_set_color(col); _vfx_imm.surface_add_vertex(p1b)
+		_vfx_imm.surface_set_color(col); _vfx_imm.surface_add_vertex(p0t)
+		_vfx_imm.surface_set_color(col); _vfx_imm.surface_add_vertex(p1t)
+		_vfx_imm.surface_set_color(col); _vfx_imm.surface_add_vertex(p1b)
+	_vfx_imm.surface_end()
+
+func _vline(from: Vector3, to: Vector3, color: Color) -> void:
+	_vfx_imm.surface_begin(Mesh.PRIMITIVE_LINES)
+	_vfx_imm.surface_set_color(color)
+	_vfx_imm.surface_add_vertex(from)
+	_vfx_imm.surface_set_color(color)
+	_vfx_imm.surface_add_vertex(to)
+	_vfx_imm.surface_end()
+
+func _vspark(center: Vector3, radius: float, color: Color, count: int) -> void:
+	if radius < 0.01: return
+	_vfx_imm.surface_begin(Mesh.PRIMITIVE_LINES)
+	for i in count:
+		var angle := float(i) / float(count) * TAU
+		_vfx_imm.surface_set_color(color)
+		_vfx_imm.surface_add_vertex(center)
+		_vfx_imm.surface_set_color(color)
+		_vfx_imm.surface_add_vertex(center + Vector3(cos(angle) * radius, 0.0, sin(angle) * radius))
+	_vfx_imm.surface_end()

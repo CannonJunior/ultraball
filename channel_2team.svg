@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-32 -28 222 110" width="888" height="440">
+  <title>2-Team: Endzones and Creature Channel</title>
+
+  <!-- Background -->
+  <rect x="-32" y="-28" width="222" height="110" fill="#111827"/>
+
+  <!-- Grid every 20 units -->
+  <g stroke="#1f2937" stroke-width="0.25">
+    <line x1="-32" y1="-20" x2="190" y2="-20"/>
+    <line x1="-32" y1="0"   x2="190" y2="0"/>
+    <line x1="-32" y1="20"  x2="190" y2="20"/>
+    <line x1="-32" y1="40"  x2="190" y2="40"/>
+    <line x1="-32" y1="60"  x2="190" y2="60"/>
+    <line x1="0"   y1="-28" x2="0"   y2="82"/>
+    <line x1="20"  y1="-28" x2="20"  y2="82"/>
+    <line x1="40"  y1="-28" x2="40"  y2="82"/>
+    <line x1="60"  y1="-28" x2="60"  y2="82"/>
+    <line x1="80"  y1="-28" x2="80"  y2="82"/>
+    <line x1="100" y1="-28" x2="100" y2="82"/>
+    <line x1="120" y1="-28" x2="120" y2="82"/>
+    <line x1="140" y1="-28" x2="140" y2="82"/>
+    <line x1="160" y1="-28" x2="160" y2="82"/>
+  </g>
+
+  <!-- Extended field: x=20..120, y=-10..50 (accessible off-endzone without ball) -->
+  <rect x="20" y="-10" width="100" height="60" fill="#1a2e1a" stroke="none"/>
+
+  <!-- Main playing field: x=0..140, y=0..40 -->
+  <rect x="0" y="0" width="140" height="40" fill="#2d5a2d"/>
+
+  <!-- Field outer bounds (dashed) -->
+  <rect x="0" y="-10" width="140" height="60" fill="none" stroke="#4a7a4a" stroke-width="0.3" stroke-dasharray="2,1"/>
+
+  <!-- Endzone dividers -->
+  <line x1="20"  y1="0" x2="20"  y2="40" stroke="#6b7280" stroke-width="0.3" stroke-dasharray="1,0.5"/>
+  <line x1="120" y1="0" x2="120" y2="40" stroke="#6b7280" stroke-width="0.3" stroke-dasharray="1,0.5"/>
+
+  <!-- Home endzone: x=0..20, y=0..40 -->
+  <rect x="0" y="0" width="20" height="40" fill="rgba(239,68,68,0.4)" stroke="#ef4444" stroke-width="0.6"/>
+
+  <!-- Away endzone: x=120..140, y=0..40 -->
+  <rect x="120" y="0" width="20" height="40" fill="rgba(59,130,246,0.4)" stroke="#3b82f6" stroke-width="0.6"/>
+
+  <!-- Creature channel waypoints -->
+  <polygon points="-15,-15 155,-15 155,55 -15,55"
+           fill="rgba(251,191,36,0.06)" stroke="#fbbf24" stroke-width="1" stroke-dasharray="4,2"/>
+
+  <!-- Waypoint vertex dots -->
+  <circle cx="-15" cy="-15" r="1.8" fill="#fbbf24"/>
+  <circle cx="155" cy="-15" r="1.8" fill="#fbbf24"/>
+  <circle cx="155" cy="55"  r="1.8" fill="#fbbf24"/>
+  <circle cx="-15" cy="55"  r="1.8" fill="#fbbf24"/>
+
+  <!-- Endzone corner dots -->
+  <circle cx="0"   cy="0"  r="1.2" fill="#ef4444"/>
+  <circle cx="20"  cy="0"  r="1.2" fill="#ef4444"/>
+  <circle cx="20"  cy="40" r="1.2" fill="#ef4444"/>
+  <circle cx="0"   cy="40" r="1.2" fill="#ef4444"/>
+  <circle cx="120" cy="0"  r="1.2" fill="#3b82f6"/>
+  <circle cx="140" cy="0"  r="1.2" fill="#3b82f6"/>
+  <circle cx="140" cy="40" r="1.2" fill="#3b82f6"/>
+  <circle cx="120" cy="40" r="1.2" fill="#3b82f6"/>
+
+  <!-- Creature channel coordinate labels -->
+  <text x="-15" y="-17.5" font-size="3.5" fill="#fbbf24" text-anchor="middle" font-family="monospace">(-15,-15)</text>
+  <text x="155" y="-17.5" font-size="3.5" fill="#fbbf24" text-anchor="middle" font-family="monospace">(155,-15)</text>
+  <text x="155" y="62"    font-size="3.5" fill="#fbbf24" text-anchor="middle" font-family="monospace">(155,55)</text>
+  <text x="-15" y="62"    font-size="3.5" fill="#fbbf24" text-anchor="middle" font-family="monospace">(-15,55)</text>
+
+  <!-- Home endzone corner labels -->
+  <text x="-1"  y="-1"   font-size="3" fill="#fca5a5" text-anchor="end"    font-family="monospace">(0,0)</text>
+  <text x="21"  y="-1"   font-size="3" fill="#fca5a5"                       font-family="monospace">(20,0)</text>
+  <text x="-1"  y="44"   font-size="3" fill="#fca5a5" text-anchor="end"    font-family="monospace">(0,40)</text>
+  <text x="21"  y="44"   font-size="3" fill="#fca5a5"                       font-family="monospace">(20,40)</text>
+
+  <!-- Away endzone corner labels -->
+  <text x="119" y="-1"   font-size="3" fill="#93c5fd" text-anchor="end"    font-family="monospace">(120,0)</text>
+  <text x="141" y="-1"   font-size="3" fill="#93c5fd"                       font-family="monospace">(140,0)</text>
+  <text x="119" y="44"   font-size="3" fill="#93c5fd" text-anchor="end"    font-family="monospace">(120,40)</text>
+  <text x="141" y="44"   font-size="3" fill="#93c5fd"                       font-family="monospace">(140,40)</text>
+
+  <!-- Region labels -->
+  <text x="10"  y="21" font-size="5.5" fill="#fca5a5" text-anchor="middle" font-weight="bold">HOME</text>
+  <text x="130" y="21" font-size="5.5" fill="#93c5fd" text-anchor="middle" font-weight="bold">AWAY</text>
+  <text x="70"  y="21" font-size="4"   fill="#86efac" text-anchor="middle">FIELD</text>
+
+  <!-- Axis tick labels (y) -->
+  <text x="-31" y="-9"  font-size="3" fill="#6b7280" font-family="monospace" text-anchor="start">-10</text>
+  <text x="-31" y="1"   font-size="3" fill="#6b7280" font-family="monospace" text-anchor="start">  0</text>
+  <text x="-31" y="21"  font-size="3" fill="#6b7280" font-family="monospace" text-anchor="start"> 20</text>
+  <text x="-31" y="41"  font-size="3" fill="#6b7280" font-family="monospace" text-anchor="start"> 40</text>
+  <text x="-31" y="51"  font-size="3" fill="#6b7280" font-family="monospace" text-anchor="start"> 50</text>
+
+  <!-- Axis tick labels (x) -->
+  <text x="0"   y="-24" font-size="3" fill="#6b7280" font-family="monospace" text-anchor="middle">0</text>
+  <text x="20"  y="-24" font-size="3" fill="#6b7280" font-family="monospace" text-anchor="middle">20</text>
+  <text x="120" y="-24" font-size="3" fill="#6b7280" font-family="monospace" text-anchor="middle">120</text>
+  <text x="140" y="-24" font-size="3" fill="#6b7280" font-family="monospace" text-anchor="middle">140</text>
+
+  <!-- Title -->
+  <text x="70" y="-22" font-size="5.5" fill="white" text-anchor="middle" font-weight="bold">2-Team: Endzones &amp; Creature Channel</text>
+
+  <!-- Legend -->
+  <rect x="162" y="28" width="58" height="42" fill="#1f2937" rx="1.5" stroke="#374151" stroke-width="0.3"/>
+  <rect x="165" y="32"  width="8" height="5" fill="rgba(239,68,68,0.4)"  stroke="#ef4444" stroke-width="0.4"/>
+  <text x="175" y="36.5" font-size="3.2" fill="#fca5a5" font-family="sans-serif">Home endzone</text>
+  <rect x="165" y="40"  width="8" height="5" fill="rgba(59,130,246,0.4)" stroke="#3b82f6" stroke-width="0.4"/>
+  <text x="175" y="44.5" font-size="3.2" fill="#93c5fd" font-family="sans-serif">Away endzone</text>
+  <rect x="165" y="48"  width="8" height="5" fill="#2d5a2d"/>
+  <text x="175" y="52.5" font-size="3.2" fill="#86efac" font-family="sans-serif">Playing field</text>
+  <line x1="165" y1="60" x2="173" y2="60" stroke="#fbbf24" stroke-width="1" stroke-dasharray="4,2"/>
+  <circle cx="169" cy="60" r="1.2" fill="#fbbf24"/>
+  <text x="175" y="61.5" font-size="3.2" fill="#fbbf24" font-family="sans-serif">Creature path</text>
+</svg>

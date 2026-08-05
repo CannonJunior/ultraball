@@ -67,6 +67,11 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
   bool _showSettingsPanel = false;
   bool _showDamageMeter   = false;
 
+  // Tracks the player whose defensive queue was populated by the last Backspace.
+  // A second Backspace while this player's queue is still non-empty is treated
+  // as "in succession" — it appends rather than clears.
+  UltraballPlayer? _backspaceQueuePlayer;
+
   // Typed reference retained for finalise() which is not on GameDataSink
   GameDataCollector? _dataCollector;
 
@@ -615,11 +620,9 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
       return;
     }
 
-    // Backspace: cancel the last queued ability
+    // Backspace: smart defensive / healing queue fill
     if (key == LogicalKeyboardKey.backspace) {
-      if (player != null && player.abilityQueue.isNotEmpty) {
-        player.abilityQueue.removeLast();
-      }
+      if (player != null) _handleBackspaceDefense(player);
       return;
     }
 
@@ -793,6 +796,57 @@ class _GameWidgetState extends State<GameWidget> with WidgetsBindingObserver {
   }
 
   /// Fire an ability immediately if ready, or enqueue it (max 5, no duplicates).
+  // Backspace defense-fill logic:
+  // First press — clears the queue and fills it with every selfBuff/heal ability
+  // whose cooldown will have expired by the time it reaches the front of the queue.
+  // Second press while the first queue is still running — does not clear the queue;
+  // instead recalculates which abilities will be ready once the remaining items fire,
+  // and appends those to the back of the queue.
+  void _handleBackspaceDefense(UltraballPlayer player) {
+    final types = player.playerClass.abilityTypes;
+    final isSuccession =
+        _backspaceQueuePlayer == player && player.abilityQueue.isNotEmpty;
+
+    if (!isSuccession) {
+      // First press: wipe the queue and start fresh.
+      player.abilityQueue.clear();
+      player.abilityComboStreak = 0;
+      player.lastExecutedComboStreak = 0;
+
+      for (int slot = 1; slot <= 9; slot++) {
+        if (player.abilityQueue.length >= 5) break;
+        final type = types[slot - 1];
+        if (type != AbilityType.selfBuff && type != AbilityType.heal) continue;
+        // Time (seconds) until this slot would fire from its queue position.
+        final position = player.abilityQueue.length;
+        final timeToExecute = player.gcdRemaining + position * 1.0;
+        if (player.getSlotCooldown(slot) <= timeToExecute) {
+          player.abilityQueue.add(slot);
+        }
+      }
+
+      _backspaceQueuePlayer = player;
+    } else {
+      // Second press (succession): append abilities that will be ready once the
+      // existing queue items have all fired.
+      final baseDelay =
+          player.gcdRemaining + player.abilityQueue.length * 1.0;
+      int newCount = 0;
+
+      for (int slot = 1; slot <= 9; slot++) {
+        if (player.abilityQueue.length >= 5) break;
+        if (player.abilityQueue.contains(slot)) continue;
+        final type = types[slot - 1];
+        if (type != AbilityType.selfBuff && type != AbilityType.heal) continue;
+        final timeToExecute = baseDelay + newCount * 1.0;
+        if (player.getSlotCooldown(slot) <= timeToExecute) {
+          player.abilityQueue.add(slot);
+          newCount++;
+        }
+      }
+    }
+  }
+
   void _tryFireAbility(UltraballPlayer player, int slot) {
     if (player.gcdRemaining > 0 || player.getSlotCooldown(slot) > 0) {
       // GCD active or slot on cooldown: enqueue

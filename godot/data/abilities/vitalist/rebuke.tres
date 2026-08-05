@@ -4,6 +4,7 @@
 [ext_resource type="Script" uid="uid://dcv418at6fbvp" path="res://data/abilities/effects/DamageEffect.gd" id="2_dmg"]
 [ext_resource type="Script" uid="uid://yrako34mp3x4" path="res://data/abilities/effects/StunEffect.gd" id="3_stun"]
 [ext_resource type="Script" uid="uid://55c0hqjbrslw" path="res://data/abilities/effects/FumbleEffect.gd" id="4_fumble"]
+[ext_resource type="Script" path="res://data/abilities/AbilityVfxConfig.gd" id="5_vfx"]
 
 [sub_resource type="Resource" id="E1"]
 script = ExtResource("2_dmg")
@@ -18,6 +19,21 @@ duration = 2.0
 script = ExtResource("4_fumble")
 fumble_velocity_scale = 1.0
 
+[sub_resource type="Resource" id="VFX1"]
+script = ExtResource("5_vfx")
+cast_type = 7
+cast_color = Color(1, 0.82, 0.1, 1)
+cast_radius = 6.0
+cast_duration = 0.25
+traversal_type = 2
+traversal_color = Color(1, 0.82, 0.1, 1)
+traversal_duration = 0.25
+traversal_lines = 3
+impact_type = 4
+impact_color = Color(1, 0.82, 0.1, 1)
+impact_radius = 7.0
+cast_flash_color = Color(1, 0.82, 0.1, 1)
+
 [resource]
 script = ExtResource("1_def")
 ability_id = "rebuke"
@@ -29,4 +45,5 @@ mana_cost = 30.0
 mana_type = 3
 range = 8.0
 effects = [SubResource("E1"), SubResource("E2"), SubResource("E3")]
+vfx_config = SubResource("VFX1")
 metadata/_custom_type_script = "uid://b38bten5wru66"

@@ -7,6 +7,8 @@ signal ability_failed(caster_id: String, slot: int, reason: String)
 signal ability_queued(player_id: String, slot: int)
 signal ability_queue_pop(player_id: String)
 signal ability_queue_changed(player_id: String, queue: Array)
+## Backspace: clear queue and fill with defensive/healing abilities (or append if queue still running).
+signal ability_queue_defense_fill(player_id: String)
 signal gcd_started(player_id: String, duration: float)
 ## Emitted by InputManager when a chargeable ability key is released.
 signal ability_charge_released(player_id: String, slot: int, charge_t: float)
@@ -108,3 +110,14 @@ signal damage_indicator_spawned(world_pos: Vector2, text: String, indicator_type
 signal throw_charge_changed(charge_pct: float)
 signal act_timer_changed(seconds_remaining: float)
 signal score_display_updated(home: int, away: int, third: int)
+
+# ── Tactical Role System ───────────────────────────────────────────────────────
+## Emitted when the player assigns or clears a tactical role for an AI teammate.
+signal tactical_role_assigned(target_player_id: String, role: int)
+## Emitted by ShotCallerTactics to designate a focus target for the team.
+signal enemy_marked(target_player_id: String, marking_team_id: int)
+## Emitted when the TRM or SRM opens/closes (for HUD coordination).
+signal trm_opened(target_player_id: String)
+signal trm_closed()
+signal srm_opened()
+signal srm_closed()

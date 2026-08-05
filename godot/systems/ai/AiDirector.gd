@@ -22,10 +22,19 @@ var _policy: Dictionary = {}
 ## Reused across ticks; avoids per-tick AiView/PlayerView allocation.
 var _cached_view: AiView = null
 
+var _carrier_tactics:    AiTactics = null
+var _shotcaller_tactics: AiTactics = null
+var _ff_tactics:         AiTactics = null
+var _shadow_tactics:     AiTactics = null
+
 func _ready() -> void:
 	_strategy = strategy_resource as AiStrategy
-	_tactics = tactics_resource as AiTactics
+	_tactics  = tactics_resource  as AiTactics
 	_load_policy()
+	_carrier_tactics    = load("res://systems/ai/tactics/CarrierTactics.gd").new()
+	_shotcaller_tactics = load("res://systems/ai/tactics/ShotCallerTactics.gd").new()
+	_ff_tactics         = load("res://systems/ai/tactics/FocusFireTactics.gd").new()
+	_shadow_tactics     = load("res://systems/ai/tactics/ShadowTactics.gd").new()
 
 func _physics_process(delta: float) -> void:
 	if not MatchState.match_active or MatchState.act_ended: return
@@ -50,13 +59,23 @@ func _update_ai() -> void:
 			EventBus.ability_queued.emit(agent_pv.player_id, input.queued_ability_slot)
 
 func _decide(agent_pv: AiView.PlayerView, view: AiView) -> InputState:
+	var role := TacticalRoleSystem.get_role(agent_pv.player_id)
+	var override := _tactics_for_role(role)
 	var goal := Vector2.ZERO
 	if _strategy:
 		goal = _strategy.evaluate_goal(agent_pv, view, _policy)
-	if _tactics:
-		return _tactics.produce_input(agent_pv, goal, view, _policy)
-	# Fallback: move toward ball
+	var tac: AiTactics = override if override != null else _tactics
+	if tac:
+		return tac.produce_input(agent_pv, goal, view, _policy)
 	return _simple_move_toward(agent_pv, view.ball.position)
+
+func _tactics_for_role(role: int) -> AiTactics:
+	match role:
+		TacticalRoleSystem.ROLE_CARRIER:     return _carrier_tactics
+		TacticalRoleSystem.ROLE_SHOT_CALLER: return _shotcaller_tactics
+		TacticalRoleSystem.ROLE_FOCUS_FIRE:  return _ff_tactics
+		TacticalRoleSystem.ROLE_SHADOW:      return _shadow_tactics
+	return null
 
 func _simple_move_toward(agent_pv: AiView.PlayerView, target: Vector2) -> InputState:
 	var input := InputState.new()

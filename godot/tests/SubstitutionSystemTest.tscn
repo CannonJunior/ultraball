@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://substitution_system_test"]
+
+[ext_resource type="Script" path="res://tests/SubstitutionSystemTest.gd" id="1_test"]
+
+[node name="SubstitutionSystemTest" type="Node"]
+script = ExtResource("1_test")

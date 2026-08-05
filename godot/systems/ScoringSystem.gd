@@ -113,6 +113,8 @@ func _on_player_died(player_id: String, _cause: String, killer_id: String) -> vo
 	EventBus.killa_scored.emit(killer_team, killer_id, player_id)
 	MatchState.add_score(killer_team, KILLA_POINTS)
 	MatchState.kills[killer_team] += 1
+	if not player_id in MatchState.kills_unique[killer_team]:
+		MatchState.kills_unique[killer_team].append(player_id)
 	# Award ultra mana to killer (handled by PlayerMana component via buff signal)
 	EventBus.buff_applied.emit(killer_id, "ultra_mana_gain", ULTRA_MANA_PER_KILLA)
 
@@ -124,6 +126,8 @@ func _on_ball_exploded(holder_id: String) -> void:
 	EventBus.killa_scored.emit(opposing, "", holder_id)
 	MatchState.add_score(opposing, KILLA_POINTS)
 	MatchState.kills[opposing] += 1
+	if not holder_id in MatchState.kills_unique[opposing]:
+		MatchState.kills_unique[opposing].append(holder_id)
 
 # ── Act timer management ───────────────────────────────────────────────────────
 

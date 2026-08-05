@@ -44,8 +44,10 @@ func _show(message: String, duration: float) -> void:
 		MSG_COLORS.get(message, DEFAULT_COLOR))
 	const LW := 800.0
 	const LH := 120.0
+	const SCOREBOARD_BOTTOM := 80.0 + 3.0 + 55.0   # BAR_H + gap + CARDS_H
 	_label.size     = Vector2(LW, LH)
-	_label.position = Vector2((size.x - LW) * 0.5, size.y * 0.35 - LH * 0.5)
+	var vp := get_viewport_rect().size
+	_label.position = Vector2((vp.x - LW) * 0.5, SCOREBOARD_BOTTOM + 16.0)
 	if _tween:
 		_tween.kill()
 	_tween = create_tween()

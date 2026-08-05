@@ -39,7 +39,10 @@ func _process(delta: float) -> void:
 	yellow = minf(MAX_YELLOW, yellow + yellow_rate * delta)
 	if is_holding_ball:
 		var buffs: Node = get_parent().get_node_or_null("PlayerBuffs")
-		var ultra_rate := ULTRA_HOLD_RATE * (1.33 if (buffs != null and buffs.stormseeker_remaining > 0.0) else 1.0)
+		var ball := MatchState.ball
+		var charge_pct := clampf(ball.charge_timer / ball.max_charge, 0.0, 1.0) if ball != null and ball.max_charge > 0.0 else 0.0
+		var charge_mult := lerpf(1.0, 5.0, charge_pct * charge_pct)
+		var ultra_rate := ULTRA_HOLD_RATE * charge_mult * (1.33 if (buffs != null and buffs.stormseeker_remaining > 0.0) else 1.0)
 		ultra = minf(MAX_ULTRA, ultra + ultra_rate * delta)
 
 func can_afford(mana_type: int, cost: float) -> bool:

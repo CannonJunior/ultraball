@@ -7,6 +7,8 @@ extends AbilityEffect
 func apply(ctx: AbilityContext) -> bool:
 	if ctx.target_id.is_empty():
 		return false
+	if not ctx.hit_ids.has(ctx.target_id):
+		ctx.hit_ids.append(ctx.target_id)
 	EventBus.damage_requested.emit({
 		"attacker_id": ctx.caster_id,
 		"target_id": ctx.target_id,

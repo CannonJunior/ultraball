@@ -5,7 +5,6 @@ extends CharacterBody2D
 
 const PlayerLookup = preload("res://systems/PlayerLookup.gd")
 
-const WAYPOINT_REACH  := 2.0   # metres — snap to next waypoint
 
 # Per-type stats applied in _ready()
 var patrol_speed: float = 6.0
@@ -34,30 +33,16 @@ var _respawn_timer:  float = 0.0
 ## Which team owns this creature (set by GameScene at spawn time).
 var team_id: int = 0
 
-## Outer-perimeter patrol path (2-team): corners sit inside the endzones so the
-## vertical transitions never cross the main playing field (x 20–120, y 0–40).
+## Outer-perimeter patrol path (2-team).
+## y=−15/55 clears the endzones (field_min.y=−10, field_max.y=50).
+## x=−15/155 puts vertical transitions off-screen (viewport ≈ x=−1..141 at 1280 px).
 const WAYPOINTS_2T: Array = [
-	Vector2( 10.0, -5.0),
-	Vector2(130.0, -5.0),
-	Vector2(130.0, 45.0),
-	Vector2( 10.0, 45.0),
+	Vector2(25.0, -5.0),
+	Vector2(105.0, -5.0),
+	Vector2(105.0,  45.0),
+	Vector2(25.0,  45.0),
 ]
 
-## Per-team patrol paths (3-team): rectangular path around each arm's side channels,
-## crossing through the arm at the CHAN_INNER/CHAN_OUTER boundary.
-## center=(110,110), INRADIUS=11.547, CHAN_OUTER=61.547, ARM_HALF_W=20, buf=5 (walk at ±25)
-const WAYPOINTS_3T_0: Array = [
-	Vector2(135.0, 121.5), Vector2(135.0, 171.5),
-	Vector2( 85.0, 171.5), Vector2( 85.0, 121.5),
-]
-const WAYPOINTS_3T_1: Array = [
-	Vector2(107.5,  82.6), Vector2(150.8,  57.6),
-	Vector2(175.8, 100.9), Vector2(132.5, 125.9),
-]
-const WAYPOINTS_3T_2: Array = [
-	Vector2( 87.5, 125.9), Vector2( 44.2, 100.9),
-	Vector2( 69.2,  57.6), Vector2(112.5,  82.6),
-]
 
 var _waypoints: Array = WAYPOINTS_2T
 var _wp_index:  int   = 0
@@ -69,10 +54,7 @@ var _goad_pos: Vector2 = Vector2.ZERO
 func _ready() -> void:
 	add_to_group("creatures")
 	if MatchState.is_three_team:
-		match team_id:
-			1:    _waypoints = WAYPOINTS_3T_1
-			2:    _waypoints = WAYPOINTS_3T_2
-			_:    _waypoints = WAYPOINTS_3T_0
+		_waypoints = _build_waypoints_3t(team_id)
 	else:
 		_waypoints = WAYPOINTS_2T
 	global_position = _waypoints[0]
@@ -90,6 +72,7 @@ func _physics_process(delta: float) -> void:
 			is_alive = true
 			_speed_mult = 1.0
 			_hunting    = false
+			_wp_index = 0
 			global_position = _waypoints[0]
 		return
 
@@ -106,21 +89,11 @@ func _physics_process(delta: float) -> void:
 		8:  _tick_demon(delta)
 		10: _tick_chaos(delta)
 
-	var move_target: Vector2
 	if _goaded:
-		move_target = _goad_pos
+		_steer_toward(_goad_pos)
 	elif _hunting:
-		move_target = _hunt_pos
-	else:
-		move_target = _waypoints[_wp_index]
-
-	var to_target: Vector2 = move_target - global_position
-	velocity = to_target.normalized() * patrol_speed * _speed_mult
-	move_and_slide()
-	_clamp_to_channel()
-
-	if not _goaded and not _hunting and to_target.length_squared() < WAYPOINT_REACH * WAYPOINT_REACH:
-		_wp_index = (_wp_index + _dir + _waypoints.size()) % _waypoints.size()
+		_steer_toward(_hunt_pos)
+	_advance_along_path(patrol_speed * _speed_mult * delta)
 
 # ── Per-type behaviour ticks ──────────────────────────────────────────────────
 
@@ -158,7 +131,7 @@ func _tick_demon(delta: float) -> void:
 	_behaviour_timer -= delta
 	if _behaviour_timer <= 0.0:
 		_behaviour_timer = randf_range(8.0, 15.0)
-		_wp_index = randi() % _waypoints.size()
+		_dir *= -1
 
 func _tick_chaos(delta: float) -> void:
 	_behaviour_timer -= delta
@@ -172,7 +145,7 @@ func _tick_chaos(delta: float) -> void:
 		elif roll < 0.55:
 			_speed_mult = randf_range(0.2, 0.5)
 		elif roll < 0.65:
-			_wp_index = randi() % _waypoints.size()
+			_dir *= -1
 		else:
 			_speed_mult = 1.0
 
@@ -198,16 +171,71 @@ func _do_slam() -> void:
 				"facing":      0.0,
 			})
 
-# ── Channel confinement ───────────────────────────────────────────────────────
+# ── Path following ────────────────────────────────────────────────────────────
 
-func _clamp_to_channel() -> void:
-	if MatchState.is_three_team:
-		return
-	var x := global_position.x
-	var y := global_position.y
-	# Only enforce when in the main-field x-range; endzones allow free y movement.
-	if x >= 20.0 and x <= 120.0 and y > 0.0 and y < 40.0:
-		global_position.y = 0.0 if y < 20.0 else 40.0
+func _advance_along_path(distance: float) -> void:
+	var remaining := distance
+	while remaining > 0.0:
+		var target: Vector2 = _waypoints[_wp_index]
+		var to_target: Vector2 = target - global_position
+		var dist := to_target.length()
+		if dist <= remaining:
+			global_position = target
+			remaining -= dist
+			_wp_index = (_wp_index + _dir + _waypoints.size()) % _waypoints.size()
+		else:
+			global_position += to_target.normalized() * remaining
+			remaining = 0.0
+
+## Point the patrol direction toward whichever waypoint is nearest to world-space target.
+## The creature never leaves the waypoint loop — it just rushes toward the closest corner.
+func _steer_toward(target: Vector2) -> void:
+	var n := _waypoints.size()
+	var best_idx := _wp_index
+	var best_d_sq := INF
+	for i in n:
+		var d_sq: float = target.distance_squared_to(_waypoints[i])
+		if d_sq < best_d_sq:
+			best_d_sq = d_sq
+			best_idx = i
+	var dist_fwd := (best_idx - _wp_index + n) % n
+	var dist_rev := (_wp_index - best_idx + n) % n
+	_dir = 1 if dist_fwd <= dist_rev else -1
+
+# ── Waypoint builders ────────────────────────────────────────────────────────
+
+## Single 9-point loop shared by all three creatures. Each arm contributes:
+##   • one junction point  (where this arm's perp+ midline meets the previous arm's perp- midline)
+##   • two outer points    (at the crossbar-depth midpoint, on each side of the arm)
+##
+## Reference points (hand-picked approximation, all arms):
+##   (85,126.5) (85,166.5) (135,166.5) (135,126.5)
+##   (171.5,103.5) (145.5,62.5) (110,80) (70,62.5) (43.5,100)
+##
+## Geometry (exact, derived from MatchState constants):
+##   dp   = (hw + hwc) / 2       — side-strip midpoint (25.0)
+##   dn_o = (ci + co) / 2        — crossbar-depth midpoint (56.547)
+##   dn_i = dp / sqrt(3)         — depth where adjacent dp=±25 midlines coincide (~14.434)
+##
+## Each creature is staggered by tid*3 waypoints so it starts near its own arm.
+func _build_waypoints_3t(tid: int) -> Array:
+	var center := Vector2(MatchState.FIELD3_CX, MatchState.FIELD3_CY)
+	var ci  := MatchState.FIELD3_CHAN_INNER
+	var co  := MatchState.FIELD3_CHAN_OUTER
+	var hw  := MatchState.FIELD3_ARM_HALF_W
+	var hwc := hw + 10.0
+	var dp  := (hw + hwc) * 0.5
+	var dn_o := (ci + co) * 0.5
+	var dn_i := dp / sqrt(3.0)
+	var all: Array = []
+	for t in 3:
+		var norm: Vector2 = MatchState.TEAM3_NORMALS[t]
+		var perp := Vector2(-norm.y, norm.x)
+		all.append(center + norm * dn_i + perp * dp)   # junction: prev-arm perp- meets this arm perp+
+		all.append(center + norm * dn_o + perp * dp)   # outer, perp+ side
+		all.append(center + norm * dn_o - perp * dp)   # outer, perp- side
+	var offset := tid * 3
+	return all.slice(offset) + all.slice(0, offset)
 
 # ── Type init ────────────────────────────────────────────────────────────────
 

@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
 [ext_resource type="Script" uid="uid://k0u24hsmwfle" path="res://data/abilities/effects/HealEffect.gd" id="2_heal"]
 [ext_resource type="Script" path="res://data/abilities/effects/CCCleanseEffect.gd" id="3_cleanse"]
+[ext_resource type="Script" path="res://data/abilities/AbilityVfxConfig.gd" id="4_vfx"]
 
 [sub_resource type="Resource" id="E1"]
 script = ExtResource("2_heal")
@@ -16,6 +17,21 @@ targets_self = false
 clear_dots = false
 auto_ally_range = 7.0
 
+[sub_resource type="Resource" id="VFX1"]
+script = ExtResource("4_vfx")
+cast_type = 8
+cast_color = Color(0.9, 1, 0.8, 1)
+cast_radius = 0.7
+cast_duration = 0.60
+traversal_type = 5
+traversal_color = Color(0.9, 1, 0.8, 1)
+traversal_duration = 0.5
+traversal_count = 6
+impact_type = 6
+impact_color = Color(0.25, 1.0, 0.20, 1)
+impact_radius = 1.0
+cast_flash_color = Color(0.8, 1, 0.6, 1)
+
 [resource]
 script = ExtResource("1_def")
 ability_id = "refresh"
@@ -25,6 +41,7 @@ slot = 6
 cooldown = 10.0
 mana_cost = 30.0
 mana_type = 3
-range = 7.0
+range = 40.0
 effects = [SubResource("E1"), SubResource("E2")]
+vfx_config = SubResource("VFX1")
 metadata/_custom_type_script = "uid://b38bten5wru66"

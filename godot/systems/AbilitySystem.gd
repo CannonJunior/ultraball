@@ -22,10 +22,15 @@ var _cooldowns: Dictionary = {}
 ## Tracks "duration_double_next" flag per player
 var _duration_double: Dictionary = {}   # player_id -> bool
 
+## Tracks which player_id last had their queue populated by Backspace defense-fill.
+## A second Backspace while that player's queue is still non-empty is "in succession".
+var _defense_fill_pid: String = ""
+
 func _ready() -> void:
 	EventBus.ability_used.connect(_on_ability_used)
 	EventBus.ability_queued.connect(_on_ability_queued)
 	EventBus.ability_queue_pop.connect(_on_ability_queue_pop)
+	EventBus.ability_queue_defense_fill.connect(_on_ability_queue_defense_fill)
 	EventBus.ability_charge_released.connect(_on_ability_charge_released)
 	EventBus.buff_applied.connect(_on_buff_applied)
 	EventBus.player_subbed_in.connect(_on_player_subbed_in)
@@ -118,6 +123,46 @@ func _on_ability_queue_pop(player_id: String) -> void:
 	if queue.is_empty():
 		return
 	queue.pop_back()
+	EventBus.ability_queue_changed.emit(player_id, queue.duplicate())
+
+# Backspace defense-fill: clears queue and fills it with selfBuff/heal abilities whose
+# cooldown will have expired by the time they reach the front of the queue.
+# A second press while the first queue is still running appends instead of clearing.
+func _on_ability_queue_defense_fill(player_id: String) -> void:
+	var rec: MatchState.PlayerRecord = MatchState.players.get(player_id)
+	if rec == null: return
+	if not _queues.has(player_id):
+		_queues[player_id] = []
+	var queue: Array = _queues[player_id]
+	var gcd: float = _gcd.get(player_id, 0.0)
+	# "In succession" = same player, queue still has items from the previous fill.
+	var is_succession := _defense_fill_pid == player_id and not queue.is_empty()
+	if not is_succession:
+		queue.clear()
+		for slot in range(1, 10):  # slots 1–9; skip ultra (slot 10)
+			if queue.size() >= MAX_QUEUE: break
+			var def: AbilityDefinition = GameRegistry.get_ability(rec.class_id, slot)
+			if def == null: continue
+			# ability_type: 1=Heal 2=SelfBuff
+			if def.ability_type != 1 and def.ability_type != 2: continue
+			var time_to_execute: float = gcd + queue.size() * GCD_DURATION
+			if _get_cooldown(player_id, slot) <= time_to_execute:
+				queue.append(slot)
+		_defense_fill_pid = player_id
+	else:
+		# Append abilities that will be ready once the remaining queue items fire.
+		var base_delay: float = gcd + queue.size() * GCD_DURATION
+		var new_count := 0
+		for slot in range(1, 10):
+			if queue.size() >= MAX_QUEUE: break
+			if queue.has(slot): continue
+			var def: AbilityDefinition = GameRegistry.get_ability(rec.class_id, slot)
+			if def == null: continue
+			if def.ability_type != 1 and def.ability_type != 2: continue
+			var time_to_execute: float = base_delay + new_count * GCD_DURATION
+			if _get_cooldown(player_id, slot) <= time_to_execute:
+				queue.append(slot)
+				new_count += 1
 	EventBus.ability_queue_changed.emit(player_id, queue.duplicate())
 
 # ── Direct use (skips queue) ───────────────────────────────────────────────────

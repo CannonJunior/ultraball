@@ -1,6 +1,8 @@
 class_name AbilityDefinition
 extends Resource
 
+const AbilityVfxConfig = preload("res://data/abilities/AbilityVfxConfig.gd")
+
 @export var ability_id: String = ""
 @export var display_name: String = ""
 @export var description: String = ""
@@ -41,6 +43,10 @@ extends Resource
 
 ## Secondary tags for pip indicators: "aoe", "cc", "snare", "fumble"
 @export var tags: PackedStringArray
+
+## Per-ability VFX configuration (cast, traversal, impact, sustained, HUD flash).
+## Null = AbilityVfxLayer uses generic effect-type inference.
+@export var vfx_config: AbilityVfxConfig = null
 
 ## Returns true when at least one effect is a HealEffect or HoTEffect that targets the caster.
 func is_self_heal() -> bool:

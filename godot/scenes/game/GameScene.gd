@@ -46,6 +46,16 @@ func _ready() -> void:
 	vfx_layer.name = "AbilityVfxLayer"
 	add_child(vfx_layer)
 
+	# Lightning flash overlay — full-screen colour flash on bolt impact (CanvasLayer 15)
+	var flash_overlay := preload("res://scenes/game/vfx/LightningFlashOverlay.gd").new()
+	flash_overlay.name = "LightningFlashOverlay"
+	add_child(flash_overlay)
+
+	# Thunder audio manager — polyphonic playback stub, active when SFX assets are present
+	var thunder_audio := preload("res://systems/ThunderAudio.gd").new()
+	thunder_audio.name = "ThunderAudio"
+	add_child(thunder_audio)
+
 	# 3D/3Q visual layer — hides 2D world and renders a live 3D mirror
 	if match_config.view_mode != MatchConfig.ViewMode.FLAT_2D:
 		var view_layer := preload("res://systems/ViewLayer3D.gd").new()

@@ -2,9 +2,13 @@ extends Control
 
 const _ProvisionalBar := preload("res://scenes/game/hud/ProvisionalBar.gd")
 
-const C_GOLD  := Color(1.000, 0.796, 0.239)
-const C_CYAN  := Color(0.098, 0.890, 0.890)
-const C_BG    := Color(0.016, 0.020, 0.039)
+const C_GOLD           := Color(1.000, 0.796, 0.239)
+const C_CYAN           := Color(0.098, 0.890, 0.890)
+const C_BG             := Color(0.016, 0.020, 0.039)
+const C_SELECTED       := Color(1.000, 0.900, 0.000)  # yellow — local player
+const C_TARGET_ENEMY   := Color(1.000, 0.350, 0.350)  # red    — targeted enemy
+const C_TARGET_FRIENDLY:= Color(0.350, 0.850, 0.350)  # green  — targeted ally
+const C_TOT            := Color(0.250, 0.550, 1.000)  # blue   — target's target
 
 const BAR_H := 80.0
 const SKEW  := 34.0
@@ -25,16 +29,19 @@ class _HpBar extends _ProvisionalBar:
 		bg_color = Color(1, 1, 1, 0.10)
 
 class _SelectedOutline extends Control:
-	var outline_color: Color = Color.TRANSPARENT
-	func set_selected(col: Color) -> void:
-		outline_color = col
-		queue_redraw()
-	func clear_selected() -> void:
-		outline_color = Color.TRANSPARENT
+	var _colors: Array[Color] = [Color.TRANSPARENT, Color.TRANSPARENT, Color.TRANSPARENT]
+	func update_layers(sel: Color, tgt: Color, tot: Color) -> void:
+		if _colors[0] == sel and _colors[1] == tgt and _colors[2] == tot:
+			return
+		_colors[0] = sel; _colors[1] = tgt; _colors[2] = tot
 		queue_redraw()
 	func _draw() -> void:
-		if outline_color.a > 0.0:
-			draw_rect(Rect2(0, 0, size.x, size.y), outline_color, false, 2.0)
+		if _colors[0].a > 0.0:
+			draw_rect(Rect2(0, 0, size.x, size.y), _colors[0], false, 2.0)
+		if _colors[1].a > 0.0:
+			draw_rect(Rect2(2, 2, size.x - 4, size.y - 4), _colors[1], false, 2.0)
+		if _colors[2].a > 0.0:
+			draw_rect(Rect2(4, 4, size.x - 8, size.y - 8), _colors[2], false, 1.5)
 
 var _home_name_lbl : Label
 var _home_score_lbl: Label
@@ -55,7 +62,6 @@ var _charge_pct   := 0.0
 # player_id → {av_bg, init_lbl, hp_bar, kill_lbl, team_color, outline}
 var _card_entries         : Dictionary = {}
 var _player_node_cache    : Dictionary = {}
-var _last_local_player_id : String     = ""
 var _home_box         : HBoxContainer = null
 var _away_box         : HBoxContainer = null
 var _third_name_lbl   : Label         = null
@@ -89,6 +95,7 @@ func _ready() -> void:
 	EventBus.player_died.connect(_on_card_player_died)
 	EventBus.player_subbed_in.connect(_on_card_player_subbed)
 	EventBus.killa_scored.connect(_on_card_killa_scored)
+	EventBus.healing_applied.connect(_on_healing_applied_card)
 
 func _draw() -> void:
 	if MatchState.is_three_team:
@@ -249,12 +256,9 @@ func _process(delta: float) -> void:
 	# Health bar updates
 	_update_card_health()
 	_update_card_status()
+	_update_card_possession()
 
-	# Selection outline refresh when controlled player changes
-	var cur_pid := NetworkManager.local_player_id
-	if cur_pid != _last_local_player_id:
-		_last_local_player_id = cur_pid
-		_refresh_selection_outlines()
+	_refresh_selection_outlines()
 
 	# 3-team inline highlight playback
 	if MatchState.is_three_team and not _hl_thumbs.is_empty():
@@ -441,11 +445,28 @@ func _make_card(pid: String) -> Control:
 	kill_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	av.add_child(kill_lbl)
 
+	# Buff tint overlay — sits above av_bg, below outline; color driven by active buff state
+	var tint_overlay := ColorRect.new()
+	tint_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tint_overlay.color = Color.TRANSPARENT
+	tint_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	av.add_child(tint_overlay)
+
 	# Target outline on all cards; click sets explicit target on the local player
 	var outline := _SelectedOutline.new()
 	outline.set_anchors_preset(Control.PRESET_FULL_RECT)
 	outline.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	av.add_child(outline)
+
+	# Possession indicator: small yellow square in top-right corner
+	var poss_dot := ColorRect.new()
+	poss_dot.position = Vector2(AVATAR_SZ - 8, 0)
+	poss_dot.size = Vector2(8, 8)
+	poss_dot.color = Color(1.000, 0.800, 0.000)  # #FFCC00
+	poss_dot.visible = false
+	poss_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	av.add_child(poss_dot)
+
 	av.mouse_filter = Control.MOUSE_FILTER_STOP
 	av.gui_input.connect(_on_avatar_clicked.bind(pid))
 
@@ -470,13 +491,15 @@ func _make_card(pid: String) -> Control:
 	col.add_child(hp_bar)
 
 	_card_entries[pid] = {
-		"av_bg":       av_bg,
-		"init_lbl":    init_lbl,
-		"hp_bar":      hp_bar,
-		"kill_lbl":    kill_lbl,
-		"team_color":  tc,
-		"outline":     outline,
-		"status_dots": s_dots,
+		"av_bg":        av_bg,
+		"init_lbl":     init_lbl,
+		"hp_bar":       hp_bar,
+		"kill_lbl":     kill_lbl,
+		"team_color":   tc,
+		"outline":      outline,
+		"status_dots":  s_dots,
+		"poss_dot":     poss_dot,
+		"tint_overlay": tint_overlay,
 	}
 	return margin
 
@@ -490,15 +513,26 @@ func _on_avatar_clicked(event: InputEvent, pid: String) -> void:
 	_refresh_selection_outlines()
 
 func _refresh_selection_outlines() -> void:
-	var local := _get_player_node(NetworkManager.local_player_id)
+	var local_pid := NetworkManager.local_player_id
+	var local := _get_player_node(local_pid)
 	var target_id: String = local.current_target_id if local != null else ""
+	var tot_id: String = ""
+	if not target_id.is_empty():
+		var tgt_node := _get_player_node(target_id)
+		if tgt_node != null:
+			tot_id = tgt_node.current_target_id
+	var local_rec: MatchState.PlayerRecord = MatchState.players.get(local_pid)
+	var local_team: int = local_rec.team_id if local_rec != null else 0
 	for pid: String in _card_entries:
 		var outline = _card_entries[pid].get("outline")
 		if outline == null: continue
-		if pid == target_id:
-			(outline as _SelectedOutline).set_selected(C_GOLD)
-		else:
-			(outline as _SelectedOutline).clear_selected()
+		var sel_col := C_SELECTED if pid == local_pid else Color.TRANSPARENT
+		var tgt_col := Color.TRANSPARENT
+		if pid == target_id and not target_id.is_empty():
+			var rec: MatchState.PlayerRecord = MatchState.players.get(pid)
+			tgt_col = C_TARGET_FRIENDLY if (rec != null and rec.team_id == local_team) else C_TARGET_ENEMY
+		var tot_col := C_TOT if (pid == tot_id and not tot_id.is_empty()) else Color.TRANSPARENT
+		(outline as _SelectedOutline).update_layers(sel_col, tgt_col, tot_col)
 
 func _update_card_health() -> void:
 	for pid: String in _card_entries:
@@ -547,6 +581,27 @@ func _update_card_status() -> void:
 			(dots[i] as ColorRect).color = DEBUFF_COLORS[i] if (vals[i] as float) > 0.05 else Color.TRANSPARENT
 		(dots[5] as ColorRect).color = Color(0.25, 0.95, 0.35) if buff_active else Color.TRANSPARENT
 
+		# Buff-state avatar tint: blend from the most prominent active buff
+		var tint_overlay = _card_entries[pid].get("tint_overlay")
+		if tint_overlay != null:
+			var tint := Color.TRANSPARENT
+			if buffs != null:
+				var pulse := sin(Time.get_ticks_msec() * 0.003) * 0.5 + 0.5  # 0–1 at ~0.5 Hz
+				if (buffs.get("hot_remaining") as float) > 0.05:
+					tint = Color(0.10, 0.70, 0.55, 0.18 + pulse * 0.10)
+				elif (buffs.get("damage_reduction_remaining") as float) > 0.05:
+					tint = Color(0.20, 0.40, 0.90, 0.15 + pulse * 0.08)
+				elif (buffs.get("damage_boost_remaining") as float) > 0.05:
+					tint = Color(1.00, 0.70, 0.10, 0.15 + pulse * 0.08)
+			(tint_overlay as ColorRect).color = tint
+
+func _update_card_possession() -> void:
+	var holder_id: String = MatchState.ball.holder_id if MatchState.ball != null else ""
+	for pid: String in _card_entries:
+		var dot = _card_entries[pid].get("poss_dot")
+		if dot == null: continue
+		(dot as ColorRect).visible = (not holder_id.is_empty() and pid == holder_id)
+
 func _get_player_node(pid: String) -> Node:
 	if _player_node_cache.has(pid) and is_instance_valid(_player_node_cache[pid]):
 		return _player_node_cache[pid]
@@ -565,17 +620,56 @@ func _on_card_player_died(pid: String, _cause: String, _killer: String) -> void:
 	bar.fill_color = Color(0.45, 0.45, 0.45)
 	bar.set_health(0.0, 0.0)
 
-func _on_card_player_subbed(pid: String, _replaced: String, team: int) -> void:
+func _on_card_player_subbed(pid: String, replaced: String, team: int) -> void:
 	if not _card_entries.has(pid):
-		_rebuild_cards()
-		return
-	var e: Dictionary = _card_entries[pid]
-	var tc := MatchState.team_color(team)
-	(e["av_bg"]    as ColorRect).color  = Color(tc.r, tc.g, tc.b, 0.65)
-	(e["init_lbl"] as Label).modulate.a = 1.0
-	var bar := e["hp_bar"] as _HpBar
-	bar.fill_color = tc
-	bar.set_health(1.0, 0.0)
+		# Brand-new substitute — add their card directly (no node required yet;
+		# _make_card only reads MatchState.PlayerRecord).
+		var rec: MatchState.PlayerRecord = MatchState.players.get(pid)
+		if rec == null: return
+		var box := _box_for_team(rec.team_id)
+		if box == null: return
+		box.add_child(_make_card(pid))
+	else:
+		var e: Dictionary = _card_entries[pid]
+		var tc := MatchState.team_color(team)
+		(e["av_bg"]    as ColorRect).color  = Color(tc.r, tc.g, tc.b, 0.65)
+		(e["init_lbl"] as Label).modulate.a = 1.0
+		var bar := e["hp_bar"] as _HpBar
+		bar.fill_color = tc
+		bar.set_health(1.0, 0.0)
+	# Flash and badge for live mid-act subs only (not act-end revivals).
+	if not replaced.is_empty():
+		_flash_sub_card(pid)
+
+func _box_for_team(team_id: int) -> HBoxContainer:
+	match team_id:
+		0: return _home_box
+		1: return _away_box
+		2: return _third_box
+	return null
+
+func _flash_sub_card(pid: String) -> void:
+	if not _card_entries.has(pid): return
+	var overlay := _card_entries[pid].get("tint_overlay") as ColorRect
+	if overlay == null: return
+	var tween := create_tween()
+	tween.tween_property(overlay, "color", Color(1.0, 1.0, 1.0, 0.65), 0.0)
+	tween.tween_property(overlay, "color", Color.TRANSPARENT, 0.5)
+	var av_node := overlay.get_parent()
+	if av_node == null: return
+	var sub_lbl := Label.new()
+	sub_lbl.text = "SUB"
+	sub_lbl.add_theme_font_size_override("font_size", 6)
+	sub_lbl.add_theme_color_override("font_color", Color.WHITE)
+	sub_lbl.position = Vector2(0.0, 1.0)
+	sub_lbl.size = Vector2(AVATAR_SZ, 10.0)
+	sub_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	av_node.add_child(sub_lbl)
+	var badge_tween := create_tween()
+	badge_tween.tween_interval(1.5)
+	badge_tween.tween_property(sub_lbl, "modulate:a", 0.0, 0.4)
+	badge_tween.tween_callback(sub_lbl.queue_free)
 
 func _on_card_killa_scored(_killer_team: int, killer_id: String, _victim_id: String) -> void:
 	if killer_id.is_empty() or not _card_entries.has(killer_id): return
@@ -583,6 +677,14 @@ func _on_card_killa_scored(_killer_team: int, killer_id: String, _victim_id: Str
 	var kill_lbl := _card_entries[killer_id]["kill_lbl"] as Label
 	kill_lbl.text    = str(kills)
 	kill_lbl.visible = true
+
+func _on_healing_applied_card(_healer_id: String, target_id: String, _amount: float) -> void:
+	if not _card_entries.has(target_id): return
+	var overlay = _card_entries[target_id].get("tint_overlay")
+	if overlay == null: return
+	var tween := create_tween()
+	tween.tween_property(overlay, "color", Color(0.20, 0.90, 0.35, 0.65), 0.05)
+	tween.tween_property(overlay, "color", Color.TRANSPARENT, 0.45)
 
 # ── 3-team layout ─────────────────────────────────────────────────────────────
 

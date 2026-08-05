@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://match_state_test"]
+
+[ext_resource type="Script" path="res://tests/MatchStateTest.gd" id="1_test"]
+
+[node name="MatchStateTest" type="Node"]
+script = ExtResource("1_test")

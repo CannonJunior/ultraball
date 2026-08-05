@@ -48,6 +48,8 @@ var is_paused: bool = false
 # Scores
 var scores: Array[int] = [0, 0, 0]     # indexed by Team enum
 var kills: Array[int] = [0, 0, 0]
+## Unique player_ids eliminated by each team (each roster member counted once regardless of re-kills).
+var kills_unique: Array = [[], [], []]
 
 # Player roster data (populated by NetworkManager / GameScene on match start)
 # key: player_id (String), value: PlayerRecord
@@ -122,6 +124,7 @@ func reset_for_new_match() -> void:
 	is_paused = false
 	scores = [0, 0, 0]
 	kills = [0, 0, 0]
+	kills_unique = [[], [], []]
 	players = {}
 	ball = BallStateRecord.new()
 	terrain = TerrainStateRecord.new()

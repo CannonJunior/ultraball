@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://b38bten5wru66" path="res://data/abilities/AbilityDefinition.gd" id="1_def"]
 [ext_resource type="Script" uid="uid://v4phcueae8yi" path="res://data/abilities/effects/HoTEffect.gd" id="2_hot"]
+[ext_resource type="Script" path="res://data/abilities/AbilityVfxConfig.gd" id="3_vfx"]
 
 [sub_resource type="Resource" id="E1"]
 script = ExtResource("2_hot")
@@ -9,6 +10,22 @@ heal_per_second = 6.0
 duration = 4.0
 targets_self = false
 auto_ally_range = 5.0
+
+[sub_resource type="Resource" id="VFX1"]
+script = ExtResource("3_vfx")
+cast_type = 8
+cast_color = Color(0.1, 0.7, 0.55, 1)
+cast_radius = 1.5
+cast_duration = 0.6
+traversal_type = 5
+traversal_color = Color(0.1, 0.7, 0.55, 1)
+traversal_duration = 0.65
+traversal_count = 5
+impact_type = 6
+impact_color = Color(0.25, 1.0, 0.20, 1)
+cast_flash_color = Color(0.1, 0.7, 0.55, 1)
+active_tint_color = Color(0.1, 0.7, 0.55, 0.25)
+active_tint_mode = 1
 
 [resource]
 script = ExtResource("1_def")
@@ -19,6 +36,7 @@ slot = 2
 cooldown = 1.5
 mana_cost = 0.0
 mana_type = 0
-range = 5.0
+range = 30.0
 effects = [SubResource("E1")]
+vfx_config = SubResource("VFX1")
 metadata/_custom_type_script = "uid://b38bten5wru66"

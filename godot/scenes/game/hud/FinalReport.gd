@@ -123,7 +123,7 @@ func _rebuild_stats() -> void:
 	top_heal_player.sort_custom(func(a, b): return a.heal > b.heal)
 
 	var strip := _make_stats_strip(top_pts_player, top_dmg_player, top_heal_player,
-			MatchState.kills[0], MatchState.kills[1])
+			MatchState.kills_unique[0].size(), MatchState.kills_unique[1].size())
 	vbox.add_child(strip)
 
 	vbox.add_child(_make_col_header())
