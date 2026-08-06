@@ -166,6 +166,7 @@ For new effect types, add to both `_draw()` dispatch and `_draw_vfx_3d()` in Vie
 | Ability role | Cast feel | Traversal | Impact feel |
 |---|---|---|---|
 | Damage | Charge outward, directional | Fast, direct | Explosive radial burst |
+| **Melee / Physical** | **Strike flash at caster** | **None (range ≤ 8)** | **Comic starburst (see section below)** |
 | Heal (instant) | Rise from caster | Arcing ribbon | Descend onto target |
 | HoT (over time) | Rise from caster | Arcing ribbon | Descend + periodic falling sparks |
 | Buff | Inward compression → bloom | Orbiting ring | Shield-collapse + pulse |
@@ -178,6 +179,160 @@ For new effect types, add to both `_draw()` dispatch and `_draw_vfx_3d()` in Vie
 - Downward = delivery, grace, healing raining from above
 - Outward = explosion, release, burst of energy
 - Inward = charge, focus, absorption, shield
+
+---
+
+## Comic Book / Superhero Melee Impact Style
+
+This is a **separate visual language** from the lightning/energy effects used by Uberblitzer. Use it for physical melee hits, punches, earth-shattering impacts — any ability where the Archon or a physical attacker connects.
+
+### Core Rules
+
+1. **Flat opaque colors, no soft glows.** Comic effects are opaque at peak and then disappear. No additive alpha-blend halos.
+2. **Black outlines on everything.** Draw the black version (slightly wider/larger) first, then the color on top. This mimics ink outlining color in a printed comic panel.
+3. **Total duration: 0.22–0.30s.** Fighting game speed. No lingering. Viewers shouldn't have time to analyze the shape.
+4. **Color sequence:** pure white (instant) → bright yellow `Color(1, 0.92, 0.10)` → orange `Color(1, 0.55, 0.05)` as it fades.
+5. **Scale big.** The impact ring should reach 2.0–2.5 game units. Spikes 2.0–2.5 for long, 1.0–1.2 for short.
+
+### The 4-Layer Stack (draw in this order so layers compose correctly)
+
+```
+Layer 1 (back):  Speed lines — 24 thin dark radial lines
+Layer 2:         Thick shockwave ring — wide at birth, razor thin at death, black-outlined
+Layer 3:         Comic starburst — 8 alternating long/short spikes, black-outlined
+Layer 4 (front): White core flash — filled circle, cuts off at 0.12s
+```
+
+### Layer 1: Speed Lines (background radial hatching)
+
+```gdscript
+# Duration: 0 → 0.18s
+var sl_p := clampf(p / 0.18, 0.0, 1.0)
+if sl_p < 1.0:
+    var sl_ep := _ease_out(sl_p)
+    var sl_a  := lerpf(0.50, 0.0, sl_p)
+    for i in 24:
+        var angle := float(i) * TAU / 24.0
+        var d := Vector2(cos(angle), sin(angle))
+        draw_line(pos + d * lerpf(0.35, 0.55, sl_ep),   # inner radius
+                  pos + d * lerpf(1.60, 2.40, sl_ep),   # outer radius
+                  Color(0.0, 0.0, 0.0, sl_a * 0.40), 0.025)
+```
+
+Key: 24 lines (high density reads as comic-book), very thin (0.025), dark not black-black. Lines expand outward with the effect.
+
+### Layer 2: Thick Shockwave Ring (born wide, dies thin)
+
+```gdscript
+# Duration: 0.03s → 0.22s
+var rp : float = clampf((p - 0.03) / 0.19, 0.0, 1.0)
+if rp > 0.0:
+    var rep    := _ease_out(rp)
+    var ring_r := lerpf(0.10, 2.10, rep)        # expands outward
+    var ring_w := lerpf(0.24, 0.02, rp)         # born thick, dies thin — the comic ring signature
+    var ring_a := lerpf(1.0, 0.0, rp * rp)
+    # Black outline — draw FIRST, slightly wider
+    draw_arc(pos, ring_r, 0.0, TAU, 48, Color(0.0, 0.0, 0.0, ring_a * 0.85), ring_w + 0.05)
+    # Color ring on top
+    draw_arc(pos, ring_r, 0.0, TAU, 48, Color(1.0, 0.92, 0.10, ring_a), ring_w)
+```
+
+The `ring_w = lerpf(0.24, 0.02, rp)` thick-to-thin transition is the **defining comic book ring signature**. Generic effects use constant width.
+
+### Layer 3: Comic Starburst (alternating long/short spikes)
+
+```gdscript
+# Duration: 0.05s → 0.26s
+var sp : float = clampf((p - 0.05) / 0.21, 0.0, 1.0)
+var sa := lerpf(1.0, 0.0, sp * sp)
+if sa > 0.01:
+    var sep := _ease_out(sp)
+    for i in 8:
+        var angle   := float(i) * TAU / 8.0 + PI / 8.0   # 22.5° offset
+        var d       := Vector2(cos(angle), sin(angle))
+        var is_long := i % 2 == 0                          # alternating pattern
+        var r_tip   : float = lerpf(0.0, 2.20 if is_long else 1.10, sep)
+        var r_base  : float = lerpf(0.0, 0.22, sep)
+        var sw      : float = lerpf(0.12 if is_long else 0.07, 0.03, sp)
+        # Black outline behind spike — draw FIRST
+        draw_line(pos + d * r_base, pos + d * r_tip,
+            Color(0.0, 0.0, 0.0, sa * 0.80), sw + 0.05)
+        # Colored spike on top — yellow fades to orange
+        draw_line(pos + d * r_base, pos + d * r_tip,
+            Color(1.0, lerpf(0.95, 0.42, sp), lerpf(0.05, 0.08, sp), sa), sw)
+```
+
+Key: **alternating spike lengths** (2.20 / 1.10 ratio) create the jagged starburst POW silhouette. Uniform spikes look like a generic energy burst.
+
+### Layer 4: White Core Flash (on top)
+
+```gdscript
+# Duration: 0 → 0.12s — sharp cutoff, no lingering
+var fl_p := clampf(p / 0.12, 0.0, 1.0)
+if fl_p < 1.0:
+    draw_circle(pos, lerpf(0.0, 1.0, _ease_out(fl_p)),
+        Color(1.0, 1.0, 1.0, lerpf(1.0, 0.0, fl_p)))
+```
+
+Pure white, no color tint. Drawn last (on top of everything). This sells the "moment of contact" — the viewer's eye registers white before anything else.
+
+### 3D Equivalent (ViewLayer3D)
+
+Black outlines don't translate to 3D, but the shape does. Use `_vring` for the ring, `_vline` for spikes:
+
+```gdscript
+# Shockwave ring
+var st_rp : float = clampf((p - 0.03) / 0.19, 0.0, 1.0)
+if st_rp > 0.0:
+    _vring(c, lerpf(0.10, 2.10, _eo(st_rp)),
+        _ca(Color(1.0, 0.92, 0.10), lerpf(1.0, 0.0, st_rp * st_rp)))
+# Alternating spikes
+var st_sp : float = clampf((p - 0.05) / 0.21, 0.0, 1.0)
+var st_sa := lerpf(1.0, 0.0, st_sp * st_sp)
+if st_sa > 0.01:
+    var st_sep := _eo(st_sp)
+    for i in 8:
+        var st_ang  := float(i) * TAU / 8.0 + PI / 8.0
+        var st_long := i % 2 == 0
+        var st_d3   := Vector3(cos(st_ang), 0.0, sin(st_ang))
+        var st_tip  : float = lerpf(0.0, 2.20 if st_long else 1.10, st_sep)
+        var st_base : float = lerpf(0.0, 0.22, st_sep)
+        _vline(c + st_d3 * st_base, c + st_d3 * st_tip,
+            _ca(Color(1.0, 0.92, 0.10), st_sa))
+# White core
+var st_fl := clampf(p / 0.12, 0.0, 1.0)
+if st_fl < 1.0:
+    _vring(c, lerpf(0.0, 1.0, _eo(st_fl)),
+        _ca(Color(1.0, 1.0, 1.0), lerpf(1.0, 0.0, st_fl)))
+```
+
+### Reference implementation
+
+The Archon's **Stonefist** (`impact_type = 8`, `"stonefist_hit"`) is the canonical example. Study `_draw_stonefist_hit` in `AbilityVfxLayer.gd` and its matching case in `ViewLayer3D.gd` before writing new comic-book style effects.
+
+### Tuning guide
+
+| Parameter | Subtle hit | Normal hit | Big hit |
+|---|---|---|---|
+| Total duration | 0.20s | 0.28s | 0.35s |
+| Long spike radius | 1.4 | 2.2 | 3.0 |
+| Short spike radius | 0.7 | 1.1 | 1.5 |
+| Ring max radius | 1.4 | 2.1 | 2.8 |
+| Speed line count | 16 | 24 | 32 |
+| Core flash radius | 0.6 | 1.0 | 1.4 |
+
+### Future: Hit Stop (not yet implemented)
+
+The single highest-impact technique for melee feel. When implemented, call this at the moment of ability resolution:
+```gdscript
+# In AbilitySystem or a dedicated GameFeel autoload:
+func trigger_hit_stop(duration: float = 0.06) -> void:
+    Engine.time_scale = 0.05
+    # CRITICAL: 4th arg must be true (ignore_time_scale) or timer never fires
+    await get_tree().create_timer(duration, true, false, true).timeout
+    Engine.time_scale = 1.0
+```
+Duration 0.05–0.08s. Shorter than 0.04s = imperceptible. Longer than 0.10s = feels like a bug.
 
 ---
 

@@ -27,9 +27,9 @@ var traversal_type: int = 0
 
 ## Impact effect at each hit target's position.
 ## 0=none 1=burst_ring 2=rising_orbs 3=shield_collapse 4=sparks 5=two_phase
-## 6=heal_shower 7=blue_cloud_impact
+## 6=heal_shower 7=blue_cloud_impact 8=stonefist_hit 9=fault_line_hit
 @export_enum("none","burst_ring","rising_orbs","shield_collapse","sparks","two_phase",
-	"heal_shower","blue_cloud_impact")
+	"heal_shower","blue_cloud_impact","stonefist_hit","fault_line_hit")
 var impact_type: int = 0
 @export var impact_color: Color = Color(0, 0, 0, 0)
 @export var impact_radius: float = 0.8
@@ -38,7 +38,8 @@ var impact_type: int = 0
 
 ## Sustained field that persists for sustained_duration seconds after cast.
 ## 0=none 1=sustained_pulse (follows target) 2=rotating_arcs (stays at cast position)
-@export_enum("none","sustained_pulse","rotating_arcs")
+## 3=fault_line_slow (follows target)
+@export_enum("none","sustained_pulse","rotating_arcs","fault_line_slow")
 var sustained_type: int = 0
 @export var sustained_color: Color = Color(0, 0, 0, 0)
 @export var sustained_radius: float = 1.0

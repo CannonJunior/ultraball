@@ -1259,11 +1259,14 @@ func _draw_vfx_3d(v: Dictionary, p: float) -> void:
 			var lp := clampf((float(v.t) - delay) / 0.22, 0.0, 1.0)
 			var from: Vector2 = v.data.get("from", v.pos)
 			var to: Vector2   = v.data.get("to",   v.pos)
-			# Bolt ribbon
-			var ba       := 1.0 - maxf(0.0, (lp - 0.75) / 0.25)
-			var zap_seed := Time.get_ticks_msec()
-			_vzap_bolt(_p3(from), _p3(to), _ca(col,         ba * 0.90), zap_seed, 12.0)
-			_vzap_bolt(_p3(from), _p3(to), _ca(Color.WHITE,  ba * 0.75), zap_seed,  4.0)
+			# Bolt tip grows from caster toward target; fades out on arrival
+			var from3      := _p3(from)
+			var tip3       := from3.lerp(_p3(to), lp)
+			var ba         := 1.0 - maxf(0.0, (lp - 0.75) / 0.25)
+			var zap_seed   := Time.get_ticks_msec()
+			var horizontal : bool = v.data.get("horizontal", false)
+			_vzap_bolt(from3, tip3, _ca(col,        ba * 0.90), zap_seed, 12.0, horizontal)
+			_vzap_bolt(from3, tip3, _ca(Color.WHITE, ba * 0.75), zap_seed,  4.0, horizontal)
 		"bolt_impact":
 			var delay: float = v.data.get("delay", 0.0)
 			if v.t < delay: return
@@ -1300,6 +1303,97 @@ func _draw_vfx_3d(v: Dictionary, p: float) -> void:
 				var b3 := c + cb_d3 * lerpf(0.1, 0.35, cb_ep)
 				var t3 := c + cb_d3 * lerpf(0.35, cb_r * 1.1, cb_ep)
 				_vline(b3, t3, _ca(col, sa))
+		"fault_line_hit":
+			var fh_cp := clampf(p / 0.50, 0.0, 1.0)
+			var fh_ca := lerpf(0.88, 0.0, fh_cp * fh_cp * 1.8)
+			if fh_ca > 0.01:
+				var fh_cep := _eo(fh_cp)
+				for i in 8:
+					var angle := float(i) * TAU / 8.0 + 0.20
+					var fd3 := Vector3(cos(angle), 0.0, sin(angle))
+					_vline(c + fd3 * lerpf(0.06, 0.16, fh_cep),
+						c + fd3 * lerpf(0.18, 1.05, fh_cep), _ca(col, fh_ca))
+			_vspark(c, lerpf(0.0, 0.60, _eo(p)), _ca(col, lerpf(0.78, 0.0, p * p)), 8)
+			var fh_rp := clampf((p - 0.04) / 0.96, 0.0, 1.0)
+			if fh_rp > 0.0:
+				_vring(c, lerpf(0.10, 1.60, _eo(fh_rp)), _ca(col, lerpf(0.62, 0.0, fh_rp * fh_rp)))
+		"fault_line_slow":
+			var fl_tid : String = v.data.get("target_id", "")
+			var fl_pos := _p3(PlayerLookup.get_position(fl_tid)) if not fl_tid.is_empty() else c
+			var fl_r   : float  = v.data.get("radius", 1.2)
+			var fl_fade := minf(clampf(p / 0.06, 0.0, 1.0), clampf((1.0 - p) / 0.12, 0.0, 1.0))
+			_vring(fl_pos, fl_r, _ca(col, 0.20 * fl_fade))
+			var fl_base := float(v.t) * 0.4
+			for i in 6:
+				var fl_ang := fl_base + float(i) * TAU / 6.0
+				var fl_d3  := Vector3(cos(fl_ang), 0.0, sin(fl_ang))
+				_vdot(fl_pos + fl_d3 * fl_r, 0.09, _ca(col, 0.65 * fl_fade))
+		"stonefist_hit":
+			# Shockwave ring: born wide, dies thin
+			var st_rp : float = clampf((p - 0.03) / 0.19, 0.0, 1.0)
+			if st_rp > 0.0:
+				_vring(c, lerpf(0.10, 2.10, _eo(st_rp)),
+					_ca(Color(1.0, 0.92, 0.10), lerpf(1.0, 0.0, st_rp * st_rp)))
+			# Alternating long/short starburst spikes in XZ plane
+			var st_sp : float = clampf((p - 0.05) / 0.21, 0.0, 1.0)
+			var st_sa := lerpf(1.0, 0.0, st_sp * st_sp)
+			if st_sa > 0.01:
+				var st_sep := _eo(st_sp)
+				for i in 8:
+					var st_ang  := float(i) * TAU / 8.0 + PI / 8.0
+					var st_long := i % 2 == 0
+					var st_d3   := Vector3(cos(st_ang), 0.0, sin(st_ang))
+					var st_tip  : float = lerpf(0.0, 2.20 if st_long else 1.10, st_sep)
+					var st_base : float = lerpf(0.0, 0.22, st_sep)
+					_vline(c + st_d3 * st_base, c + st_d3 * st_tip,
+						_ca(Color(1.0, 0.92, 0.10), st_sa))
+			# White core flash, drawn last
+			var st_fl := clampf(p / 0.12, 0.0, 1.0)
+			if st_fl < 1.0:
+				_vring(c, lerpf(0.0, 1.0, _eo(st_fl)),
+					_ca(Color(1.0, 1.0, 1.0), lerpf(1.0, 0.0, st_fl)))
+		"stonefist_slash":
+			# Tapered vertical ribbon — tall at caster, thin at tip — visible from overhead
+			var sf_from : Vector2 = v.data.get("from", v.pos)
+			var sf_to   : Vector2 = v.data.get("to",   v.pos)
+			var sf_f3 := _p3(sf_from)
+			var sf_t3 := _p3(sf_to)
+			var sf_grow := clampf(p / 0.40, 0.0, 1.0)
+			var sf_tip3 := sf_f3.lerp(sf_t3, _eo(sf_grow))
+			var sf_fade := lerpf(0.85, 0.0, clampf((p - 0.06) / 0.94, 0.0, 1.0))
+			if sf_fade > 0.01:
+				var sf_col   := _ca(Color(1.0, 0.88, 0.12), sf_fade)
+				var sf_white := _ca(Color(1.0, 1.0, 1.0),   sf_fade * 0.60)
+				_vfx_imm.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+				for i in 8:
+					var t0 := float(i)     / 8.0
+					var t1 := float(i + 1) / 8.0
+					var sp0 := sf_f3.lerp(sf_tip3, t0)
+					var sp1 := sf_f3.lerp(sf_tip3, t1)
+					var sh0 := lerpf(5.0, 0.15, t0)
+					var sh1 := lerpf(5.0, 0.15, t1)
+					_vfx_imm.surface_set_color(sf_col); _vfx_imm.surface_add_vertex(sp0)
+					_vfx_imm.surface_set_color(sf_col); _vfx_imm.surface_add_vertex(sp0 + Vector3(0, sh0, 0))
+					_vfx_imm.surface_set_color(sf_col); _vfx_imm.surface_add_vertex(sp1)
+					_vfx_imm.surface_set_color(sf_col); _vfx_imm.surface_add_vertex(sp0 + Vector3(0, sh0, 0))
+					_vfx_imm.surface_set_color(sf_col); _vfx_imm.surface_add_vertex(sp1 + Vector3(0, sh1, 0))
+					_vfx_imm.surface_set_color(sf_col); _vfx_imm.surface_add_vertex(sp1)
+				_vfx_imm.surface_end()
+				_vfx_imm.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+				for i in 8:
+					var t0 := float(i)     / 8.0
+					var t1 := float(i + 1) / 8.0
+					var sp0 := sf_f3.lerp(sf_tip3, t0)
+					var sp1 := sf_f3.lerp(sf_tip3, t1)
+					var sh0 := lerpf(2.0, 0.05, t0)
+					var sh1 := lerpf(2.0, 0.05, t1)
+					_vfx_imm.surface_set_color(sf_white); _vfx_imm.surface_add_vertex(sp0)
+					_vfx_imm.surface_set_color(sf_white); _vfx_imm.surface_add_vertex(sp0 + Vector3(0, sh0, 0))
+					_vfx_imm.surface_set_color(sf_white); _vfx_imm.surface_add_vertex(sp1)
+					_vfx_imm.surface_set_color(sf_white); _vfx_imm.surface_add_vertex(sp0 + Vector3(0, sh0, 0))
+					_vfx_imm.surface_set_color(sf_white); _vfx_imm.surface_add_vertex(sp1 + Vector3(0, sh1, 0))
+					_vfx_imm.surface_set_color(sf_white); _vfx_imm.surface_add_vertex(sp1)
+				_vfx_imm.surface_end()
 		"heal_spiral_cast":
 			# Sparks scatter and rise straight upward
 			for i in 16:
@@ -1427,11 +1521,8 @@ func _vdot(pos: Vector3, size: float, color: Color) -> void:
 	_vfx_imm.surface_add_vertex(pos + Vector3(0,     0,  size))
 	_vfx_imm.surface_end()
 
-## Zigzag lightning bolt rendered as a vertical ribbon — panels stand upright
-## from the ground so they're visible from any overhead camera angle.
-## bolt_h controls how tall (metres) each panel rises above its base point.
 func _vzap_bolt(from3: Vector3, to3: Vector3, col: Color, seed: int,
-		bolt_h: float = 8.0) -> void:
+		bolt_h: float = 8.0, horizontal: bool = false) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
 
@@ -1453,14 +1544,16 @@ func _vzap_bolt(from3: Vector3, to3: Vector3, col: Color, seed: int,
 		pts  = next
 		disp *= 0.5
 
-	# Vertical ribbon: each quad rises from the ground point up by bolt_h metres.
-	# Visible from any overhead angle because it faces upward.
+	# Compute the horizontal perp once (used only when horizontal=true).
+	var overall_xz := Vector2(to3.x - from3.x, to3.z - from3.z)
+	var perp_xz    := Vector2(-overall_xz.y, overall_xz.x).normalized() \
+			if overall_xz.length_squared() > 0.0001 else Vector2(1.0, 0.0)
+	var perp3      := Vector3(perp_xz.x, 0.0, perp_xz.y)
 	var n := pts.size()
 	_vfx_imm.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
 	for i in range(n - 1):
 		var p0: Vector3 = pts[i]
 		var p1: Vector3 = pts[i + 1]
-		# Taper: kink points flare the height; tip shrinks to 25%.
 		var t0 := float(i)     / float(n - 1)
 		var t1 := float(i + 1) / float(n - 1)
 		var h0 := bolt_h * lerpf(1.0, 0.25, t0)
@@ -1473,10 +1566,20 @@ func _vzap_bolt(from3: Vector3, to3: Vector3, col: Color, seed: int,
 			var pn: Vector3 = pts[i + 2]
 			var kink := maxf(0.0, 1.0 - (p1 - p0).normalized().dot((pn - p1).normalized()))
 			h1 *= (1.0 + kink * 2.0)
-		var p0b := p0
-		var p0t := p0 + Vector3(0.0, h0, 0.0)
-		var p1b := p1
-		var p1t := p1 + Vector3(0.0, h1, 0.0)
+		var p0b: Vector3
+		var p0t: Vector3
+		var p1b: Vector3
+		var p1t: Vector3
+		if horizontal:
+			p0b = p0 - perp3 * h0 * 0.5
+			p0t = p0 + perp3 * h0 * 0.5
+			p1b = p1 - perp3 * h1 * 0.5
+			p1t = p1 + perp3 * h1 * 0.5
+		else:
+			p0b = p0
+			p0t = p0 + Vector3(0.0, h0, 0.0)
+			p1b = p1
+			p1t = p1 + Vector3(0.0, h1, 0.0)
 		_vfx_imm.surface_set_color(col); _vfx_imm.surface_add_vertex(p0b)
 		_vfx_imm.surface_set_color(col); _vfx_imm.surface_add_vertex(p0t)
 		_vfx_imm.surface_set_color(col); _vfx_imm.surface_add_vertex(p1b)

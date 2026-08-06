@@ -11,6 +11,9 @@ var _lost_control_logged: bool = false
 var _charging_slot: int = 0
 var _charge_timer: float = 0.0
 
+## Tracks the previously-controlled player id to detect unit switches after death.
+var _prev_pid: String = ""
+
 func _ready() -> void:
 	# Must always process so ESC can unpause the tree.
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -19,6 +22,7 @@ func _physics_process(delta: float) -> void:
 	if MatchState.is_paused:
 		return
 	var player := _local_player()
+	_detect_player_switch()
 	if player == null:
 		return
 
@@ -141,6 +145,17 @@ func _cycle_player() -> void:
 			idx = i
 			break
 	NetworkManager.local_player_id = alive[(idx + 1) % alive.size()].player_id
+
+func _detect_player_switch() -> void:
+	var cur_pid := NetworkManager.local_player_id
+	if cur_pid == _prev_pid:
+		_prev_pid = cur_pid
+		return
+	if not _prev_pid.is_empty() and not cur_pid.is_empty():
+		var old_rec: MatchState.PlayerRecord = MatchState.players.get(_prev_pid)
+		if old_rec != null and not old_rec.is_alive:
+			EventBus.local_player_switched.emit(cur_pid)
+	_prev_pid = cur_pid
 
 func _ability_charge_max(player: Node, slot: int) -> float:
 	var rec: MatchState.PlayerRecord = MatchState.players.get(player.player_id)

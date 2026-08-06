@@ -206,7 +206,7 @@ func _on_ability_resolved(caster_id: String, slot: int, hit_ids: Array) -> void:
 	if vfx != null and vfx.sustained_type != 0:
 		var spos := cpos
 		var follow_id := ""
-		if vfx.sustained_type == 1 and not hit_ids.is_empty():
+		if vfx.sustained_type in [1, 3] and not hit_ids.is_empty():
 			spos = _player_pos(hit_ids[0])
 			follow_id = hit_ids[0]
 		_spawn_custom_sustained(vfx, spos, follow_id)
@@ -353,6 +353,11 @@ func _spawn_custom_impact(vfx: AbilityVfxConfig, tpos: Vector2, _cpos: Vector2) 
 			_spawn("heal_spiral_cast", tpos, vfx.cast_color, vfx.cast_duration, {})
 		7:  # blue_cloud_impact — blue particles orbiting at impact
 			_spawn("blue_cloud_impact", tpos, vfx.impact_color, 0.70, {})
+		8:  # stonefist_hit — comic book melee impact: speed lines → ring → starburst → white flash
+			_spawn("stonefist_hit",  tpos,  vfx.impact_color, 0.28, {})
+			_spawn("stonefist_slash", _cpos, vfx.impact_color, 0.28, {"from": _cpos, "to": tpos})
+		9:  # fault_line_hit — seismic crack: flash → jagged cracks → rock chunks → dust ring
+			_spawn("fault_line_hit", tpos, vfx.impact_color, 0.55, {})
 
 func _spawn_custom_sustained(vfx: AbilityVfxConfig, pos: Vector2, follow_id: String) -> void:
 	match vfx.sustained_type:
@@ -370,6 +375,12 @@ func _spawn_custom_sustained(vfx: AbilityVfxConfig, pos: Vector2, follow_id: Str
 				"data": {"radius": vfx.sustained_radius, "count": 12,
 						 "speed": TAU / 3.0, "target_id": follow_id}
 			})
+		3:  # fault_line_slow — slowly orbiting stone debris around snared target
+			_active.append({
+				"type": "fault_line_slow", "t": 0.0, "dur": vfx.sustained_duration,
+				"pos": pos, "color": vfx.sustained_color,
+				"data": {"radius": vfx.sustained_radius, "target_id": follow_id}
+			})
 
 # ── Bolt VFX helpers ───────────────────────────────────────────────────────────
 
@@ -377,8 +388,19 @@ func _try_spawn_bolt_vfx(class_id: String, slot: int, cpos: Vector2, hit_ids: Ar
 	if class_id != "uberblitzer" or hit_ids.is_empty():
 		return []
 	match slot:
-		1:  # Static Shock — short single arc
-			_spawn_bolt(cpos, _player_pos(hit_ids[0]), C_LIGHTNING, 0.0, slot)
+		1:  # Static Shock — instant lightning strike at target, no ribbon
+			var ss_tpos := _player_pos(hit_ids[0])
+			_active.append({
+				"type": "bolt_impact", "t": 0.0, "dur": BOLT_IMPACT_DUR,
+				"pos": ss_tpos, "color": C_LIGHTNING, "data": {"delay": 0.0}
+			})
+			if _flash_overlay != null:
+				var ss_ref := _flash_overlay
+				get_tree().create_timer(0.04).timeout.connect(
+					func(): if is_instance_valid(ss_ref): ss_ref.play("bolt_flash"),
+					CONNECT_ONE_SHOT)
+			if _thunder_audio != null:
+				_thunder_audio.play_thunder(cpos.distance_to(ss_tpos), 0.08)
 			return [hit_ids[0]]
 		2:  # Lightning Bolt — single arc caster → target
 			_spawn_bolt(cpos, _player_pos(hit_ids[0]), C_LIGHTNING, 0.0, slot)
@@ -422,13 +444,14 @@ func _spawn_bolt(from: Vector2, to: Vector2, col: Color, delay: float, slot: int
 	_active.append({
 		"type": "bolt_travel", "t": 0.0, "dur": travel_end,
 		"pos": from, "color": col,
-		"data": {"from": from, "to": to, "delay": delay}
+		"data": {"from": from, "to": to, "delay": delay, "horizontal": slot == 2}
 	})
-	_active.append({
-		"type": "bolt_impact", "t": 0.0, "dur": travel_end + BOLT_IMPACT_DUR,
-		"pos": to, "color": col,
-		"data": {"delay": travel_end}
-	})
+	if slot != 2:
+		_active.append({
+			"type": "bolt_impact", "t": 0.0, "dur": travel_end + BOLT_IMPACT_DUR,
+			"pos": to, "color": col,
+			"data": {"delay": travel_end}
+		})
 
 # ── Spawn ──────────────────────────────────────────────────────────────────────
 
@@ -485,6 +508,11 @@ func _draw() -> void:
 			"hot_sparkle":         _draw_hot_sparkle(v, p)
 			"lightning_discharge": _draw_lightning_discharge(v, p)
 			"chain_burst":         _draw_chain_burst(v, p)
+			# ── Archon custom types ────────────────────────────────────────────
+			"stonefist_hit":       _draw_stonefist_hit(v, p)
+			"stonefist_slash":     _draw_stonefist_slash(v, p)
+			"fault_line_hit":      _draw_fault_line_hit(v, p)
+			"fault_line_slow":     _draw_fault_line_slow(v, p)
 	if not _charging_player_id.is_empty() and _charge_max > 0.0:
 		_draw_ability_charge_bar(_player_pos(_charging_player_id), _charge_elapsed / _charge_max)
 
@@ -1154,3 +1182,168 @@ func _draw_chain_burst(v: Dictionary, p: float) -> void:
 		var mid: Vector2 = seg_s.lerp(seg_e, 0.5) + perp * jitter
 		draw_line(seg_s, mid, Color(1.0, 1.0, 1.0, spark_a * 0.7), 0.06)
 		draw_line(mid, seg_e, Color(col.r, col.g, col.b, spark_a), 0.045)
+
+# ── Archon custom draw functions ───────────────────────────────────────────────
+
+func _draw_stonefist_hit(v: Dictionary, p: float) -> void:
+	var pos : Vector2 = v.pos
+
+	# ── Speed lines: thin dark radial hatching, background layer (0→0.18s) ──────
+	var sl_p := clampf(p / 0.18, 0.0, 1.0)
+	if sl_p < 1.0:
+		var sl_ep := _ease_out(sl_p)
+		var sl_a  := lerpf(0.50, 0.0, sl_p)
+		for i in 24:
+			var angle := float(i) * TAU / 24.0
+			var d := Vector2(cos(angle), sin(angle))
+			draw_line(pos + d * lerpf(0.35, 0.55, sl_ep),
+				pos + d * lerpf(1.60, 2.40, sl_ep),
+				Color(0.0, 0.0, 0.0, sl_a * 0.40), 0.025)
+
+	# ── Thick shockwave ring: born wide, dies thin, black-outlined (0.03→0.22s) ─
+	var rp : float = clampf((p - 0.03) / 0.19, 0.0, 1.0)
+	if rp > 0.0:
+		var rep    := _ease_out(rp)
+		var ring_r := lerpf(0.10, 2.10, rep)
+		var ring_w := lerpf(0.24, 0.02, rp)
+		var ring_a := lerpf(1.0, 0.0, rp * rp)
+		draw_arc(pos, ring_r, 0.0, TAU, 48,
+			Color(0.0, 0.0, 0.0, ring_a * 0.85), ring_w + 0.05)
+		draw_arc(pos, ring_r, 0.0, TAU, 48,
+			Color(1.0, 0.92, 0.10, ring_a), ring_w)
+
+	# ── Comic starburst: 8 alternating long/short spikes, black-outlined (0.05→0.26s)
+	var sp : float = clampf((p - 0.05) / 0.21, 0.0, 1.0)
+	var sa := lerpf(1.0, 0.0, sp * sp)
+	if sa > 0.01:
+		var sep := _ease_out(sp)
+		for i in 8:
+			var angle   := float(i) * TAU / 8.0 + PI / 8.0
+			var d       := Vector2(cos(angle), sin(angle))
+			var is_long := i % 2 == 0
+			var r_tip   : float = lerpf(0.0, 2.20 if is_long else 1.10, sep)
+			var r_base  : float = lerpf(0.0, 0.22, sep)
+			var sw      : float = lerpf(0.12 if is_long else 0.07, 0.03, sp)
+			draw_line(pos + d * r_base, pos + d * r_tip,
+				Color(0.0, 0.0, 0.0, sa * 0.80), sw + 0.05)
+			draw_line(pos + d * r_base, pos + d * r_tip,
+				Color(1.0, lerpf(0.95, 0.42, sp), lerpf(0.05, 0.08, sp), sa), sw)
+
+	# ── White core flash: drawn last (on top) (0→0.12s) ─────────────────────────
+	var fl_p := clampf(p / 0.12, 0.0, 1.0)
+	if fl_p < 1.0:
+		draw_circle(pos, lerpf(0.0, 1.0, _ease_out(fl_p)),
+			Color(1.0, 1.0, 1.0, lerpf(1.0, 0.0, fl_p)))
+
+func _draw_stonefist_slash(v: Dictionary, p: float) -> void:
+	var from : Vector2 = v.data.get("from", v.pos)
+	var to   : Vector2 = v.data.get("to",   v.pos)
+
+	# Tip races to target over first 40%, whole ribbon fades out over full duration
+	var grow_p := clampf(p / 0.40, 0.0, 1.0)
+	var fade_a := lerpf(0.92, 0.0, clampf((p - 0.06) / 0.94, 0.0, 1.0))
+	if fade_a <= 0.01:
+		return
+
+	var tip  : Vector2 = from.lerp(to, _ease_out(grow_p))
+	var dir              := (to - from).normalized()
+	var perp             := Vector2(-dir.y, dir.x)
+	var dist   : float   = from.distance_to(tip)
+	# Slight perpendicular bow — gives a sweeping arc rather than a laser line
+	var ctrl  : Vector2  = from.lerp(tip, 0.5) + perp * dist * 0.15
+
+	# Draw tapered ribbon as 8 segments along a quadratic bezier arc
+	# Each segment uses draw_line with width decreasing from caster to tip
+	for s in 8:
+		var t0 := float(s)     / 8.0
+		var t1 := float(s + 1) / 8.0
+		var q0 : Vector2 = from.lerp(ctrl, t0).lerp(ctrl.lerp(tip, t0), t0)
+		var q1 : Vector2 = from.lerp(ctrl, t1).lerp(ctrl.lerp(tip, t1), t1)
+		var sw  : float  = lerpf(0.28, 0.03, t0) * fade_a
+		draw_line(q0, q1, Color(0.0, 0.0, 0.0, fade_a * 0.55), sw + 0.06)
+		draw_line(q0, q1, Color(1.0, lerpf(0.95, 0.70, t0), lerpf(0.15, 0.05, t0), fade_a), sw)
+	# White core highlight on top (half-width)
+	for s in 8:
+		var t0 := float(s)     / 8.0
+		var t1 := float(s + 1) / 8.0
+		var q0 : Vector2 = from.lerp(ctrl, t0).lerp(ctrl.lerp(tip, t0), t0)
+		var q1 : Vector2 = from.lerp(ctrl, t1).lerp(ctrl.lerp(tip, t1), t1)
+		var sw  : float  = lerpf(0.14, 0.01, t0) * fade_a
+		draw_line(q0, q1, Color(1.0, 1.0, 1.0, fade_a * 0.55), sw)
+
+func _draw_fault_line_hit(v: Dictionary, p: float) -> void:
+	var col : Color = v.color
+
+	# Flash — amber/orange
+	var fp := clampf(p / 0.18, 0.0, 1.0)
+	if fp < 1.0:
+		var fa := lerpf(0.88, 0.0, fp * fp)
+		draw_circle(v.pos, lerpf(0.0, 0.85, _ease_out(fp)), Color(1.0, 0.70, 0.10, fa))
+
+	# Ground cracks — 8 jagged lines
+	var cp := clampf(p / 0.50, 0.0, 1.0)
+	var ca := lerpf(0.88, 0.0, cp * cp * 1.8)
+	if ca > 0.01:
+		var cep := _ease_out(cp)
+		for i in 8:
+			var angle := float(i) * TAU / 8.0 + 0.20
+			var d := Vector2(cos(angle), sin(angle))
+			var perp := Vector2(-d.y, d.x)
+			var r1 := lerpf(0.06, 0.16, cep)
+			var r2 := lerpf(0.18, 1.05, cep)
+			var jitter : float   = sin(float(i) * 2.5) * (r2 - r1) * 0.20
+			var mid    : Vector2 = v.pos + d * ((r1 + r2) * 0.5) + perp * jitter
+			draw_line(v.pos + d * r1, mid, Color(0.85, 0.55, 0.15, ca), 0.055)
+			draw_line(mid, v.pos + d * r2, Color(col.r, col.g, col.b, ca * 0.75), 0.04)
+
+	# Rock chunks — rise then fall (heavier arc than sparks)
+	for i in 8:
+		var phase := float(i) * 0.04
+		var dp := clampf((p - phase) / maxf(1.0 - phase, 0.01), 0.0, 1.0)
+		if dp <= 0.0: continue
+		var angle := float(i) * TAU / 8.0 + 0.60
+		var d := Vector2(cos(angle), sin(angle))
+		var r_out := lerpf(0.12, 0.60, _ease_out(dp))
+		var rise  := lerpf(0.0, -0.50, sin(dp * PI))
+		var da    := lerpf(0.78, 0.0, dp * dp)
+		draw_circle(v.pos + d * r_out + Vector2(0.0, rise),
+			lerpf(0.09, 0.04, dp), Color(0.60, 0.40, 0.20, da))
+
+	# Dust ring
+	var drp := clampf((p - 0.04) / 0.96, 0.0, 1.0)
+	if drp > 0.0:
+		var dra := lerpf(0.62, 0.0, drp * drp)
+		draw_arc(v.pos, lerpf(0.10, 1.60, _ease_out(drp)), 0.0, TAU, 48,
+			Color(col.r, col.g, col.b, dra), lerpf(0.07, 0.02, drp))
+
+func _draw_fault_line_slow(v: Dictionary, p: float) -> void:
+	var r   : float  = v.data.get("radius", 1.2)
+	var tid : String = v.data.get("target_id", "")
+	var col : Color  = v.color
+	var pos : Vector2 = _player_pos(tid) if not tid.is_empty() else v.pos
+
+	# Fade in quickly, hold, fade out at end
+	var fade := minf(
+		clampf(p / 0.06, 0.0, 1.0),
+		clampf((1.0 - p) / 0.12, 0.0, 1.0))
+
+	# Faint orbit ring
+	draw_arc(pos, r, 0.0, TAU, 32, Color(col.r, col.g, col.b, 0.20 * fade), 0.035)
+
+	# 4 crack lines pulsing very slowly (sluggishness cue)
+	var crack_pulse := sin(float(v.t) * PI * 0.7) * 0.08 + 0.18
+	const SLOW_SPEED := 0.4  # rad/s — deliberately sluggish
+	var angle_base := float(v.t) * SLOW_SPEED
+	for i in 4:
+		var angle := float(i) * TAU / 4.0 + angle_base * 0.15
+		var d := Vector2(cos(angle), sin(angle))
+		draw_line(pos + d * 0.18, pos + d * r * 0.78,
+			Color(col.r, col.g, col.b, crack_pulse * fade), 0.035)
+
+	# 6 stone fragments orbiting at SLOW_SPEED — the slow orbit IS the slow cue
+	for i in 6:
+		var angle := angle_base + float(i) * TAU / 6.0
+		var fpos  := pos + Vector2(cos(angle), sin(angle)) * r
+		var bob   := sin(float(v.t) * 1.5 + float(i) * 1.05) * 0.06
+		var fa    := lerpf(0.72, 0.55, absf(sin(float(v.t) * 0.9 + float(i))))
+		draw_circle(fpos + Vector2(0.0, bob), 0.09, Color(col.r, col.g, col.b, fa * fade))

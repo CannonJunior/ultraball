@@ -23,6 +23,8 @@ signal healing_applied(healer_id: String, target_id: String, amount: float)
 ## cause: "combat" | "pit" | "creature" | "explosion"
 signal player_died(player_id: String, cause: String, killer_id: String)
 signal player_subbed_in(player_id: String, replaced_id: String, team_id: int)
+## Emitted when the human switches control to a different unit after their previous unit died.
+signal local_player_switched(new_id: String)
 
 # ── Ball System ────────────────────────────────────────────────────────────────
 signal ball_picked_up(player_id: String)

@@ -6,7 +6,7 @@
 
 [sub_resource type="Resource" id="VFX1"]
 script = ExtResource("3_vfx")
-cast_type = 10
+cast_type = 0
 cast_color = Color(0.55, 0.85, 1, 1)
 cast_radius = 5.0
 cast_duration = 0.3

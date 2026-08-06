@@ -34,6 +34,7 @@ func _ready() -> void:
 	EventBus.ability_charge_released.connect(_on_ability_charge_released)
 	EventBus.buff_applied.connect(_on_buff_applied)
 	EventBus.player_subbed_in.connect(_on_player_subbed_in)
+	EventBus.local_player_switched.connect(_on_local_player_switched)
 	EventBus.stance_switch_requested.connect(_on_stance_switch_requested)
 	EventBus.stance_set_requested.connect(_on_stance_set_requested)
 
@@ -296,6 +297,7 @@ func _failure_reason(pid: String, slot: int) -> String:
 	if player_node == null: return "no_player"
 	var _rec: MatchState.PlayerRecord = MatchState.players.get(pid)
 	if _rec == null: return "no_player"
+	if not _rec.is_alive or not _rec.is_on_field: return "dead"
 	var definition: AbilityDefinition = GameRegistry.get_ability(_rec.class_id, slot)
 	if definition == null: return "no_definition"
 	if not player_node.mana.can_afford(definition.mana_type, _effective_mana_cost(definition, player_node)):
@@ -339,6 +341,11 @@ func _on_player_subbed_in(player_id: String, _replaced: String, _team: int) -> v
 	if _queues.has(player_id):
 		_queues[player_id].clear()
 		EventBus.ability_queue_changed.emit(player_id, [])
+
+func _on_local_player_switched(new_id: String) -> void:
+	if _queues.has(new_id) and not _queues[new_id].is_empty():
+		_queues[new_id].clear()
+		EventBus.ability_queue_changed.emit(new_id, [])
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
